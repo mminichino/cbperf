@@ -1,7 +1,7 @@
 #!/usr/bin/env -S python3 -W ignore
 
 '''
-Invoke Custom Couchbase Pillow Fight
+Couchbase Performance Utility
 '''
 
 import os
