@@ -1150,10 +1150,10 @@ class cbutil(object):
                     time.sleep(0.01 * retries)
                     continue
 
-    async def cb_query_a(self, cluster, select, where, value):
+    async def cb_query_a(self, cluster, select, where, value, bucket="pillowfight"):
         contents = []
         retries = 0
-        query = "SELECT " + select + " FROM pillowfight WHERE " + where + " = \"" + value + "\";"
+        query = "SELECT " + select + " FROM " + bucket + " WHERE " + where + " = \"" + value + "\";"
         while True:
             try:
                 result = cluster.query(query,
@@ -1174,10 +1174,10 @@ class cbutil(object):
                     time.sleep(0.01 * retries)
                     continue
 
-    def cb_query_s(self, cluster, select, where, value):
+    def cb_query_s(self, cluster, select, where, value, bucket="pillowfight"):
         contents = []
         retries = 0
-        query = "SELECT " + select + " FROM pillowfight WHERE " + where + " = \"" + value + "\";"
+        query = "SELECT " + select + " FROM " + bucket + " WHERE " + where + " = \"" + value + "\";"
         while True:
             try:
                 result = cluster.query(query,
