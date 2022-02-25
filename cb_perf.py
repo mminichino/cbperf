@@ -45,7 +45,29 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '1.0-beta'
+VERSION = '1.1-alpha'
+
+DEFAULT_JSON = {
+    'record_id': 'record_id',
+    'first_name': '{{ rand_first }}',
+    'last_name': '{{ rand_last }}',
+    'address': '{{ rand_address }}',
+    'city': '{{ rand_city }}',
+    'state': '{{ rand_state }}',
+    'zip_code': '{{ rand_zip_code }}',
+    'phone': '{{ rand_phone }}',
+    'ssn': '{{ rand_ssn }}',
+    'dob': "{{ rand_dob_1 }}",
+    'account_number': '{{ rand_account }}',
+    'card_number': '{{ rand_credit_card }}',
+    'transactions': [
+        {
+            'id': '{{ rand_id }}',
+            'date': '{{ rand_date_1 }}',
+            'amount': '{{ rand_dollar }}',
+        },
+    ]
+}
 
 class randomize(object):
 
@@ -85,6 +107,21 @@ class randomize(object):
             ba[i] = min_lc + b % len_lc
         return ba.decode('utf-8')
 
+    def _randomBits(self, n):
+        yield random.getrandbits(n)
+
+    def _monthNumber(self):
+        value = (random.getrandbits(3) + 1) + (random.getrandbits(2) + 1)
+        return value
+
+    def _monthDay(self, n=31):
+        value = next((i for i in self._randomBits(5) if i >= 1 and i <= n), 1)
+        return value
+
+    def _yearNumber(self):
+        value = int(self._randomNumber(2)) + 1920
+        return value
+
     @property
     def creditCard(self):
         return '-'.join(self._randomNumber(4) for _ in range(4))
@@ -117,6 +154,50 @@ class randomize(object):
     def dollarAmount(self):
         value = random.getrandbits(8) % 5 + 1
         return self._randomNumber(value) + '.' + self._randomNumber(2)
+
+    @property
+    def yearValue(self):
+        return str(self._yearNumber())
+
+    @property
+    def monthValue(self):
+        value = self._monthNumber()
+        return f'{value:02}'
+
+    @property
+    def dayValue(self):
+        value = self._monthDay()
+        return f'{value:02}'
+
+    @property
+    def pastDateSlash(self):
+        past_date = datetime.today() - timedelta(days=random.getrandbits(12))
+        return past_date.strftime("%m/%d/%Y")
+
+    @property
+    def pastDateHyphen(self):
+        past_date = datetime.today() - timedelta(days=random.getrandbits(12))
+        return past_date.strftime("%m-%d-%Y")
+
+    @property
+    def pastDateText(self):
+        past_date = datetime.today() - timedelta(days=random.getrandbits(12))
+        return past_date.strftime("%b %d %Y")
+
+    @property
+    def dobSlash(self):
+        past_date = datetime.today() - timedelta(days=random.getrandbits(14), weeks=1040)
+        return past_date.strftime("%m/%d/%Y")
+
+    @property
+    def dobHyphen(self):
+        past_date = datetime.today() - timedelta(days=random.getrandbits(14), weeks=1040)
+        return past_date.strftime("%m-%d-%Y")
+
+    @property
+    def dobText(self):
+        past_date = datetime.today() - timedelta(days=random.getrandbits(14), weeks=1040)
+        return past_date.strftime("%b %d %Y")
 
     @property
     def hashCode(self):
@@ -332,6 +413,15 @@ class randomize(object):
         print("Last       : " + self.lastName)
         print("Phone      : " + self.phoneNumber)
         print("Date       : " + self.dateCode)
+        print("Year       : " + self.yearValue)
+        print("Month      : " + self.monthValue)
+        print("Day        : " + self.dayValue)
+        print("Past Date 1: " + self.pastDateSlash)
+        print("Past Date 2: " + self.pastDateHyphen)
+        print("Past Date 3: " + self.pastDateText)
+        print("DOB Date 1 : " + self.dobSlash)
+        print("DOB Date 2 : " + self.dobHyphen)
+        print("DOB Date 3 : " + self.dobText)
 
     def prepareTemplate(self, json_block):
         self.template = json.dumps(json_block)
@@ -339,12 +429,12 @@ class randomize(object):
 
     def processTemplate(self):
         formattedBlock = self.compiled.render(date_time=self.dateCode,
-                                              credit_card=self.creditCard,
-                                              social=self.socialSecurityNumber,
+                                              rand_credit_card=self.creditCard,
+                                              rand_ssn=self.socialSecurityNumber,
                                               rand_four=self.fourDigits,
                                               rand_account=self.accountNumner,
                                               rand_id=self.numericSequence,
-                                              zip_code=self.zipCode,
+                                              rand_zip_code=self.zipCode,
                                               rand_dollar=self.dollarAmount,
                                               rand_hash=self.hashCode,
                                               rand_address=self.addressLine,
@@ -352,7 +442,17 @@ class randomize(object):
                                               rand_state=self.stateName,
                                               rand_first=self.firstName,
                                               rand_last=self.lastName,
-                                              rand_phone=self.phoneNumber)
+                                              rand_phone=self.phoneNumber,
+                                              rand_year=self.yearValue,
+                                              rand_month=self.monthValue,
+                                              rand_day=self.dayValue,
+                                              rand_date_1=self.pastDateSlash,
+                                              rand_date_2=self.pastDateHyphen,
+                                              rand_date_3=self.pastDateText,
+                                              rand_dob_1=self.dobSlash,
+                                              rand_dob_2=self.dobHyphen,
+                                              rand_dob_3=self.dobText,
+                                              )
         finished = formattedBlock.encode('ascii')
         jsonBlock = json.loads(finished)
         return jsonBlock
@@ -599,7 +699,7 @@ class cbutil(object):
             self.logger.debug("is_bucket: bucket %s does not exist" % bucket)
             return False
 
-    def create_bucket(self, bucket):
+    def create_bucket(self, bucket, mem_quota=512):
         cluster = self.connect_s()
         bm = self.get_bm(cluster)
         retries = 0
@@ -607,7 +707,7 @@ class cbutil(object):
             self.logger.info("Creating bucket %s." % bucket)
             try:
                 bm.create_bucket(CreateBucketSettings(name=bucket, bucket_type=BucketType.COUCHBASE,
-                                                      ram_quota_mb=self.mem_quota))
+                                                      ram_quota_mb=mem_quota))
                 while True:
                     try:
                         time.sleep(0.1)
@@ -713,6 +813,8 @@ class cbutil(object):
 
             try:
                 self.check_status_code(response.status_code)
+            except RequestNotFound:
+                continue
             except Exception as e:
                 self.logger.error("index_stats: %s" % str(e))
                 raise
@@ -1182,9 +1284,9 @@ class params(object):
         run_parser.add_argument('--tload', action='store', help="Threads for Load", type=int)
         run_parser.add_argument('--trun', action='store', help="Threads for Run", type=int)
         run_parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int)
-        run_parser.add_argument('--file', action='store', help="Input JSON File", required=True)
+        run_parser.add_argument('--file', action='store', help="Input JSON File")
         run_parser.add_argument('--id', action='store', help="Numeric ID Field in JSON File", default="record_id")
-        run_parser.add_argument('--query', action='store', help="Field to query in JSON File", required=True)
+        run_parser.add_argument('--query', action='store', help="Field to query in JSON File", default="last_name")
         run_parser.add_argument('--load', action='store_true', help="Only Load Data")
         run_parser.add_argument('--dryrun', action='store_true', help="Run Single Record Test Pass")
         run_parser.add_argument('--model', action='store_true', help="Run Calibration Style Test")
@@ -1219,6 +1321,8 @@ class runPerformanceBenchmark(object):
         self.batchSize = 100
         self.queryBatchSize = 1
         self.clusterVersion = None
+        self.bucketMemory = None
+        self.inputFile = None
         self.idField = 'record_id'
         self.recordCount = 1000000
         self.operationCount = 100000
@@ -1233,6 +1337,7 @@ class runPerformanceBenchmark(object):
         self.errorCount = mpAtomicCounter()
         self.cbperfConfig = self.locateCfgFile()
         self.processConfigFile()
+        input_data_size = 0
 
         print("CBPerf version %s" % VERSION)
 
@@ -1309,6 +1414,21 @@ class runPerformanceBenchmark(object):
             print("Error: Operation count must be equal or less than record count.")
             sys.exit(1)
 
+        if not self.bucketMemory:
+            if self.inputFile:
+                try:
+                    input_data_size = os.path.getsize(self.inputFile)
+                except Exception as e:
+                    print("Can not get input file size: %s" % str(e))
+                    sys.exit(1)
+            total_data = input_data_size * self.recordCount
+            total_data_kb = total_data / 1048576
+            if total_data_kb < 268435456:
+                total_data_mb = 256
+            else:
+                total_data_mb = round(total_data_kb / 1048576)
+            self.bucketMemory = total_data_mb
+
         if parameters.command == 'run':
             if self.dryRunFlag:
                 self.dryRun()
@@ -1327,6 +1447,19 @@ class runPerformanceBenchmark(object):
                 print("Operations: %s" % f'{self.operationCount:,}')
                 self.runTestScenario(self.testSequence)
                 sys.exit(0)
+
+    def getInputJson(self):
+        if self.inputFile:
+            try:
+                with open(self.inputFile, 'r') as inputFile:
+                    inputJson = json.load(inputFile)
+                inputFile.close()
+                return inputJson
+            except OSError as e:
+                print("Can not read input file: %s" % str(e))
+                sys.exit(1)
+        else:
+            return DEFAULT_JSON
 
     def locateCfgFile(self):
         if 'HOME' in os.environ:
@@ -1865,7 +1998,7 @@ class runPerformanceBenchmark(object):
                                                                                      self.host, cb_cluster.version))
                 if not self.skipBucket:
                     print("Creating bucket %s." % self.bucket)
-                    cb_cluster.create_bucket(self.bucket)
+                    cb_cluster.create_bucket(self.bucket, self.bucketMemory)
                 else:
                     print("Skipping bucket creation.")
                 print("Creating index %s." % self.fieldIndex)
@@ -1876,13 +2009,7 @@ class runPerformanceBenchmark(object):
             self.logger.critical("%s" % str(e))
             sys.exit(1)
 
-        try:
-            with open(self.inputFile, 'r') as inputFile:
-                inputFileJson = json.load(inputFile)
-            inputFile.close()
-        except OSError as e:
-            print("Can not read input file: %s" % str(e))
-            sys.exit(1)
+        inputFileJson = self.getInputJson()
 
         if run:
             statusThread = multiprocessing.Process(target=self.dynamicStatusThread, args=(latency,))
@@ -1991,7 +2118,7 @@ class runPerformanceBenchmark(object):
 
             if not self.skipBucket:
                 print("Creating bucket %s." % self.bucket)
-                cb_cluster.create_bucket(self.bucket)
+                cb_cluster.create_bucket(self.bucket, self.bucketMemory)
             else:
                 print("Skipping bucket creation.")
 
@@ -2017,13 +2144,7 @@ class runPerformanceBenchmark(object):
 
         print("CBPerf Test connected to cluster %s version %s." % (self.host, cb_cluster.version))
 
-        try:
-            with open(self.inputFile, 'r') as inputFile:
-                inputFileJson = json.load(inputFile)
-            inputFile.close()
-        except OSError as e:
-            print("Can not read input file: %s" % str(e))
-            sys.exit(1)
+        inputFileJson = self.getInputJson()
 
         try:
             r = randomize()
@@ -2250,7 +2371,7 @@ class runPerformanceBenchmark(object):
                                                                                 cb_cluster.version))
                 if not self.skipBucket:
                     print("Creating bucket %s." % self.bucket)
-                    cb_cluster.create_bucket(self.bucket)
+                    cb_cluster.create_bucket(self.bucket, self.bucketMemory)
                 else:
                     print("Skipping bucket creation.")
                 print("Creating index %s." % self.fieldIndex)
@@ -2261,19 +2382,7 @@ class runPerformanceBenchmark(object):
             self.logger.critical("%s" % str(e))
             sys.exit(1)
 
-        try:
-            with open(self.inputFile, 'r') as inputFile:
-                inputFileData = inputFile.read()
-            inputFile.close()
-        except OSError as e:
-            print("Can not open input file: %s" % str(e))
-            sys.exit(1)
-
-        try:
-            inputFileJson = json.loads(inputFileData)
-        except Exception as e:
-            print("Can not process json input file: %s" % str(e))
-            sys.exit(1)
+        inputFileJson = self.getInputJson()
 
         if run:
             statusThread = multiprocessing.Process(target=self.printStatusThread, args=(operation_count, run_threads,))

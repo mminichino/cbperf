@@ -2,9 +2,10 @@
 #
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 
-if [ ! -d $SCRIPTDIR/cbvenv ]; then
+if [ ! -d $SCRIPTDIR/venv ]; then
   echo "Please run setup.sh first."
+  exit 1
 fi
 
-. $SCRIPTDIR/cbvenv/bin/activate
+. $SCRIPTDIR/venv/bin/activate
 $SCRIPTDIR/cb_perf.py $@
