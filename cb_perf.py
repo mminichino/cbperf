@@ -1212,7 +1212,7 @@ class cbutil(object):
     def drop_index(self, bucket, index):
         cluster = self.connect_s()
         self.logger.info("Dropping index %s.", index)
-        queryText = 'DROP INDEX ' + index + ' ON pillowfight USING GSI;'
+        queryText = 'DROP INDEX ' + index + ' ON ' + bucket + ' USING GSI;'
         if self.is_bucket(bucket) and self.is_index(bucket, index):
             try:
                 result = cluster.query(queryText, QueryOptions(metrics=True))
@@ -1415,18 +1415,22 @@ class runPerformanceBenchmark(object):
             sys.exit(1)
 
         if not self.bucketMemory:
+            one_mb = 1024 * 1024
             if self.inputFile:
                 try:
                     input_data_size = os.path.getsize(self.inputFile)
                 except Exception as e:
                     print("Can not get input file size: %s" % str(e))
                     sys.exit(1)
-            total_data = input_data_size * self.recordCount
-            total_data_kb = total_data / 1048576
-            if total_data_kb < 268435456:
-                total_data_mb = 256
+                total_data = input_data_size * self.recordCount * 1.2
+                total_data_mb = round(total_data / one_mb)
             else:
-                total_data_mb = round(total_data_kb / 1048576)
+                total_data = sys.getsizeof(DEFAULT_JSON) * self.recordCount * 1.2
+                total_data_mb = round(total_data / one_mb)
+
+            if total_data_mb < 256:
+                total_data_mb = 256
+
             self.bucketMemory = total_data_mb
 
         if parameters.command == 'run':
@@ -2199,9 +2203,9 @@ class runPerformanceBenchmark(object):
         while retries <= 5:
             print("Attempting to query record %d retry %d..." % (record_number, retries))
             if not self.useSync:
-                result = loop.run_until_complete(cb_cluster.cb_query_a(cluster, self.queryField, self.idField, record_id))
+                result = loop.run_until_complete(cb_cluster.cb_query_a(cluster, self.queryField, self.idField, record_id, self.bucket))
             else:
-                result = cb_cluster.cb_query_s(cluster, self.queryField, self.idField, record_id)
+                result = cb_cluster.cb_query_s(cluster, self.queryField, self.idField, record_id, self.bucket)
 
             if len(result) == 0:
                 retries += 1
@@ -2320,9 +2324,9 @@ class runPerformanceBenchmark(object):
                             tasks.append(result)
                     elif mode == QUERY_TEST:
                         if not self.useSync:
-                            tasks.append(cb_cluster.cb_query_a(cluster, self.queryField, self.idField, record_id))
+                            tasks.append(cb_cluster.cb_query_a(cluster, self.queryField, self.idField, record_id, self.bucket))
                         else:
-                            result = cb_cluster.cb_query_s(cluster, self.queryField, self.idField, record_id)
+                            result = cb_cluster.cb_query_s(cluster, self.queryField, self.idField, record_id, self.bucket)
                             tasks.append(result)
                     else:
                         if not self.useSync:
