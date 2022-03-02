@@ -114,6 +114,14 @@ DEFAULT_SCHEMA_INVENTORY = {
                             },
                         ]
                     },
+                ],
+                'rules': [
+                    {
+                        'name': 'rule0',
+                        'type': 'link',
+                        'foreign_key': 'sample_app:profiles:user_data:picture',
+                        'primary_key': 'sample_app:profiles:user_images:record_id',
+                    },
                 ]
             }
         }
@@ -1513,6 +1521,7 @@ class schemaElement(object):
     def __init__(self, name):
         self.name = name
         self.buckets = []
+        self.rules = []
 
 class bucketElement(object):
 
@@ -1538,7 +1547,7 @@ class collectionElement(object):
 
 class inventoryManager(object):
 
-    def __init__(self, inventory):
+    def __init__(self, inventory, by_reference=True):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.inventory_json = inventory
         self.schemas = []
@@ -1561,7 +1570,11 @@ class inventoryManager(object):
                             self.logger.info("adding collection %s to inventory" % collection['name'])
                             node = collectionElement(collection['name'], bucket['name'], scope['name'])
                             self.schemas[0].buckets[0].scopes[0].collections.insert(0, node)
-                            self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(eval(collection['schema']))
+                            if by_reference:
+                                self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(
+                                    eval(collection['schema']))
+                            else:
+                                self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
                             self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
                             if 'indexes' in collection:
                                 for index_field in collection['indexes']:
@@ -1571,6 +1584,10 @@ class inventoryManager(object):
                                     index_data['name'] = self.indexName(
                                         self.schemas[0].buckets[0].scopes[0].collections[0], index_field)
                                     self.schemas[0].buckets[0].scopes[0].collections[0].indexes.append(index_data)
+                if 'rules' in value:
+                    for r, rule in enumerate(value['rules']):
+                        self.logger.info("adding rule %s to inventory" % rule['name'])
+                        self.schemas[0].rules.append(rule)
 
     def getSchema(self, schema):
         return next((s for s in self.schemas if s.name == schema), None)
@@ -1578,6 +1595,15 @@ class inventoryManager(object):
     def nextBucket(self, schema):
         for i in range(len(schema.buckets)):
             yield schema.buckets[i]
+
+    def hasRules(self, schema):
+        if len(schema.rules) > 0:
+            return True
+        else:
+            return False
+
+    def nextRule(self, schema):
+        yield next((r for r in schema.rules), None)
 
     def nextScope(self, bucket):
         for i in range(len(bucket.scopes)):
@@ -1594,7 +1620,16 @@ class inventoryManager(object):
             return False
 
     def indexName(self, collection, field):
-        return collection.bucket + '_' + collection.scope + '_' + collection.name + '_' + field + '_ix'
+        if collection.scope != '_default':
+            scope_text = '_' + collection.scope
+        else:
+            scope_text = ''
+        if collection.name != '_default':
+            collection_text = '_' + collection.name
+        else:
+            collection_text = ''
+        field = field.replace('.', '_')
+        return collection.bucket + scope_text + collection_text + '_' + field + '_ix'
 
     def nextIndex(self, collection):
         for i in range(len(collection.indexes)):
@@ -1774,10 +1809,10 @@ class runPerformanceBenchmark(object):
                 except Exception as e:
                     print("Can not get input file size: %s" % str(e))
                     sys.exit(1)
-                total_data = input_data_size * self.recordCount * 1.2
+                total_data = input_data_size * self.recordCount
                 total_data_mb = round(total_data / one_mb)
             else:
-                total_data = sys.getsizeof(DEFAULT_JSON) * self.recordCount * 1.2
+                total_data = sys.getsizeof(DEFAULT_JSON) * self.recordCount
                 total_data_mb = round(total_data / one_mb)
 
             if total_data_mb < 256:
@@ -2178,8 +2213,53 @@ class runPerformanceBenchmark(object):
             sys.exit(1)
 
     def doInit(self, cb_cluster):
-        inventory = inventoryManager(self.inventory)
+        by_reference = True
         collection_list = []
+        rule_list = []
+
+        if self.inputFile:
+            by_reference = False
+            self.schema = 'external_file'
+            inventory_data = {
+                'inventory': [
+                    {
+                        'external_file': {
+                            'buckets': [
+                                {
+                                    'name': self.bucket,
+                                    'scopes': [
+                                        {
+                                            'name': '_default',
+                                            'collections': [
+                                                {
+                                                    'name': '_default',
+                                                    'schema': self.getInputJson(),
+                                                    'idkey': self.idField,
+                                                    'indexes': [
+                                                        self.idField,
+                                                        self.queryField,
+                                                    ]
+                                                },
+                                            ]
+                                        },
+                                    ]
+                                },
+                            ]
+                        }
+                    },
+                ]
+            }
+        else:
+            inventory_data = self.inventory
+
+        inventory = inventoryManager(inventory_data, by_reference=by_reference)
+
+        cluster_memory = cb_cluster.get_memquota()
+        if cluster_memory < self.bucketMemory:
+            print("Warning: requested memory %s MiB less than available memory" % self.bucketMemory)
+            print("Adjusting bucket memory to %s MiB" % cluster_memory)
+            self.bucketMemory = cluster_memory
+
         print("Running initialize phase for schema %s" % self.schema)
         try:
             schema = inventory.getSchema(self.schema)
@@ -2202,7 +2282,10 @@ class runPerformanceBenchmark(object):
                                                             self.replicaCount, scope=scope.name,
                                                             collection=collection.name)
                             collection_list.append(collection)
-                return collection_list
+                if inventory.hasRules(schema):
+                    for rule in inventory.nextRule(schema):
+                        rule_list.append(rule)
+                return collection_list, rule_list
             else:
                 raise("Schema %s not found" % self.schema)
         except Exception as e:
@@ -2517,7 +2600,7 @@ class runPerformanceBenchmark(object):
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
             cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
-            collections = self.doInit(cb_cluster)
+            collections, rules = self.doInit(cb_cluster)
         except Exception as e:
             print("Dry run failed with error: %s" % str(e))
             self.logger.critical("dryRun: error: %s" % str(e))
