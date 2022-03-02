@@ -6,10 +6,14 @@ Couchbase Performance Utility
 
 import os
 import sys
+import traceback
 import argparse
 import json
 from couchbase.diagnostics import PingState
 from jinja2 import Template
+from jinja2.environment import Environment
+from jinja2.runtime import DebugUndefined
+from jinja2.meta import find_undeclared_variables
 import time
 import asyncio
 import acouchbase.cluster
@@ -28,6 +32,7 @@ from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import QueryOptions
 from couchbase.cluster import QueryIndexManager
 from couchbase.management.buckets import CreateBucketSettings, BucketType
+from couchbase.management.collections import CollectionSpec
 from couchbase.exceptions import DocumentNotFoundException
 from couchbase.exceptions import CouchbaseException
 from couchbase.exceptions import ParsingFailedException
@@ -35,7 +40,11 @@ import multiprocessing
 from queue import Empty, Full
 import psutil
 import dns.resolver
-import ipaddress
+import numpy
+from PIL import Image
+import io
+import base64
+
 threadLock = multiprocessing.Lock()
 
 LOAD_DATA = 0x0000
@@ -46,6 +55,70 @@ PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
 VERSION = '1.1-alpha'
+
+DEFAULT_SCHEMA_INVENTORY = {
+    'inventory': [
+        {
+            'default': {
+                'buckets': [
+                    {
+                        'name': 'cbperf',
+                        'scopes': [
+                            {
+                                'name': '_default',
+                                'collections': [
+                                    {
+                                        'name': '_default',
+                                        'schema': 'DEFAULT_JSON',
+                                        'idkey': 'record_id',
+                                        'indexes': [
+                                            'record_id',
+                                            'last_name',
+                                        ]
+                                    },
+                                ]
+                            },
+                        ]
+                    },
+                ]
+            }
+        },
+        {
+            'profile_demo': {
+                'buckets': [
+                    {
+                        'name': 'sample_app',
+                        'scopes': [
+                            {
+                                'name': 'profiles',
+                                'collections': [
+                                    {
+                                        'name': 'user_data',
+                                        'schema': 'USER_PROFILE_JSON',
+                                        'idkey': 'record_id',
+                                        'indexes': [
+                                            'record_id',
+                                            'nickname',
+                                            'user_id',
+                                        ]
+                                    },
+                                    {
+                                        'name': 'user_images',
+                                        'schema': 'USER_IMAGE_JSON',
+                                        'idkey': 'record_id',
+                                        'indexes': [
+                                            'record_id',
+                                        ]
+                                    }
+                                ]
+                            },
+                        ]
+                    },
+                ]
+            }
+        }
+    ]
+}
 
 DEFAULT_JSON = {
     'record_id': 'record_id',
@@ -67,6 +140,23 @@ DEFAULT_JSON = {
             'amount': '{{ rand_dollar }}',
         },
     ]
+}
+
+USER_PROFILE_JSON = {
+    'record_id': 'record_id',
+    'name': '{{ rand_first }} {{ rand_last }}',
+    'nickname': '{{ rand_nickname }}',
+    'picture': 'link_user_images',
+    'user_id': '{{ rand_username }}',
+    'email': '{{ rand_email }}',
+    'email_verified': '{{ rand_bool }}',
+    'first_name': '{{ rand_first }}',
+    'last_name': '{{ rand_last }}',
+}
+
+USER_IMAGE_JSON = {
+    'record_id': 'record_id',
+    'image': '{{ rand_image }}',
 }
 
 class randomize(object):
@@ -156,6 +246,13 @@ class randomize(object):
         return self._randomNumber(value) + '.' + self._randomNumber(2)
 
     @property
+    def booleanValue(self):
+        if random.getrandbits(1) == 1:
+            return True
+        else:
+            return False
+
+    @property
     def yearValue(self):
         return str(self._yearNumber())
 
@@ -170,33 +267,31 @@ class randomize(object):
         return f'{value:02}'
 
     @property
-    def pastDateSlash(self):
+    def pastDate(self):
         past_date = datetime.today() - timedelta(days=random.getrandbits(12))
+        return past_date
+
+    @property
+    def dobDate(self):
+        past_date = datetime.today() - timedelta(days=random.getrandbits(14), weeks=1040)
+        return past_date
+
+    def pastDateSlash(self, past_date):
         return past_date.strftime("%m/%d/%Y")
 
-    @property
-    def pastDateHyphen(self):
-        past_date = datetime.today() - timedelta(days=random.getrandbits(12))
+    def pastDateHyphen(self, past_date):
         return past_date.strftime("%m-%d-%Y")
 
-    @property
-    def pastDateText(self):
-        past_date = datetime.today() - timedelta(days=random.getrandbits(12))
+    def pastDateText(self, past_date):
         return past_date.strftime("%b %d %Y")
 
-    @property
-    def dobSlash(self):
-        past_date = datetime.today() - timedelta(days=random.getrandbits(14), weeks=1040)
+    def dobSlash(self, past_date):
         return past_date.strftime("%m/%d/%Y")
 
-    @property
-    def dobHyphen(self):
-        past_date = datetime.today() - timedelta(days=random.getrandbits(14), weeks=1040)
+    def dobHyphen(self, past_date):
         return past_date.strftime("%m-%d-%Y")
 
-    @property
-    def dobText(self):
-        past_date = datetime.today() - timedelta(days=random.getrandbits(14), weeks=1040)
+    def dobText(self, past_date):
         return past_date.strftime("%b %d %Y")
 
     @property
@@ -397,7 +492,30 @@ class randomize(object):
     def dateCode(self):
         return self.datetimestr
 
+    def nickName(self, first_name="John", last_name="Doe"):
+        return first_name[0].lower() + last_name.lower()
+
+    def emailAddress(self, first_name="John", last_name="Doe"):
+        return first_name.lower() + '.' + last_name.lower() + '@example.com'
+
+    def userName(self, first_name="John", last_name="Doe"):
+        return first_name.lower() + last_name.lower() + self.fourDigits
+
+    def randImage(self):
+        random_matrix = numpy.random.rand(128, 128, 3) * 255
+        im = Image.fromarray(random_matrix.astype('uint8')).convert('RGBA')
+        with io.BytesIO() as output:
+            im.save(output, format="JPEG2000")
+            contents = output.getvalue()
+        encoded = base64.b64encode(contents)
+        encoded = encoded.decode('utf-8')
+        return encoded
+
     def testAll(self):
+        past_date = self.pastDate
+        dob_date = self.dobDate
+        first_name = self.firstName
+        last_name = self.lastName
         print("Credit Card: " + self.creditCard)
         print("SSN        : " + self.socialSecurityNumber)
         print("Four Digits: " + self.fourDigits)
@@ -409,25 +527,52 @@ class randomize(object):
         print("Address    : " + self.addressLine)
         print("City       : " + self.cityName)
         print("State      : " + self.stateName)
-        print("First      : " + self.firstName)
-        print("Last       : " + self.lastName)
+        print("First      : " + first_name)
+        print("Last       : " + last_name)
+        print("Nickname   : " + self.nickName(first_name, last_name))
+        print("Email      : " + self.emailAddress(first_name, last_name))
+        print("Username   : " + self.userName(first_name, last_name))
         print("Phone      : " + self.phoneNumber)
+        print("Boolean    : " + str(self.booleanValue))
         print("Date       : " + self.dateCode)
         print("Year       : " + self.yearValue)
         print("Month      : " + self.monthValue)
         print("Day        : " + self.dayValue)
-        print("Past Date 1: " + self.pastDateSlash)
-        print("Past Date 2: " + self.pastDateHyphen)
-        print("Past Date 3: " + self.pastDateText)
-        print("DOB Date 1 : " + self.dobSlash)
-        print("DOB Date 2 : " + self.dobHyphen)
-        print("DOB Date 3 : " + self.dobText)
+        print("Past Date 1: " + self.pastDateSlash(past_date))
+        print("Past Date 2: " + self.pastDateHyphen(past_date))
+        print("Past Date 3: " + self.pastDateText(past_date))
+        print("DOB Date 1 : " + self.dobSlash(dob_date))
+        print("DOB Date 2 : " + self.dobHyphen(dob_date))
+        print("DOB Date 3 : " + self.dobText(dob_date))
+
+        self.prepareTemplate(DEFAULT_JSON)
+        formatted_data = self.processTemplate()
+        print(json.dumps(formatted_data, indent=2))
+
+        self.prepareTemplate(USER_PROFILE_JSON)
+        formatted_data = self.processTemplate()
+        print(json.dumps(formatted_data, indent=2))
 
     def prepareTemplate(self, json_block):
-        self.template = json.dumps(json_block)
+        block_string = json.dumps(json_block)
+        env = Environment(undefined=DebugUndefined)
+        template = env.from_string(block_string)
+        rendered = template.render()
+        ast = env.parse(rendered)
+        self.requested_tags = find_undeclared_variables(ast)
+        self.template = block_string
         self.compiled = Template(self.template)
 
     def processTemplate(self):
+        first_name = self.firstName
+        last_name = self.lastName
+        past_date = self.pastDate
+        dob_date = self.dobDate
+        random_image = None
+
+        if 'rand_image' in self.requested_tags:
+            random_image = self.randImage()
+
         formattedBlock = self.compiled.render(date_time=self.dateCode,
                                               rand_credit_card=self.creditCard,
                                               rand_ssn=self.socialSecurityNumber,
@@ -440,22 +585,28 @@ class randomize(object):
                                               rand_address=self.addressLine,
                                               rand_city=self.cityName,
                                               rand_state=self.stateName,
-                                              rand_first=self.firstName,
-                                              rand_last=self.lastName,
+                                              rand_first=first_name,
+                                              rand_last=last_name,
+                                              rand_nickname=self.nickName(first_name, last_name),
+                                              rand_email=self.emailAddress(first_name, last_name),
+                                              rand_username=self.userName(first_name, last_name),
                                               rand_phone=self.phoneNumber,
+                                              rand_bool=self.booleanValue,
                                               rand_year=self.yearValue,
                                               rand_month=self.monthValue,
                                               rand_day=self.dayValue,
-                                              rand_date_1=self.pastDateSlash,
-                                              rand_date_2=self.pastDateHyphen,
-                                              rand_date_3=self.pastDateText,
-                                              rand_dob_1=self.dobSlash,
-                                              rand_dob_2=self.dobHyphen,
-                                              rand_dob_3=self.dobText,
+                                              rand_date_1=self.pastDateSlash(past_date),
+                                              rand_date_2=self.pastDateHyphen(past_date),
+                                              rand_date_3=self.pastDateText(past_date),
+                                              rand_dob_1=self.dobSlash(dob_date),
+                                              rand_dob_2=self.dobHyphen(dob_date),
+                                              rand_dob_3=self.dobText(dob_date),
+                                              rand_image=random_image,
                                               )
         finished = formattedBlock.encode('ascii')
         jsonBlock = json.loads(finished)
         return jsonBlock
+
 
 class debugOutput(object):
 
@@ -501,6 +652,7 @@ class debugOutput(object):
             print("writeQueryDebug: can not write to file: %s" % str(e))
             sys.exit(1)
 
+
 class mpAtomicCounter(object):
 
     def __init__(self, i=0):
@@ -513,6 +665,7 @@ class mpAtomicCounter(object):
     @property
     def value(self):
         return self.count.value
+
 
 class mpAtomicIncrement(object):
 
@@ -529,6 +682,7 @@ class mpAtomicIncrement(object):
             current = self.count.value
             self.count.value += 1
         return current
+
 
 class rwMixer(object):
 
@@ -559,6 +713,7 @@ class rwMixer(object):
         else:
             return False
 
+
 class fastRandom(object):
 
     def __init__(self, x=256, start=1):
@@ -575,13 +730,16 @@ class fastRandom(object):
             rand_number = self.max_value
         return rand_number
 
+
 class NotAuthorized(Exception):
     def __init__(self, message):
         super().__init__(message)
 
+
 class RequestNotFound(Exception):
     def __init__(self, message):
         super().__init__(message)
+
 
 class cbutil(object):
 
@@ -686,7 +844,7 @@ class cbutil(object):
     @property
     def memquota(self):
         return self.mem_quota
-    
+
     def is_bucket(self, bucket):
         cluster = self.connect_s()
         bm = self.get_bm(cluster)
@@ -698,6 +856,18 @@ class cbutil(object):
         except Exception as e:
             self.logger.debug("is_bucket: bucket %s does not exist" % bucket)
             return False
+
+    def is_scope(self, bucket, scope):
+        cluster = self.connect_s()
+        bucket = cluster.bucket(bucket)
+        cm = bucket.collections()
+        return next((s for s in cm.get_all_scopes() if s.name == scope), None)
+
+    def is_collection(self, bucket, scope, collection):
+        scope = self.is_scope(bucket, scope)
+        if scope:
+            return next((c for c in scope.collections if c.name == collection), None)
+        return None
 
     def create_bucket(self, bucket, mem_quota=512):
         cluster = self.connect_s()
@@ -729,6 +899,75 @@ class cbutil(object):
                 raise Exception("Can not create bucket: %s" % str(e))
         else:
             self.logger.info("Bucket %s exists." % bucket)
+            cluster.disconnect()
+            return True
+
+    def create_scope(self, bucket, scope):
+        cluster = self.connect_s()
+        bucket_object = cluster.bucket(bucket)
+        cm = bucket_object.collections()
+        retries = 0
+        if not self.is_scope(bucket, scope):
+            self.logger.info("Creating scope %s." % scope)
+            try:
+                cm.create_scope(scope)
+                while True:
+                    try:
+                        time.sleep(0.1)
+                        self.logger.debug("create_scope: trying to get scope object")
+                        if self.is_scope(bucket, scope):
+                            cluster.disconnect()
+                            return True
+                    except Exception as e:
+                        self.logger.debug("create_scope: can not find scope: %s" % str(e))
+                        if retries == self.retries:
+                            self.logger.error("create_scope: timeout: %s." % str(e))
+                            raise Exception("Timeout waiting for scope: %s" % str(e))
+                        else:
+                            retries += 1
+                            time.sleep(0.01 * retries)
+                            continue
+            except Exception as e:
+                self.logger.error("create_scope: error: %s" % str(e))
+                raise Exception("Can not create scope: %s" % str(e))
+        else:
+            self.logger.info("Scope %s exists." % scope)
+            cluster.disconnect()
+            return True
+
+    def create_collection(self, bucket, scope, collection):
+        cluster = self.connect_s()
+        bucket_object = cluster.bucket(bucket)
+        cm = bucket_object.collections()
+        retries = 0
+        if not self.is_scope(bucket, scope):
+            raise Exception("create_collection: scope %s does not exist." % scope)
+        if not self.is_collection(bucket, scope, collection):
+            self.logger.info("Creating collection %s." % collection)
+            try:
+                collection_spec = CollectionSpec(collection, scope_name=scope)
+                collection_object = cm.create_collection(collection_spec)
+                while True:
+                    try:
+                        time.sleep(0.1)
+                        self.logger.debug("create_collection: trying to get collection object")
+                        if self.is_collection(bucket, scope, collection):
+                            cluster.disconnect()
+                            return True
+                    except Exception as e:
+                        self.logger.debug("create_collection: can not find collection: %s" % str(e))
+                        if retries == self.retries:
+                            self.logger.error("create_collection: timeout: %s." % str(e))
+                            raise Exception("Timeout waiting for collection: %s" % str(e))
+                        else:
+                            retries += 1
+                            time.sleep(0.01 * retries)
+                            continue
+            except Exception as e:
+                self.logger.error("create_collection: error: %s" % str(e))
+                raise Exception("Can not create collection: %s" % str(e))
+        else:
+            self.logger.info("Collection %s exists." % collection)
             cluster.disconnect()
             return True
 
@@ -771,11 +1010,13 @@ class cbutil(object):
             raise Exception("Could not get index status: %s" % str(e))
         return False
 
-    def create_index(self, bucket, field, index, replica=1):
+    def create_index(self, bucket, field, index, replica=1, scope="_default", collection="_default"):
         retries = 0
+        keyspace = bucket + '.' + scope + '.' + collection
         cluster = self.connect_s()
         self.logger.info("Creating index %s on field %s." % (index, field))
-        queryText = 'CREATE INDEX ' + index + ' ON ' + bucket + '(' + field + ') WITH {"num_replica": ' + str(replica) + '};'
+        queryText = 'CREATE INDEX ' + index + ' ON ' + keyspace + '(' + field + ') WITH {"num_replica": ' + str(
+            replica) + '};'
         while True:
             if self.is_bucket(bucket) and not self.is_index(bucket, index):
                 try:
@@ -809,7 +1050,7 @@ class cbutil(object):
 
         for hostname in self.cluster_hosts():
             response = session.get(self.node_url(hostname) + '/api/v1/stats/' + bucket,
-                                    auth=(self.username, self.password), verify=False, timeout=15)
+                                   auth=(self.username, self.password), verify=False, timeout=15)
 
             try:
                 self.check_status_code(response.status_code)
@@ -822,8 +1063,8 @@ class cbutil(object):
             response_json = json.loads(response.text)
 
             for key in response_json:
-                keyspace, index_name = key.split(':')
-                index_name = index_name.split(' ')[0]
+                index_name = key.split(':')[-1]
+                # index_name = index_name.split(' ')[0]
                 if index_name not in index_data:
                     index_data[index_name] = {}
                 for attribute in response_json[key]:
@@ -866,10 +1107,10 @@ class cbutil(object):
                     if restrict and endpoint.value != 'kv':
                         continue
                     report_string = "{0}: {1} took {2} {3}".format(
-                            endpoint.value,
-                            report.remote,
-                            report.latency,
-                            report.state)
+                        endpoint.value,
+                        report.remote,
+                        report.latency,
+                        report.state)
                     if output:
                         print(report_string)
                     self.logger.info(report_string)
@@ -1073,16 +1314,18 @@ class cbutil(object):
             self.logger.error("connect_bucket_a: error: %s." % str(e))
             raise Exception("Can not connect to bucket: %s" % str(e))
 
-    def create_collection_s(self, bucket):
+    def connect_collection_s(self, bucket, scope="_default", collection="_default"):
         try:
-            return bucket.default_collection()
+            scope_connection = bucket.scope(scope)
+            return scope_connection.collection(collection)
         except Exception as e:
             self.logger.error("collection_s: error: %s." % str(e))
             raise Exception("Can not connect to collection: %s" % str(e))
 
-    async def create_collection_a(self, bucket):
+    async def connect_collection_a(self, bucket, scope="_default", collection="_default"):
         try:
-            collection = bucket.default_collection()
+            scope_connection = bucket.scope(scope)
+            collection = scope_connection.collection(collection)
             await collection.on_connect()
             return collection
         except Exception as e:
@@ -1150,10 +1393,11 @@ class cbutil(object):
                     time.sleep(0.01 * retries)
                     continue
 
-    async def cb_query_a(self, cluster, select, where, value, bucket="pillowfight"):
+    async def cb_query_a(self, cluster, select, where, value, bucket, scope="_default", collection="_default"):
+        keyspace = bucket + '.' + scope + '.' + collection
         contents = []
         retries = 0
-        query = "SELECT " + select + " FROM " + bucket + " WHERE " + where + " = \"" + value + "\";"
+        query = "SELECT " + select + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
         while True:
             try:
                 result = cluster.query(query,
@@ -1174,10 +1418,11 @@ class cbutil(object):
                     time.sleep(0.01 * retries)
                     continue
 
-    def cb_query_s(self, cluster, select, where, value, bucket="pillowfight"):
+    def cb_query_s(self, cluster, select, where, value, bucket, scope="_default", collection="_default"):
+        keyspace = bucket + '.' + scope + '.' + collection
         contents = []
         retries = 0
-        query = "SELECT " + select + " FROM " + bucket + " WHERE " + where + " = \"" + value + "\";"
+        query = "SELECT " + select + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
         while True:
             try:
                 result = cluster.query(query,
@@ -1209,10 +1454,11 @@ class cbutil(object):
                 raise Exception("Could not drop bucket: %s" % str(e))
         cluster.disconnect()
 
-    def drop_index(self, bucket, index):
+    def drop_index(self, bucket, index, scope="_default", collection="_default"):
+        keyspace = bucket + '.' + scope + '.' + collection
         cluster = self.connect_s()
         self.logger.info("Dropping index %s.", index)
-        queryText = 'DROP INDEX ' + index + ' ON ' + bucket + ' USING GSI;'
+        queryText = 'DROP INDEX ' + index + ' ON ' + keyspace + ' USING GSI;'
         if self.is_bucket(bucket) and self.is_index(bucket, index):
             try:
                 result = cluster.query(queryText, QueryOptions(metrics=True))
@@ -1261,6 +1507,103 @@ class cbutil(object):
                     time.sleep(0.01 * retries)
                     continue
 
+
+class schemaElement(object):
+
+    def __init__(self, name):
+        self.name = name
+        self.buckets = []
+
+class bucketElement(object):
+
+    def __init__(self, name):
+        self.name = name
+        self.scopes = []
+
+class scopeElement(object):
+
+    def __init__(self, name):
+        self.name = name
+        self.collections = []
+
+class collectionElement(object):
+
+    def __init__(self, name, bucket, scope):
+        self.name = name
+        self.bucket = bucket
+        self.scope = scope
+        self.id = None
+        self.schema = {}
+        self.indexes = []
+
+class inventoryManager(object):
+
+    def __init__(self, inventory):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.inventory_json = inventory
+        self.schemas = []
+
+        # print(json.dumps(self.inventory_json, indent=2))
+        for w, schema_object in enumerate(self.inventory_json['inventory']):
+            for key, value in schema_object.items():
+                self.logger.info("adding schema %s to inventory" % key)
+                node = schemaElement(key)
+                self.schemas.insert(0, node)
+                for x, bucket in enumerate(value['buckets']):
+                    self.logger.info("adding bucket %s to inventory" % bucket['name'])
+                    node = bucketElement(bucket['name'])
+                    self.schemas[0].buckets.insert(0, node)
+                    for y, scope in enumerate(value['buckets'][x]['scopes']):
+                        self.logger.info("adding scope %s to inventory" % scope['name'])
+                        node = scopeElement(scope['name'])
+                        self.schemas[0].buckets[0].scopes.insert(0, node)
+                        for z, collection in enumerate(value['buckets'][x]['scopes'][y]['collections']):
+                            self.logger.info("adding collection %s to inventory" % collection['name'])
+                            node = collectionElement(collection['name'], bucket['name'], scope['name'])
+                            self.schemas[0].buckets[0].scopes[0].collections.insert(0, node)
+                            self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(eval(collection['schema']))
+                            self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
+                            if 'indexes' in collection:
+                                for index_field in collection['indexes']:
+                                    self.logger.info("adding index for field %s to inventory" % index_field)
+                                    index_data = {}
+                                    index_data['field'] = index_field
+                                    index_data['name'] = self.indexName(
+                                        self.schemas[0].buckets[0].scopes[0].collections[0], index_field)
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].indexes.append(index_data)
+
+    def getSchema(self, schema):
+        return next((s for s in self.schemas if s.name == schema), None)
+
+    def nextBucket(self, schema):
+        for i in range(len(schema.buckets)):
+            yield schema.buckets[i]
+
+    def nextScope(self, bucket):
+        for i in range(len(bucket.scopes)):
+            yield bucket.scopes[i]
+
+    def nextCollection(self, scope):
+        for i in range(len(scope.collections)):
+            yield scope.collections[i]
+
+    def hasIndexes(self, collection):
+        if len(collection.indexes) > 0:
+            return True
+        else:
+            return False
+
+    def indexName(self, collection, field):
+        return collection.bucket + '_' + collection.scope + '_' + collection.name + '_' + field + '_ix'
+
+    def nextIndex(self, collection):
+        for i in range(len(collection.indexes)):
+            yield collection.indexes[i]['field'], collection.indexes[i]['name']
+
+    def getIndex(self, collection, field):
+        return next(((i['field'], i['name']) for i in collection.indexes if i['field'] == field), None)
+
+
 class params(object):
 
     def __init__(self):
@@ -1285,6 +1628,7 @@ class params(object):
         run_parser.add_argument('--trun', action='store', help="Threads for Run", type=int)
         run_parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int)
         run_parser.add_argument('--file', action='store', help="Input JSON File")
+        run_parser.add_argument('--schema', action='store', help="Test Schema", default="default")
         run_parser.add_argument('--id', action='store', help="Numeric ID Field in JSON File", default="record_id")
         run_parser.add_argument('--query', action='store', help="Field to query in JSON File", default="last_name")
         run_parser.add_argument('--load', action='store_true', help="Only Load Data")
@@ -1298,6 +1642,7 @@ class params(object):
         self.list_parser = list_parser
         self.clean_parser = clean_parser
         self.health_parser = health_parser
+
 
 class runPerformanceBenchmark(object):
 
@@ -1346,6 +1691,13 @@ class runPerformanceBenchmark(object):
         self.username = parameters.user
         self.password = parameters.password
         self.bucket = parameters.bucket
+        self.scope = '_default'
+        self.collection = '_default'
+        if self.inputFile:
+            self.schema = "external_file"
+        else:
+            self.schema = parameters.schema
+        self.inventory = DEFAULT_SCHEMA_INVENTORY
         self.host = parameters.host
         self.tls = parameters.tls
         self.debug = parameters.debug
@@ -1669,7 +2021,7 @@ class runPerformanceBenchmark(object):
         try:
             if not os.path.exists(config_directory):
                 os.makedirs(config_directory)
-        except Exception:
+        except Exception as e:
             self.logger.error("writeDefaultConfigFile: can not access config directory: %s" % config_directory)
             raise Exception("Can not access config file directory: %s" % str(e))
 
@@ -1704,7 +2056,8 @@ class runPerformanceBenchmark(object):
                 do_cleanup = test_json[key]['cleanup']
                 do_pause = test_json[key]['pause']
                 if test_json[key]['calibrate']:
-                    self.runCalibration(test_json[key]['test'], init=do_init, run=do_run, cleanup=do_cleanup, pause=do_pause)
+                    self.runCalibration(test_json[key]['test'], init=do_init, run=do_run, cleanup=do_cleanup,
+                                        pause=do_pause)
                 else:
                     self.runTest(test_json[key]['test'], init=do_init, run=do_run, cleanup=do_cleanup, pause=do_pause)
         except KeyError as e:
@@ -1754,10 +2107,10 @@ class runPerformanceBenchmark(object):
             raise Exception("cleanUp: Can not connect to couchbase: %s" % str(e))
 
         print("Cleaning up.")
-        print("Dropping index %s." % self.fieldIndex)
-        cb_cluster.drop_index(self.bucket, self.fieldIndex)
-        print("Dropping index %s." % self.idIndex)
-        cb_cluster.drop_index(self.bucket, self.idIndex)
+        # print("Dropping index %s." % self.fieldIndex)
+        # cb_cluster.drop_index(self.bucket, self.fieldIndex)
+        # print("Dropping index %s." % self.idIndex)
+        # cb_cluster.drop_index(self.bucket, self.idIndex)
         if not self.skipBucket:
             print("Dropping bucket %s." % self.bucket)
             cb_cluster.drop_bucket(self.bucket)
@@ -1808,6 +2161,55 @@ class runPerformanceBenchmark(object):
             mode_string = 'Other Test'
         return mode_string
 
+    def externalFileInit(self, cb_cluster):
+        print("Running initialize phase for an external file supplied schema.")
+        try:
+            if not self.skipBucket:
+                print("Creating bucket %s." % self.bucket)
+                cb_cluster.create_bucket(self.bucket, self.bucketMemory)
+            else:
+                print("Skipping bucket creation.")
+            print("Creating index %s." % self.fieldIndex)
+            cb_cluster.create_index(self.bucket, self.queryField, self.fieldIndex, self.replicaCount)
+            print("Creating index %s." % self.idIndex)
+            cb_cluster.create_index(self.bucket, self.idField, self.idIndex, self.replicaCount)
+        except Exception as e:
+            print("Initialization phase failed: %s" % str(e))
+            sys.exit(1)
+
+    def doInit(self, cb_cluster):
+        inventory = inventoryManager(self.inventory)
+        collection_list = []
+        print("Running initialize phase for schema %s" % self.schema)
+        try:
+            schema = inventory.getSchema(self.schema)
+            if schema:
+                for bucket in inventory.nextBucket(schema):
+                    print("Creating bucket %s." % bucket.name)
+                    cb_cluster.create_bucket(bucket.name, self.bucketMemory)
+                    for scope in inventory.nextScope(bucket):
+                        if scope.name != '_default':
+                            print("Creating scope %s." % scope.name)
+                            cb_cluster.create_scope(bucket.name, scope.name)
+                        for collection in inventory.nextCollection(scope):
+                            if collection.name != '_default':
+                                print("Creating collection %s." % collection.name)
+                                cb_cluster.create_collection(bucket.name, scope.name, collection.name)
+                            if inventory.hasIndexes(collection):
+                                for index_field, index_name in inventory.nextIndex(collection):
+                                    print("Creating index %s." % index_name)
+                                    cb_cluster.create_index(bucket.name, index_field, index_name,
+                                                            self.replicaCount, scope=scope.name,
+                                                            collection=collection.name)
+                            collection_list.append(collection)
+                return collection_list
+            else:
+                raise("Schema %s not found" % self.schema)
+        except Exception as e:
+            print("Initialization failed: %s" % str(e))
+            print(traceback.format_exc())
+            sys.exit(1)
+
     def printStatusThread(self, count, threads):
         threadVector = [0 for i in range(threads)]
         totalTps = 0
@@ -1854,7 +2256,8 @@ class runPerformanceBenchmark(object):
                 end_char = '\r'
                 print("Operation %d of %d in progress, %.6f time, %d TPS, %d%% completed %s" %
                       (totalOps, count, op_time_delta, trans_per_sec, self.percentage, extra_string), end=end_char)
-                self.logger.debug("%d %d %d %d %d %.6f %d" % (reporting_thread, entryOps, totalOps, totalTps, averageTps, averageTime, sampleCount))
+                self.logger.debug("%d %d %d %d %d %.6f %d" % (
+                reporting_thread, entryOps, totalOps, totalTps, averageTps, averageTime, sampleCount))
             if int(telemetry[0]) == RUN_STOP:
                 sys.stdout.write("\033[K")
                 print("Operation %d of %d, %d%% complete." % (totalOps, count, self.percentage))
@@ -1919,7 +2322,7 @@ class runPerformanceBenchmark(object):
         def threadVectorExtend(n):
             if len(threadVector) <= n:
                 grow = (n - len(threadVector)) + 1
-                threadVector.extend([0]*grow)
+                threadVector.extend([0] * grow)
 
         while True:
             try:
@@ -1966,8 +2369,10 @@ class runPerformanceBenchmark(object):
                     maxTime = time_delta
                 end_char = '\r'
                 print("Operation %d with %d threads, %.6f time, %d TPS, CPU %.1f%%, Mem %.1f    " %
-                      (totalOps, threadVectorSize, op_time_delta, trans_per_sec, averageCpu, mem_usage.percent), end=end_char)
-                self.logger.debug("%d %d %d %d %d %.6f %d" % (reporting_thread, entryOps, totalOps, totalTps, averageTps, averageTime, sampleCount))
+                      (totalOps, threadVectorSize, op_time_delta, trans_per_sec, averageCpu, mem_usage.percent),
+                      end=end_char)
+                self.logger.debug("%d %d %d %d %d %.6f %d" % (
+                reporting_thread, entryOps, totalOps, totalTps, averageTps, averageTime, sampleCount))
                 loop_time_marker = time.perf_counter()
                 if decTrend or maxTime > latency or averageCpu > 90 or mem_usage.percent > 70:
                     exitFunction()
@@ -2084,7 +2489,7 @@ class runPerformanceBenchmark(object):
 
             self.runReset()
             print("Calibration completed in %s" % time.strftime("%H hours %M minutes %S seconds.",
-                                                         time.gmtime(end_time - start_time)))
+                                                                time.gmtime(end_time - start_time)))
 
         if pause:
             try:
@@ -2112,129 +2517,125 @@ class runPerformanceBenchmark(object):
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
             cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
-
-            if not self.useSync:
-                self.logger.info("Connecting to the cluster with async.")
-                cluster = loop.run_until_complete(cb_cluster.connect_a())
-            else:
-                self.logger.info("Connecting to the cluster with sync.")
-                cluster = cb_cluster.connect_s()
-
-            if not self.skipBucket:
-                print("Creating bucket %s." % self.bucket)
-                cb_cluster.create_bucket(self.bucket, self.bucketMemory)
-            else:
-                print("Skipping bucket creation.")
-
-            self.logger.info("Connecting to bucket.")
-            if not self.useSync:
-                bucket = loop.run_until_complete(cb_cluster.connect_bucket_a(cluster, self.bucket))
-            else:
-                bucket = cb_cluster.connect_bucket_s(cluster, self.bucket)
-
-            self.logger.info("Connecting to collection.")
-            if not self.useSync:
-                collection = loop.run_until_complete(cb_cluster.create_collection_a(bucket))
-            else:
-                collection = cb_cluster.create_collection_s(bucket)
-
-            print("Creating index %s." % self.fieldIndex)
-            cb_cluster.create_index(self.bucket, self.queryField, self.fieldIndex, self.replicaCount)
-            print("Creating index %s." % self.idIndex)
-            cb_cluster.create_index(self.bucket, self.idField, self.idIndex, self.replicaCount)
+            collections = self.doInit(cb_cluster)
         except Exception as e:
-            self.logger.critical("%s" % str(e))
+            print("Dry run failed with error: %s" % str(e))
+            self.logger.critical("dryRun: error: %s" % str(e))
+            print(traceback.format_exc())
             sys.exit(1)
 
         print("CBPerf Test connected to cluster %s version %s." % (self.host, cb_cluster.version))
 
-        inputFileJson = self.getInputJson()
-
-        try:
-            r = randomize()
-            r.prepareTemplate(inputFileJson)
-        except Exception as e:
-            print("Can not load JSON template: %s." % str(e))
-            sys.exit(1)
-
-        record_id = str(format(record_number, '032'))
-
-        if not self.limitNetworkPorts:
-            index_data = cb_cluster.index_stats(self.bucket)
-            if self.idIndex not in index_data:
-                print("Database is not properly indexed.")
-
-            current_doc_count = index_data[self.idIndex]['num_docs_indexed']
-
-            if current_doc_count > 0:
-                db_doc_count = int(current_doc_count) / (int(self.replicaCount) + 1)
-                print("Warning: database not empty, %d doc(s) already indexed." % db_doc_count)
-        else:
-             print("Exposed port limit: Skipping index check.")
-
-        print("Attempting to insert record %d..." % record_number)
-        jsonDoc = r.processTemplate()
-        jsonDoc[self.idField] = record_id
         if not self.useSync:
-            result = loop.run_until_complete(cb_cluster.cb_upsert_a(collection, record_id, jsonDoc))
+            self.logger.info("Connecting to the cluster with async.")
+            cluster = loop.run_until_complete(cb_cluster.connect_a())
         else:
-            result = cb_cluster.cb_upsert_s(collection, record_id, jsonDoc)
+            self.logger.info("Connecting to the cluster with sync.")
+            cluster = cb_cluster.connect_s()
 
-        print("Insert complete.")
-        print(result.cas)
+        for coll_obj in collections:
+            inputFileJson = coll_obj.schema
 
-        print("Attempting to read record %d..." % record_number)
-        if not self.useSync:
-            result = loop.run_until_complete(cb_cluster.cb_get_a(collection, record_id))
-        else:
-            result = cb_cluster.cb_get_s(collection, record_id)
+            self.logger.info("Connecting to bucket.")
+            if not self.useSync:
+                bucket = loop.run_until_complete(cb_cluster.connect_bucket_a(cluster, coll_obj.bucket))
+            else:
+                bucket = cb_cluster.connect_bucket_s(cluster, coll_obj.bucket)
 
-        print("Read complete.")
-        print(json.dumps(result.content_as[dict], indent=2))
+            self.logger.info("Connecting to collection.")
+            if not self.useSync:
+                collection = loop.run_until_complete(cb_cluster.connect_collection_a(
+                    bucket, coll_obj.scope, coll_obj.name))
+            else:
+                collection = cb_cluster.connect_collection_s(bucket, coll_obj.scope, coll_obj.name)
 
-        if not self.limitNetworkPorts:
-            print("Waiting for the inserted document to be indexed.")
-            if not cb_cluster.index_wait(self.bucket, self.idIndex, current_doc_count + 1):
+            try:
+                r = randomize()
+                r.prepareTemplate(inputFileJson)
+            except Exception as e:
+                print("Can not load JSON template: %s." % str(e))
                 sys.exit(1)
-        else:
-            print("Port limit: Skipping index wait.")
-            time.sleep(0.1)
 
-        while retries <= 5:
-            print("Attempting to query record %d retry %d..." % (record_number, retries))
+            record_id = str(format(record_number, '032'))
+            idField = coll_obj.id
+            idIndexName = next((i['name'] for i in coll_obj.indexes if i['field'] == idField), None)
+            queryField = next((i['field'] for i in coll_obj.indexes if i['field'] != idField), idField)
+
+            if not self.limitNetworkPorts:
+                index_data = cb_cluster.index_stats(coll_obj.bucket)
+                if idIndexName not in index_data:
+                    print("Database is not properly indexed.")
+
+                current_doc_count = index_data[idIndexName]['num_docs_indexed']
+
+                if current_doc_count > 0:
+                    db_doc_count = int(current_doc_count) / (int(self.replicaCount) + 1)
+                    print("Warning: database not empty, %d doc(s) already indexed." % db_doc_count)
+            else:
+                print("Exposed port limit: Skipping index check.")
+
+            print("Attempting to insert record %d..." % record_number)
+            jsonDoc = r.processTemplate()
+            jsonDoc[idField] = record_id
             if not self.useSync:
-                result = loop.run_until_complete(cb_cluster.cb_query_a(cluster, self.queryField, self.idField, record_id, self.bucket))
+                result = loop.run_until_complete(cb_cluster.cb_upsert_a(collection, record_id, jsonDoc))
             else:
-                result = cb_cluster.cb_query_s(cluster, self.queryField, self.idField, record_id, self.bucket)
+                result = cb_cluster.cb_upsert_s(collection, record_id, jsonDoc)
 
-            if len(result) == 0:
-                retries += 1
-                print("No rows returned, retrying...")
-                time.sleep(0.2 * retries)
-                continue
-            else:
-                break
+            print("Insert complete.")
+            print(result.cas)
 
-        if len(result) > 0:
-            print("Query complete.")
-            for i in range(len(result)):
-                print(json.dumps(result[i], indent=2))
-        else:
-            print("Could not query record %d." % record_number)
-            return
-
-        if self.runRemoveTest:
-            print("Attempting to remove record %d..." % record_number)
+            print("Attempting to read record %d..." % record_number)
             if not self.useSync:
-                result = loop.run_until_complete(cb_cluster.cb_remove_a(collection, record_id))
+                result = loop.run_until_complete(cb_cluster.cb_get_a(collection, record_id))
             else:
-                result = cb_cluster.cb_remove_s(collection, record_id)
+                result = cb_cluster.cb_get_s(collection, record_id)
+
+            print("Read complete.")
+            print(json.dumps(result.content_as[dict], indent=2))
+
+            if not self.limitNetworkPorts:
+                print("Waiting for the inserted document to be indexed.")
+                if not cb_cluster.index_wait(coll_obj.bucket, idIndexName, current_doc_count + 1):
+                    sys.exit(1)
+            else:
+                print("Port limit: Skipping index wait.")
+                time.sleep(0.1)
+
+            while retries <= 5:
+                print("Attempting to query record %d retry %d..." % (record_number, retries))
+                if not self.useSync:
+                    result = loop.run_until_complete(
+                        cb_cluster.cb_query_a(
+                            cluster, queryField, idField, record_id, coll_obj.bucket, coll_obj.scope, coll_obj.name))
+                else:
+                    result = cb_cluster.cb_query_s(
+                        cluster, queryField, idField, record_id, coll_obj.bucket, coll_obj.scope, coll_obj.name)
+
+                if len(result) == 0:
+                    retries += 1
+                    print("No rows returned, retrying...")
+                    time.sleep(0.2 * retries)
+                    continue
+                else:
+                    break
+
+            if len(result) > 0:
+                print("Query complete.")
+                for i in range(len(result)):
+                    print(json.dumps(result[i], indent=2))
+            else:
+                print("Could not query record %d." % record_number)
+                return
+
+            if self.runRemoveTest:
+                print("Attempting to remove record %d..." % record_number)
+                if not self.useSync:
+                    result = loop.run_until_complete(cb_cluster.cb_remove_a(collection, record_id))
+                else:
+                    result = cb_cluster.cb_remove_s(collection, record_id)
 
         print("Cleaning up.")
-        print("Dropping index %s." % self.fieldIndex)
-        cb_cluster.drop_index(self.bucket, self.fieldIndex)
-        print("Dropping index %s." % self.idIndex)
-        cb_cluster.drop_index(self.bucket, self.idIndex)
         if not self.skipBucket:
             print("Dropping bucket %s" % self.bucket)
             cb_cluster.drop_bucket(self.bucket)
@@ -2280,9 +2681,9 @@ class runPerformanceBenchmark(object):
 
             self.logger.info("Connecting to collection.")
             if not self.useSync:
-                collection = loop.run_until_complete(cb_cluster.create_collection_a(bucket))
+                collection = loop.run_until_complete(cb_cluster.connect_collection_a(bucket))
             else:
-                collection = cb_cluster.create_collection_s(bucket)
+                collection = cb_cluster.connect_collection_s(bucket)
         except Exception as e:
             self.logger.critical("%s" % str(e))
             sys.exit(1)
@@ -2324,9 +2725,11 @@ class runPerformanceBenchmark(object):
                             tasks.append(result)
                     elif mode == QUERY_TEST:
                         if not self.useSync:
-                            tasks.append(cb_cluster.cb_query_a(cluster, self.queryField, self.idField, record_id, self.bucket))
+                            tasks.append(
+                                cb_cluster.cb_query_a(cluster, self.queryField, self.idField, record_id, self.bucket))
                         else:
-                            result = cb_cluster.cb_query_s(cluster, self.queryField, self.idField, record_id, self.bucket)
+                            result = cb_cluster.cb_query_s(cluster, self.queryField, self.idField, record_id,
+                                                           self.bucket)
                             tasks.append(result)
                     else:
                         if not self.useSync:
@@ -2401,7 +2804,9 @@ class runPerformanceBenchmark(object):
                   % ('{:,}'.format(operation_count), read_percentage, self.writePercent))
             start_time = time.perf_counter()
 
-            instances = [multiprocessing.Process(target=self.testInstance, args=(inputFileJson, mode, operation_count, n)) for n in range(run_threads)]
+            instances = [
+                multiprocessing.Process(target=self.testInstance, args=(inputFileJson, mode, operation_count, n)) for n
+                in range(run_threads)]
             for p in instances:
                 p.daemon = True
                 p.start()
@@ -2415,7 +2820,8 @@ class runPerformanceBenchmark(object):
             statusThread.join()
             end_time = time.perf_counter()
 
-            print("Test completed in %s" % time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time)))
+            print("Test completed in %s" % time.strftime("%H hours %M minutes %S seconds.",
+                                                         time.gmtime(end_time - start_time)))
             self.runReset()
 
         if pause:
@@ -2432,8 +2838,10 @@ class runPerformanceBenchmark(object):
                 print("Error: %s" % str(e))
                 sys.exit(1)
 
+
 def main():
     runPerformanceBenchmark()
+
 
 if __name__ == '__main__':
 
