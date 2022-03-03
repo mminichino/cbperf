@@ -7,6 +7,7 @@ Couchbase Performance Utility
 import os
 import sys
 import traceback
+import signal
 import argparse
 import json
 from couchbase.diagnostics import PingState
@@ -31,6 +32,7 @@ from couchbase.cluster import Cluster, ClusterOptions, QueryOptions, ClusterTime
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import QueryOptions
 from couchbase.cluster import QueryIndexManager
+import couchbase.subdocument as SD
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.exceptions import DocumentNotFoundException
@@ -71,6 +73,7 @@ DEFAULT_SCHEMA_INVENTORY = {
                                         'name': '_default',
                                         'schema': 'DEFAULT_JSON',
                                         'idkey': 'record_id',
+                                        'primary_index': False,
                                         'indexes': [
                                             'record_id',
                                             'last_name',
@@ -96,6 +99,7 @@ DEFAULT_SCHEMA_INVENTORY = {
                                         'name': 'user_data',
                                         'schema': 'USER_PROFILE_JSON',
                                         'idkey': 'record_id',
+                                        'primary_index': True,
                                         'indexes': [
                                             'record_id',
                                             'nickname',
@@ -106,6 +110,7 @@ DEFAULT_SCHEMA_INVENTORY = {
                                         'name': 'user_images',
                                         'schema': 'USER_IMAGE_JSON',
                                         'idkey': 'record_id',
+                                        'primary_index': True,
                                         'indexes': [
                                             'record_id',
                                         ]
@@ -166,6 +171,11 @@ USER_IMAGE_JSON = {
     'record_id': 'record_id',
     'image': '{{ rand_image }}',
 }
+
+def break_signal_handler(sig, frame):
+    print("")
+    print("Break received, aborting.")
+    sys.exit(1)
 
 class randomize(object):
 
@@ -1401,11 +1411,80 @@ class cbutil(object):
                     time.sleep(0.01 * retries)
                     continue
 
-    async def cb_query_a(self, cluster, select, where, value, bucket, scope="_default", collection="_default"):
+    async def cb_subdoc_upsert_a(self, collection, key, field, value):
+        self.logger.info("cb_upsert_a %s" % key)
+        retries = 0
+        while True:
+            try:
+                self.logger.debug("cb_subdoc_upsert_a entering loop")
+                result = await collection.mutate_in(key, [SD.upsert(field, value)])
+                return result
+            except Exception as e:
+                if retries == self.retries:
+                    self.logger.error("cb_subdoc_upsert_a: error: %s." % str(e))
+                    raise Exception("cb_subdoc_upsert_a SDK error: %s" % str(e))
+                else:
+                    self.logger.debug("cb_subdoc_upsert_a retry due to %s" % str(e))
+                    retries += 1
+                    time.sleep(0.01 * retries)
+                    continue
+
+    def cb_subdoc_upsert_s(self, collection, key, field, value):
+        retries = 0
+        while True:
+            try:
+                result = collection.mutate_in(key, [SD.upsert(field, value)])
+                return result
+            except Exception as e:
+                if retries == self.retries:
+                    self.logger.error("cb_subdoc_upsert_s: error: %s." % str(e))
+                    raise Exception("cb_subdoc_upsert_s SDK error: %s" % str(e))
+                else:
+                    retries += 1
+                    time.sleep(0.01 * retries)
+                    continue
+
+    async def cb_subdoc_get_a(self, collection, key, field):
+        self.logger.info("cb_upsert_a %s" % key)
+        retries = 0
+        while True:
+            try:
+                self.logger.debug("cb_subdoc_get_a entering loop")
+                result = await collection.lookup_in(key, [SD.get(field)])
+                return result.content_as[str](0)
+            except Exception as e:
+                if retries == self.retries:
+                    self.logger.error("cb_subdoc_get_a: error: %s." % str(e))
+                    raise Exception("cb_subdoc_get_a SDK error: %s" % str(e))
+                else:
+                    self.logger.debug("cb_subdoc_get_a retry due to %s" % str(e))
+                    retries += 1
+                    time.sleep(0.01 * retries)
+                    continue
+
+    def cb_subdoc_get_s(self, collection, key, field):
+        retries = 0
+        while True:
+            try:
+                result = collection.lookup_in(key, [SD.get(field)])
+                return result.content_as[str](0)
+            except Exception as e:
+                if retries == self.retries:
+                    self.logger.error("cb_subdoc_get_s: error: %s." % str(e))
+                    raise Exception("cb_subdoc_get_s SDK error: %s" % str(e))
+                else:
+                    retries += 1
+                    time.sleep(0.01 * retries)
+                    continue
+
+    async def cb_query_a(self, cluster, bucket, field, where=None, value=None, scope="_default", collection="_default"):
         keyspace = bucket + '.' + scope + '.' + collection
         contents = []
         retries = 0
-        query = "SELECT " + select + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
+        if not where:
+            query = "SELECT " + field + " FROM " + keyspace + ";"
+        else:
+            query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
         while True:
             try:
                 result = cluster.query(query,
@@ -1426,11 +1505,14 @@ class cbutil(object):
                     time.sleep(0.01 * retries)
                     continue
 
-    def cb_query_s(self, cluster, select, where, value, bucket, scope="_default", collection="_default"):
+    def cb_query_s(self, cluster, bucket, field, where=None, value=None, scope="_default", collection="_default"):
         keyspace = bucket + '.' + scope + '.' + collection
         contents = []
         retries = 0
-        query = "SELECT " + select + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
+        if not where:
+            query = "SELECT " + field + " FROM " + keyspace + ";"
+        else:
+            query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
         while True:
             try:
                 result = cluster.query(query,
@@ -1542,6 +1624,7 @@ class collectionElement(object):
         self.bucket = bucket
         self.scope = scope
         self.id = None
+        self.primary_key = False
         self.schema = {}
         self.indexes = []
 
@@ -1576,6 +1659,7 @@ class inventoryManager(object):
                             else:
                                 self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
                             self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
+                            self.schemas[0].buckets[0].scopes[0].collections[0].primary_key = collection['primary_index']
                             if 'indexes' in collection:
                                 for index_field in collection['indexes']:
                                     self.logger.info("adding index for field %s to inventory" % index_field)
@@ -2099,7 +2183,7 @@ class runPerformanceBenchmark(object):
             self.logger.error("runTestScenario: syntax error: %s" % str(e))
             raise Exception("Scenario syntax error: %s." % str(e))
 
-    def pauseTestRun(self):
+    def pauseTestRun(self, collections):
         document_index_count = self.replicaCount + 1
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
@@ -2107,12 +2191,6 @@ class runPerformanceBenchmark(object):
         except Exception as e:
             self.logger.critical("%s" % str(e))
             sys.exit(1)
-
-        try:
-            document_count = int(cb_cluster.bucket_count(self.bucket))
-        except Exception as e:
-            self.logger.error("pauseTestRun: %s" % str(e))
-            raise Exception("%s" % str(e))
 
         print("Checking cluster health...", end=' ')
         if self.waitOn(cb_cluster.health, restrict=self.limitNetworkPorts):
@@ -2122,16 +2200,27 @@ class runPerformanceBenchmark(object):
             self.logger.critical("pauseTestRun: cluster health check failed.")
             raise Exception("Cluster health check failed.")
 
-        if not self.limitNetworkPorts:
-            index_data = cb_cluster.index_stats(self.bucket)
-            if self.idIndex not in index_data:
-                self.logger.critical("Database is not properly indexed.")
-                sys.exit(1)
-            print("Waiting for %s document(s) to be indexed." % f'{document_count:,}')
-            if not cb_cluster.index_wait(self.bucket, self.idIndex, document_count * document_index_count):
-                sys.exit(1)
-        else:
-            print("Exposed port limit: skipping index check.")
+        for coll_obj in collections:
+            idField = coll_obj.id
+            idIndexName = next((i['name'] for i in coll_obj.indexes if i['field'] == idField), None)
+            queryField = next((i['field'] for i in coll_obj.indexes if i['field'] != idField), idField)
+
+            try:
+                document_count = int(cb_cluster.bucket_count(coll_obj.bucket))
+            except Exception as e:
+                self.logger.error("pauseTestRun: %s" % str(e))
+                raise Exception("%s" % str(e))
+
+            if not self.limitNetworkPorts:
+                index_data = cb_cluster.index_stats(coll_obj.bucket)
+                if idIndexName not in index_data:
+                    self.logger.critical("Database is not properly indexed.")
+                    sys.exit(1)
+                print("Waiting for %s document(s) to be indexed." % f'{document_count:,}')
+                if not cb_cluster.index_wait(coll_obj.bucket, idIndexName, document_count * document_index_count):
+                    sys.exit(1)
+            else:
+                print("Exposed port limit: skipping index check.")
 
     def cleanUp(self):
         try:
@@ -2212,7 +2301,7 @@ class runPerformanceBenchmark(object):
             print("Initialization phase failed: %s" % str(e))
             sys.exit(1)
 
-    def doInit(self, cb_cluster):
+    def doInit(self, cb_cluster, create=True):
         by_reference = True
         collection_list = []
         rule_list = []
@@ -2265,17 +2354,20 @@ class runPerformanceBenchmark(object):
             schema = inventory.getSchema(self.schema)
             if schema:
                 for bucket in inventory.nextBucket(schema):
-                    print("Creating bucket %s." % bucket.name)
-                    cb_cluster.create_bucket(bucket.name, self.bucketMemory)
+                    if create:
+                        print("Creating bucket %s." % bucket.name)
+                        cb_cluster.create_bucket(bucket.name, self.bucketMemory)
                     for scope in inventory.nextScope(bucket):
                         if scope.name != '_default':
-                            print("Creating scope %s." % scope.name)
-                            cb_cluster.create_scope(bucket.name, scope.name)
+                            if create:
+                                print("Creating scope %s." % scope.name)
+                                cb_cluster.create_scope(bucket.name, scope.name)
                         for collection in inventory.nextCollection(scope):
                             if collection.name != '_default':
-                                print("Creating collection %s." % collection.name)
-                                cb_cluster.create_collection(bucket.name, scope.name, collection.name)
-                            if inventory.hasIndexes(collection):
+                                if create:
+                                    print("Creating collection %s." % collection.name)
+                                    cb_cluster.create_collection(bucket.name, scope.name, collection.name)
+                            if inventory.hasIndexes(collection) and create:
                                 for index_field, index_name in inventory.nextIndex(collection):
                                     print("Creating index %s." % index_name)
                                     cb_cluster.create_index(bucket.name, index_field, index_name,
@@ -2292,6 +2384,113 @@ class runPerformanceBenchmark(object):
             print("Initialization failed: %s" % str(e))
             print(traceback.format_exc())
             sys.exit(1)
+
+    def getIdKey(self, collections, bucket, scope, collection):
+        for coll_obj in collections:
+            if coll_obj.bucket == bucket:
+                if coll_obj.scope == scope:
+                    if coll_obj.name == collection:
+                        return coll_obj.id
+
+    def runLinkRule(self, cb_cluster, cluster, collections, foreign_keyspace, primary_keyspace):
+        loop = asyncio.get_event_loop()
+
+        if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:
+            raise Exception("runLinkRule: link rule key syntax incorrect")
+        foreign_bucket, foreign_scope, foreign_collection, foreign_field = foreign_keyspace
+        primary_bucket, primary_scope, primary_collection, primary_field = primary_keyspace
+
+        foreign_id = self.getIdKey(collections, foreign_bucket, foreign_scope, foreign_collection)
+        primary_id = self.getIdKey(collections, primary_bucket, primary_scope, primary_collection)
+
+        if not self.useSync:
+            foreign_key_list = loop.run_until_complete(
+                cb_cluster.cb_query_a(cluster, foreign_bucket, foreign_id,
+                                      scope=foreign_scope, collection=foreign_collection))
+        else:
+            foreign_key_list = cb_cluster.cb_query_s(
+                cluster, foreign_bucket, foreign_id,
+                scope=foreign_scope, collection=foreign_collection)
+
+        if not self.useSync:
+            primary_key_list = loop.run_until_complete(
+                cb_cluster.cb_query_a(cluster, primary_bucket, primary_id,
+                                      scope=primary_scope, collection=primary_collection))
+        else:
+            primary_key_list = cb_cluster.cb_query_s(
+                cluster, primary_bucket, primary_id,
+                scope=primary_scope, collection=primary_collection)
+
+        if len(foreign_key_list) != len(primary_key_list):
+            raise Exception("runLinkRule: primary and foreign record counts are unequal")
+
+        link_list = list(zip(primary_key_list, foreign_key_list))
+
+        if not self.useSync:
+            foreign_bucket_c = loop.run_until_complete(cb_cluster.connect_bucket_a(cluster, foreign_bucket))
+            primary_bucket_c = loop.run_until_complete(cb_cluster.connect_bucket_a(cluster, primary_bucket))
+        else:
+            foreign_bucket_c = cb_cluster.connect_bucket_s(cluster, foreign_bucket)
+            primary_bucket_c = cb_cluster.connect_bucket_s(cluster, primary_bucket)
+
+        if not self.useSync:
+            foreign_coll_c = loop.run_until_complete(
+                cb_cluster.connect_collection_a(foreign_bucket_c, foreign_scope, foreign_collection))
+            primary_coll_c = loop.run_until_complete(
+                cb_cluster.connect_collection_a(primary_bucket_c, primary_scope, primary_collection))
+        else:
+            foreign_coll_c = cb_cluster.connect_collection_s(foreign_bucket_c, foreign_scope,
+                                                             foreign_collection)
+            primary_coll_c = cb_cluster.connect_collection_s(primary_bucket_c, primary_scope,
+                                                             primary_collection)
+
+        for index, combo in enumerate(link_list):
+            primary_doc_key = combo[0]
+            foreign_doc_key = combo[1]
+            if not self.useSync:
+                insert_value = loop.run_until_complete(cb_cluster.cb_subdoc_get_a(
+                    primary_coll_c, primary_doc_key, primary_field))
+            else:
+                insert_value = cb_cluster.cb_subdoc_get_s(
+                    primary_coll_c, primary_doc_key, primary_field)
+
+            if not self.useSync:
+                result = loop.run_until_complete(cb_cluster.cb_subdoc_upsert_a(
+                    foreign_coll_c, foreign_doc_key, foreign_field, insert_value))
+            else:
+                result = cb_cluster.cb_subdoc_upsert_s(
+                    foreign_coll_c, foreign_doc_key, foreign_field, insert_value)
+
+    def processRules(self, collections, rules):
+        loop = asyncio.get_event_loop()
+
+        print("Processing rules.")
+        try:
+            self.logger.info("processRules: Connecting to cluster with host %s" % self.host)
+            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+        except Exception as e:
+            print("Rule processing failed: %s" % str(e))
+            self.logger.critical("processRules: error: %s" % str(e))
+            self.logger.debug(traceback.format_exc())
+            sys.exit(1)
+
+        if not self.useSync:
+            self.logger.info("Connecting to the cluster with async.")
+            cluster = loop.run_until_complete(cb_cluster.connect_a())
+        else:
+            self.logger.info("Connecting to the cluster with sync.")
+            cluster = cb_cluster.connect_s()
+
+        for rule in rules:
+            rule_name = rule['name']
+            print("Processing rule %s" % rule_name)
+            if rule['type'] == 'link':
+                foreign_keyspace = rule['foreign_key'].split(':')
+                primary_keyspace = rule['primary_key'].split(':')
+                try:
+                    self.runLinkRule(cb_cluster, cluster, collections, foreign_keyspace, primary_keyspace)
+                except Exception as e:
+                    raise Exception("processRules: link rule failed: %s" % str(e))
 
     def printStatusThread(self, count, threads):
         threadVector = [0 for i in range(threads)]
@@ -2690,10 +2889,10 @@ class runPerformanceBenchmark(object):
                 if not self.useSync:
                     result = loop.run_until_complete(
                         cb_cluster.cb_query_a(
-                            cluster, queryField, idField, record_id, coll_obj.bucket, coll_obj.scope, coll_obj.name))
+                            cluster, coll_obj.bucket, queryField, idField, record_id, coll_obj.scope, coll_obj.name))
                 else:
                     result = cb_cluster.cb_query_s(
-                        cluster, queryField, idField, record_id, coll_obj.bucket, coll_obj.scope, coll_obj.name)
+                        cluster, coll_obj.bucket, queryField, idField, record_id, coll_obj.scope, coll_obj.name)
 
                 if len(result) == 0:
                     retries += 1
@@ -2731,7 +2930,7 @@ class runPerformanceBenchmark(object):
         except Exception:
             self.errorCount.increment(1)
 
-    def testInstance(self, json_block, mode=0, maximum=1, instance=1):
+    def testInstance(self, json_block, coll_obj, mode=0, maximum=1, instance=1):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         telemetry = [0 for n in range(3)]
@@ -2743,6 +2942,9 @@ class runPerformanceBenchmark(object):
             runBatchSize = self.batchSize
         record_count = self.recordCount
         rand_gen = fastRandom(record_count)
+        idField = coll_obj.id
+        idIndexName = next((i['name'] for i in coll_obj.indexes if i['field'] == idField), None)
+        queryField = next((i['field'] for i in coll_obj.indexes if i['field'] != idField), idField)
 
         self.logger.debug("Starting test instance %d" % instance)
 
@@ -2758,15 +2960,16 @@ class runPerformanceBenchmark(object):
 
             self.logger.info("Connecting to bucket.")
             if not self.useSync:
-                bucket = loop.run_until_complete(cb_cluster.connect_bucket_a(cluster, self.bucket))
+                bucket = loop.run_until_complete(cb_cluster.connect_bucket_a(cluster, coll_obj.bucket))
             else:
-                bucket = cb_cluster.connect_bucket_s(cluster, self.bucket)
+                bucket = cb_cluster.connect_bucket_s(cluster, coll_obj.bucket)
 
             self.logger.info("Connecting to collection.")
             if not self.useSync:
-                collection = loop.run_until_complete(cb_cluster.connect_collection_a(bucket))
+                collection = loop.run_until_complete(cb_cluster.connect_collection_a(
+                    bucket, coll_obj.scope, coll_obj.name))
             else:
-                collection = cb_cluster.connect_collection_s(bucket)
+                collection = cb_cluster.connect_collection_s(bucket, coll_obj.scope, coll_obj.name)
         except Exception as e:
             self.logger.critical("%s" % str(e))
             sys.exit(1)
@@ -2809,10 +3012,13 @@ class runPerformanceBenchmark(object):
                     elif mode == QUERY_TEST:
                         if not self.useSync:
                             tasks.append(
-                                cb_cluster.cb_query_a(cluster, self.queryField, self.idField, record_id, self.bucket))
+                                cb_cluster.cb_query_a(
+                                    cluster, coll_obj.bucket, queryField, idField, record_id,
+                                    coll_obj.scope, coll_obj.name))
                         else:
-                            result = cb_cluster.cb_query_s(cluster, self.queryField, self.idField, record_id,
-                                                           self.bucket)
+                            result = cb_cluster.cb_query_s(
+                                cluster, coll_obj.bucket, queryField, idField, record_id,
+                                coll_obj.scope, coll_obj.name)
                             tasks.append(result)
                     else:
                         if not self.useSync:
@@ -2855,61 +3061,59 @@ class runPerformanceBenchmark(object):
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
             cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
-
+            print("CBPerf (%s) connected to %s cluster version %s." % (self.getMode(), self.host, cb_cluster.version))
             if init:
-                print("CBPerf test (%s) connected to %s cluster version %s." % (self.getMode(), self.host,
-                                                                                cb_cluster.version))
-                if not self.skipBucket:
-                    print("Creating bucket %s." % self.bucket)
-                    cb_cluster.create_bucket(self.bucket, self.bucketMemory)
-                else:
-                    print("Skipping bucket creation.")
-                print("Creating index %s." % self.fieldIndex)
-                cb_cluster.create_index(self.bucket, self.queryField, self.fieldIndex, self.replicaCount)
-                print("Creating index %s." % self.idIndex)
-                cb_cluster.create_index(self.bucket, self.idField, self.idIndex, self.replicaCount)
+                collections, rules = self.doInit(cb_cluster)
+            else:
+                collections, rules = self.doInit(cb_cluster, create=False)
         except Exception as e:
             self.logger.critical("%s" % str(e))
             sys.exit(1)
 
-        inputFileJson = self.getInputJson()
-
         if run:
-            statusThread = multiprocessing.Process(target=self.printStatusThread, args=(operation_count, run_threads,))
-            statusThread.daemon = True
-            statusThread.start()
+            for coll_obj in collections:
+                inputFileJson = coll_obj.schema
 
-            if mode == REMOVE_DATA:
-                read_percentage = 0
-            else:
-                read_percentage = 100 - self.writePercent
-            print("Starting test with %s records - %d%% get, %d%% update"
-                  % ('{:,}'.format(operation_count), read_percentage, self.writePercent))
-            start_time = time.perf_counter()
+                statusThread = multiprocessing.Process(target=self.printStatusThread, args=(operation_count, run_threads,))
+                statusThread.daemon = True
+                statusThread.start()
 
-            instances = [
-                multiprocessing.Process(target=self.testInstance, args=(inputFileJson, mode, operation_count, n)) for n
-                in range(run_threads)]
-            for p in instances:
-                p.daemon = True
-                p.start()
+                if mode == REMOVE_DATA:
+                    read_percentage = 0
+                else:
+                    read_percentage = 100 - self.writePercent
+                print("Starting test with %s records - %d%% get, %d%% update"
+                      % ('{:,}'.format(operation_count), read_percentage, self.writePercent))
+                start_time = time.perf_counter()
 
-            for p in instances:
-                p.join()
+                instances = [
+                    multiprocessing.Process(
+                        target=self.testInstance,
+                        args=(inputFileJson, coll_obj, mode, operation_count, n)) for n in range(run_threads)
+                ]
+                for p in instances:
+                    p.daemon = True
+                    p.start()
 
-            telemetry[0] = RUN_STOP
-            telemetry_packet = ':'.join(str(i) for i in telemetry)
-            self.telemetry_queue.put(telemetry_packet)
-            statusThread.join()
-            end_time = time.perf_counter()
+                for p in instances:
+                    p.join()
 
-            print("Test completed in %s" % time.strftime("%H hours %M minutes %S seconds.",
-                                                         time.gmtime(end_time - start_time)))
-            self.runReset()
+                telemetry[0] = RUN_STOP
+                telemetry_packet = ':'.join(str(i) for i in telemetry)
+                self.telemetry_queue.put(telemetry_packet)
+                statusThread.join()
+                end_time = time.perf_counter()
+
+                print("Test completed in %s" % time.strftime("%H hours %M minutes %S seconds.",
+                                                             time.gmtime(end_time - start_time)))
+                self.runReset()
+
+            if len(rules) > 0:
+                self.processRules(collections, rules)
 
         if pause:
             try:
-                self.pauseTestRun()
+                self.pauseTestRun(collections)
             except Exception as e:
                 print("Error: %s" % str(e))
                 sys.exit(1)
@@ -2923,6 +3127,7 @@ class runPerformanceBenchmark(object):
 
 
 def main():
+    signal.signal(signal.SIGINT, break_signal_handler)
     runPerformanceBenchmark()
 
 
