@@ -922,13 +922,13 @@ class cbutil(object):
             return True
 
     def create_scope(self, bucket, scope):
-        cluster = self.connect_s()
-        bucket_object = cluster.bucket(bucket)
-        cm = bucket_object.collections()
         retries = 0
         if not self.is_scope(bucket, scope):
             self.logger.info("Creating scope %s." % scope)
             try:
+                cluster = self.connect_s()
+                bucket_object = cluster.bucket(bucket)
+                cm = bucket_object.collections()
                 cm.create_scope(scope)
                 while True:
                     try:
@@ -955,15 +955,15 @@ class cbutil(object):
             return True
 
     def create_collection(self, bucket, scope, collection):
-        cluster = self.connect_s()
-        bucket_object = cluster.bucket(bucket)
-        cm = bucket_object.collections()
         retries = 0
         if not self.is_scope(bucket, scope):
             raise Exception("create_collection: scope %s does not exist." % scope)
         if not self.is_collection(bucket, scope, collection):
             self.logger.info("Creating collection %s." % collection)
             try:
+                cluster = self.connect_s()
+                bucket_object = cluster.bucket(bucket)
+                cm = bucket_object.collections()
                 collection_spec = CollectionSpec(collection, scope_name=scope)
                 collection_object = cm.create_collection(collection_spec)
                 while True:
@@ -1090,7 +1090,6 @@ class cbutil(object):
 
             for key in response_json:
                 index_name = key.split(':')[-1]
-                # index_name = index_name.split(' ')[0]
                 if index_name not in index_data:
                     index_data[index_name] = {}
                 for attribute in response_json[key]:
@@ -1101,21 +1100,21 @@ class cbutil(object):
 
         return index_data
 
-    def index_wait(self, bucket, index, count=1, timeout=120):
+    def index_wait(self, bucket, index, timeout=120):
         index_wait = 0
         index_data = self.index_stats(bucket)
         if index not in index_data:
             self.logger.error("index_wait: index %s does not exist." % index)
             raise Exception("Index %s does not exist." % index)
-        self.logger.info("Waiting for %d document(s) to be indexed." % count)
-        while index_data[index]['num_docs_indexed'] < count:
+        self.logger.info("Waiting for index %s." % index)
+        while index_data[index]['num_docs_pending'] != 0 and index_data[index]['num_docs_queued'] != 0:
             index_wait += 1
             if index_wait == timeout:
                 self.logger.error("index_wait: timeout waiting for documents to be indexed.")
                 raise Exception("Timeout waiting for documents to index")
             time.sleep(0.1 * index_wait)
             index_data = self.index_stats(bucket)
-        self.logger.info("%d document(s) indexed." % count)
+        self.logger.info("index_wait: %s: %d document(s) indexed." % (index, index_data[index]['num_docs_indexed']))
         return True
 
     def get_bm(self, cluster):
@@ -1638,7 +1637,7 @@ class collectionElement(object):
 
 class inventoryManager(object):
 
-    def __init__(self, inventory, by_reference=True):
+    def __init__(self, inventory, by_reference=False):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.inventory_json = inventory
         self.schemas = []
@@ -1763,6 +1762,7 @@ class params(object):
         run_parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int)
         run_parser.add_argument('--file', action='store', help="Input JSON File")
         run_parser.add_argument('--schema', action='store', help="Test Schema", default="default")
+        run_parser.add_argument('--inventory', action='store', help="Schema JSON File")
         run_parser.add_argument('--id', action='store', help="Numeric ID Field in JSON File", default="record_id")
         run_parser.add_argument('--query', action='store', help="Field to query in JSON File", default="last_name")
         run_parser.add_argument('--load', action='store_true', help="Only Load Data")
@@ -1815,7 +1815,7 @@ class runPerformanceBenchmark(object):
         self.rulesRun = False
         self.next_record = mpAtomicIncrement()
         self.errorCount = mpAtomicCounter()
-        self.cbperfConfig = self.locateCfgFile()
+        self.cbperfConfig, self.inventoryFile = self.locateCfgFile()
         self.processConfigFile()
         input_data_size = 0
 
@@ -1832,7 +1832,6 @@ class runPerformanceBenchmark(object):
             self.schema = "external_file"
         else:
             self.schema = parameters.schema
-        self.inventory = DEFAULT_SCHEMA_INVENTORY
         self.host = parameters.host
         self.tls = parameters.tls
         self.debug = parameters.debug
@@ -1969,12 +1968,25 @@ class runPerformanceBenchmark(object):
         else:
             config_file = home_dir + '/.cbperf/cbperf.cfg'
 
-        return config_file
+        if os.getenv('CBPERF_SCHEMA_FILE'):
+            schema_file = os.getenv('CBPERF_SCHEMA_FILE')
+        elif os.path.exists("schema.json"):
+            schema_file = "schema.json"
+        elif os.path.exists('schema/schema.json'):
+            schema_file = 'schema/schema.json'
+        elif os.path.exists("/etc/cbperf/schema.json"):
+            schema_file = "/etc/cbperf/schema.json"
+        else:
+            schema_file = home_dir + '/.cbperf/schema.json'
+
+        return config_file, schema_file
 
     def processConfigFile(self):
         if not os.path.exists(self.cbperfConfig):
             self.writeDefaultConfigFile()
-        self.readConfigFile()
+        if not self.readConfigFile():
+            print("Aborting, configuration data not available.")
+            sys.exit(1)
 
     def readConfigFile(self):
         config = configparser.ConfigParser()
@@ -1983,6 +1995,15 @@ class runPerformanceBenchmark(object):
         except Exception:
             print("Warning: Can not read config file %s" % self.cbperfConfig)
             self.logger.error("readConfigFile: can not read %s" % self.cbperfConfig)
+            return False
+
+        try:
+            with open(self.inventoryFile, 'r') as configfile:
+                self.inventory = json.load(configfile)
+                configfile.close()
+        except Exception as e:
+            print("Error: Can not read schema file: %s" % str(e))
+            self.logger.error("readConfigFile: can not read %s" % self.inventoryFile)
             return False
 
         if config.has_section('settings'):
@@ -2032,6 +2053,8 @@ class runPerformanceBenchmark(object):
                 config_section[key] = {}
                 config_section[key].update(value)
             self.removeSequence = config_section
+
+        return True
 
     def writeDefaultConfigFile(self):
         config = configparser.ConfigParser()
@@ -2217,24 +2240,23 @@ class runPerformanceBenchmark(object):
             raise Exception("Cluster health check failed.")
 
         for coll_obj in collections:
-            idField = coll_obj.id
-            idIndexName = next((i['name'] for i in coll_obj.indexes if i['field'] == idField), None)
-            queryField = next((i['field'] for i in coll_obj.indexes if i['field'] != idField), idField)
-
-            try:
-                document_count = int(cb_cluster.bucket_count(coll_obj.bucket))
-            except Exception as e:
-                self.logger.error("pauseTestRun: %s" % str(e))
-                raise Exception("%s" % str(e))
+            index_list = []
+            if len(coll_obj.indexes) == 0 and not coll_obj.primary_index:
+                continue
+            for index_entry in coll_obj.indexes:
+                index_list.append(index_entry['name'])
+            if coll_obj.primary_index:
+                index_list.append('#primary')
 
             if not self.limitNetworkPorts:
-                index_data = cb_cluster.index_stats(coll_obj.bucket)
-                if idIndexName not in index_data:
-                    self.logger.critical("Database is not properly indexed.")
-                    sys.exit(1)
-                print("Waiting for %s document(s) to be indexed." % f'{document_count:,}')
-                if not cb_cluster.index_wait(coll_obj.bucket, idIndexName, document_count * document_index_count):
-                    sys.exit(1)
+                for index_name in index_list:
+                    index_data = cb_cluster.index_stats(coll_obj.bucket)
+                    if index_name not in index_data:
+                        self.logger.critical("Database is not properly indexed.")
+                        sys.exit(1)
+                    print("Waiting for index %s." % index_name)
+                    if not cb_cluster.index_wait(coll_obj.bucket, index_name):
+                        sys.exit(1)
             else:
                 print("Exposed port limit: skipping index check.")
 
@@ -2315,12 +2337,10 @@ class runPerformanceBenchmark(object):
             sys.exit(1)
 
     def doInit(self, cb_cluster, create=True):
-        by_reference = True
         collection_list = []
         rule_list = []
 
         if self.inputFile:
-            by_reference = False
             self.schema = 'external_file'
             inventory_data = {
                 'inventory': [
@@ -2355,7 +2375,7 @@ class runPerformanceBenchmark(object):
         else:
             inventory_data = self.inventory
 
-        inventory = inventoryManager(inventory_data, by_reference=by_reference)
+        inventory = inventoryManager(inventory_data)
 
         cluster_memory = cb_cluster.get_memquota()
         if cluster_memory < self.bucketMemory:
@@ -2489,7 +2509,7 @@ class runPerformanceBenchmark(object):
     def processRules(self, collections, rules):
         loop = asyncio.get_event_loop()
 
-        print("Processing rules.")
+        print("[i] Processing rules.")
         try:
             self.logger.info("processRules: Connecting to cluster with host %s" % self.host)
             cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
@@ -2508,8 +2528,8 @@ class runPerformanceBenchmark(object):
 
         for rule in rules:
             rule_name = rule['name']
-            print("Processing rule %s" % rule_name)
             if rule['type'] == 'link':
+                print("[i] Processing rule %s type link" % rule_name)
                 foreign_keyspace = rule['foreign_key'].split(':')
                 primary_keyspace = rule['primary_key'].split(':')
                 try:
@@ -2710,106 +2730,100 @@ class runPerformanceBenchmark(object):
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
             cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
-
+            print("CBPerf calibrate (%s) connected to %s version %s." % (self.getMode(), self.host, cb_cluster.version))
             if init:
-                print("CBPerf calibrate (%s) connected to cluster %s version %s." % (self.getMode(),
-                                                                                     self.host, cb_cluster.version))
-                if not self.skipBucket:
-                    print("Creating bucket %s." % self.bucket)
-                    cb_cluster.create_bucket(self.bucket, self.bucketMemory)
-                else:
-                    print("Skipping bucket creation.")
-                print("Creating index %s." % self.fieldIndex)
-                cb_cluster.create_index(self.bucket, self.queryField, self.fieldIndex, self.replicaCount)
-                print("Creating index %s." % self.idIndex)
-                cb_cluster.create_index(self.bucket, self.idField, self.idIndex, self.replicaCount)
+                collections, rules = self.doInit(cb_cluster)
+            else:
+                collections, rules = self.doInit(cb_cluster, create=False)
         except Exception as e:
-            self.logger.critical("%s" % str(e))
+            self.logger.critical("runCalibration: error: %s" % str(e))
             sys.exit(1)
 
-        inputFileJson = self.getInputJson()
-
         if run:
-            statusThread = multiprocessing.Process(target=self.dynamicStatusThread, args=(latency,))
-            statusThread.daemon = True
-            statusThread.start()
+            for coll_obj in collections:
+                inputFileJson = coll_obj.schema
 
-            print("Beginning calibration...")
-            time_snap = time.perf_counter()
-            start_time = time_snap
-            while True:
-                for i in range(accelerator):
-                    scale.append(multiprocessing.Process(target=self.testInstance, args=(inputFileJson, mode, 0, n)))
-                    scale[n].daemon = True
-                    scale[n].start()
-                    n += 1
-                try:
-                    entry = self.telemetry_return.get(block=False)
-                    return_telemetry = entry.split(":")
-                    if int(return_telemetry[0]) == RUN_STOP:
+                statusThread = multiprocessing.Process(target=self.dynamicStatusThread, args=(latency,))
+                statusThread.daemon = True
+                statusThread.start()
+
+                print("Beginning calibration...")
+                time_snap = time.perf_counter()
+                start_time = time_snap
+                while True:
+                    for i in range(accelerator):
+                        scale.append(multiprocessing.Process(target=self.testInstance,
+                                                             args=(inputFileJson, coll_obj, mode, 0, n)))
+                        scale[n].daemon = True
+                        scale[n].start()
+                        n += 1
+                    try:
+                        entry = self.telemetry_return.get(block=False)
+                        return_telemetry = entry.split(":")
+                        if int(return_telemetry[0]) == RUN_STOP:
+                            break
+                    except Empty:
+                        pass
+                    if n >= INSTANCE_MAX:
+                        telemetry[0] = RUN_STOP
+                        telemetry_packet = ':'.join(str(i) for i in telemetry)
+                        while True:
+                            try:
+                                self.telemetry_queue.put(telemetry_packet, block=False)
+                                entry = self.telemetry_return.get(timeout=5)
+                                return_telemetry = entry.split(":")
+                                break
+                            except Full:
+                                emptyQueue()
+                                continue
+                            except Empty:
+                                break
                         break
-                except Empty:
-                    pass
-                if n >= INSTANCE_MAX:
-                    telemetry[0] = RUN_STOP
-                    telemetry_packet = ':'.join(str(i) for i in telemetry)
-                    while True:
-                        try:
-                            self.telemetry_queue.put(telemetry_packet, block=False)
-                            entry = self.telemetry_return.get(timeout=5)
-                            return_telemetry = entry.split(":")
-                            break
-                        except Full:
-                            emptyQueue()
-                            continue
-                        except Empty:
-                            break
-                    break
-                time_check = time.perf_counter()
-                time_diff = time_check - time_snap
-                if time_diff >= 60:
-                    time_snap = time.perf_counter()
-                    accelerator *= 2
-                time.sleep(5.0)
+                    time_check = time.perf_counter()
+                    time_diff = time_check - time_snap
+                    if time_diff >= 60:
+                        time_snap = time.perf_counter()
+                        accelerator *= 2
+                    time.sleep(5.0)
 
-            for p in scale:
-                p.terminate()
-                p.join()
+                for p in scale:
+                    p.terminate()
+                    p.join()
 
-            emptyQueue()
-            statusThread.join()
-            end_time = time.perf_counter()
+                emptyQueue()
+                statusThread.join()
+                end_time = time.perf_counter()
 
-            sys.stdout.write("\033[K")
-            print("Max threshold reached.")
-            print(">> %d instances <<" % n)
-            if len(return_telemetry) >= 10:
-                print("=> %d total ops." % int(return_telemetry[1]))
-                print("=> %.6f max time." % float(return_telemetry[2]))
-                print("=> %.6f average time." % float(return_telemetry[3]))
-                print("=> %d max TPS." % int(return_telemetry[4]))
-                print("=> %.0f average TPS." % float(return_telemetry[5]))
-                print("=> %.1f average CPU." % float(return_telemetry[6]))
-                print("=> %.1f used memory." % float(return_telemetry[7]))
-                print("=> Lag trend %s." % return_telemetry[8])
-                print("=> Max TPS threads %d <<<" % int(return_telemetry[9]))
-            else:
-                print("Abnormal termination.")
+                sys.stdout.write("\033[K")
+                print("Max threshold reached.")
+                print(">> %d instances <<" % n)
+                if len(return_telemetry) >= 10:
+                    print("=> %d total ops." % int(return_telemetry[1]))
+                    print("=> %.6f max time." % float(return_telemetry[2]))
+                    print("=> %.6f average time." % float(return_telemetry[3]))
+                    print("=> %d max TPS." % int(return_telemetry[4]))
+                    print("=> %.0f average TPS." % float(return_telemetry[5]))
+                    print("=> %.1f average CPU." % float(return_telemetry[6]))
+                    print("=> %.1f used memory." % float(return_telemetry[7]))
+                    print("=> Lag trend %s." % return_telemetry[8])
+                    print("=> Max TPS threads %d <<<" % int(return_telemetry[9]))
+                else:
+                    print("Abnormal termination.")
 
-            self.runReset()
-            print("Calibration completed in %s" % time.strftime("%H hours %M minutes %S seconds.",
-                                                                time.gmtime(end_time - start_time)))
+                self.runReset()
+                print("Calibration completed in %s" % time.strftime("%H hours %M minutes %S seconds.",
+                                                                    time.gmtime(end_time - start_time)))
 
         if pause:
             try:
-                self.pauseTestRun()
+                self.pauseTestRun(collections)
             except Exception as e:
                 print("Error: %s" % str(e))
                 sys.exit(1)
 
         if cleanup:
             try:
-                self.cleanUp()
+                self.cleanUp(collections)
             except Exception as e:
                 print("Error: %s" % str(e))
                 sys.exit(1)
@@ -2905,7 +2919,7 @@ class runPerformanceBenchmark(object):
 
             if not self.limitNetworkPorts:
                 print("Waiting for the inserted document to be indexed.")
-                if not cb_cluster.index_wait(coll_obj.bucket, idIndexName, current_doc_count + 1):
+                if not cb_cluster.index_wait(coll_obj.bucket, idIndexName):
                     sys.exit(1)
             else:
                 print("Port limit: Skipping index wait.")
@@ -3136,6 +3150,7 @@ class runPerformanceBenchmark(object):
                 self.runReset()
 
             if len(rules) > 0 and not self.rulesRun:
+                self.pauseTestRun(collections)
                 self.processRules(collections, rules)
 
         if pause:
@@ -3154,7 +3169,7 @@ class runPerformanceBenchmark(object):
 
 
 def main():
-    signal.signal(signal.SIGINT, break_signal_handler)
+    # signal.signal(signal.SIGINT, break_signal_handler)
     runPerformanceBenchmark()
 
 
