@@ -10,6 +10,7 @@ import traceback
 import signal
 import argparse
 import json
+from distutils.util import strtobool
 from couchbase.diagnostics import PingState
 from jinja2 import Template
 from jinja2.environment import Environment
@@ -1015,12 +1016,15 @@ class cbutil(object):
 
         return document_count
 
-    def is_index(self, bucket, index):
+    def is_index(self, bucket, index=None, collection=None):
         cluster = self.connect_s()
         qim = self.get_qim(cluster)
         try:
             indexList = qim.get_all_indexes(bucket)
             for i in range(len(indexList)):
+                if not index and collection:
+                    if indexList[i].keyspace == collection and indexList[i].name == '#primary':
+                        return True
                 if indexList[i].name == index:
                     return True
         except Exception as e:
@@ -1028,15 +1032,19 @@ class cbutil(object):
             raise Exception("Could not get index status: %s" % str(e))
         return False
 
-    def create_index(self, bucket, field, index, replica=1, scope="_default", collection="_default"):
+    def create_index(self, bucket, field=None, index=None, replica=1, scope="_default", collection="_default"):
         retries = 0
         keyspace = bucket + '.' + scope + '.' + collection
         cluster = self.connect_s()
-        self.logger.info("Creating index %s on field %s." % (index, field))
-        queryText = 'CREATE INDEX ' + index + ' ON ' + keyspace + '(' + field + ') WITH {"num_replica": ' + str(
-            replica) + '};'
+        if field and index:
+            self.logger.info("Creating index %s on field %s." % (index, field))
+            queryText = 'CREATE INDEX ' + index + ' ON ' + keyspace + '(' + field + ') WITH {"num_replica": ' + str(
+                replica) + '};'
+        else:
+            self.logger.info("Creating primary index on bucket %s." % bucket)
+            queryText = 'CREATE PRIMARY INDEX ON ' + keyspace + ' WITH {"num_replica": ' + str(replica) + '};'
         while True:
-            if self.is_bucket(bucket) and not self.is_index(bucket, index):
+            if self.is_bucket(bucket) and not self.is_index(bucket, index, collection):
                 try:
                     result = cluster.query(queryText, QueryOptions(metrics=True))
                     run_time = result.metadata().metrics().execution_time().microseconds
@@ -1445,7 +1453,7 @@ class cbutil(object):
                     continue
 
     async def cb_subdoc_get_a(self, collection, key, field):
-        self.logger.info("cb_upsert_a %s" % key)
+        self.logger.info("cb_subdoc_get_a %s" % key)
         retries = 0
         while True:
             try:
@@ -1659,7 +1667,8 @@ class inventoryManager(object):
                             else:
                                 self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
                             self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
-                            self.schemas[0].buckets[0].scopes[0].collections[0].primary_key = collection['primary_index']
+                            self.schemas[0].buckets[0].scopes[0].collections[0].primary_index \
+                                = collection['primary_index']
                             if 'indexes' in collection:
                                 for index_field in collection['indexes']:
                                     self.logger.info("adding index for field %s to inventory" % index_field)
@@ -1702,6 +1711,12 @@ class inventoryManager(object):
             return True
         else:
             return False
+
+    def hasPrimaryIndex(self, collection):
+        if type(collection.primary_index) != bool:
+            return bool(strtobool(collection.primary_index))
+        else:
+            return collection.primary_index
 
     def indexName(self, collection, field):
         if collection.scope != '_default':
@@ -2324,6 +2339,7 @@ class runPerformanceBenchmark(object):
                                                     'name': '_default',
                                                     'schema': self.getInputJson(),
                                                     'idkey': self.idField,
+                                                    'primary_index': False,
                                                     'indexes': [
                                                         self.idField,
                                                         self.queryField,
@@ -2367,6 +2383,9 @@ class runPerformanceBenchmark(object):
                                 if create:
                                     print("Creating collection %s." % collection.name)
                                     cb_cluster.create_collection(bucket.name, scope.name, collection.name)
+                            if inventory.hasPrimaryIndex(collection) and create:
+                                cb_cluster.create_index(bucket.name, replica=self.replicaCount,
+                                                        scope=scope.name, collection=collection.name)
                             if inventory.hasIndexes(collection) and create:
                                 for index_field, index_name in inventory.nextIndex(collection):
                                     print("Creating index %s." % index_name)
@@ -2394,6 +2413,8 @@ class runPerformanceBenchmark(object):
 
     def runLinkRule(self, cb_cluster, cluster, collections, foreign_keyspace, primary_keyspace):
         loop = asyncio.get_event_loop()
+        foreign_key_list = []
+        primary_key_list = []
 
         if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:
             raise Exception("runLinkRule: link rule key syntax incorrect")
@@ -2404,22 +2425,28 @@ class runPerformanceBenchmark(object):
         primary_id = self.getIdKey(collections, primary_bucket, primary_scope, primary_collection)
 
         if not self.useSync:
-            foreign_key_list = loop.run_until_complete(
+            result = loop.run_until_complete(
                 cb_cluster.cb_query_a(cluster, foreign_bucket, foreign_id,
                                       scope=foreign_scope, collection=foreign_collection))
         else:
-            foreign_key_list = cb_cluster.cb_query_s(
+            result = cb_cluster.cb_query_s(
                 cluster, foreign_bucket, foreign_id,
                 scope=foreign_scope, collection=foreign_collection)
 
+        for row in result:
+            foreign_key_list.append(row[foreign_id])
+
         if not self.useSync:
-            primary_key_list = loop.run_until_complete(
+            result = loop.run_until_complete(
                 cb_cluster.cb_query_a(cluster, primary_bucket, primary_id,
                                       scope=primary_scope, collection=primary_collection))
         else:
-            primary_key_list = cb_cluster.cb_query_s(
+            result = cb_cluster.cb_query_s(
                 cluster, primary_bucket, primary_id,
                 scope=primary_scope, collection=primary_collection)
+
+        for row in result:
+            primary_key_list.append(row[primary_id])
 
         if len(foreign_key_list) != len(primary_key_list):
             raise Exception("runLinkRule: primary and foreign record counts are unequal")
