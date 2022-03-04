@@ -1812,6 +1812,7 @@ class runPerformanceBenchmark(object):
         self.skipBucket = False
         self.runRemoveTest = False
         self.limitNetworkPorts = False
+        self.rulesRun = False
         self.next_record = mpAtomicIncrement()
         self.errorCount = mpAtomicCounter()
         self.cbperfConfig = self.locateCfgFile()
@@ -2237,7 +2238,7 @@ class runPerformanceBenchmark(object):
             else:
                 print("Exposed port limit: skipping index check.")
 
-    def cleanUp(self):
+    def cleanUp(self, collections):
         try:
             self.logger.info("cleanUp: Connecting to cluster with host %s" % self.host)
             cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
@@ -2246,15 +2247,12 @@ class runPerformanceBenchmark(object):
             raise Exception("cleanUp: Can not connect to couchbase: %s" % str(e))
 
         print("Cleaning up.")
-        # print("Dropping index %s." % self.fieldIndex)
-        # cb_cluster.drop_index(self.bucket, self.fieldIndex)
-        # print("Dropping index %s." % self.idIndex)
-        # cb_cluster.drop_index(self.bucket, self.idIndex)
-        if not self.skipBucket:
-            print("Dropping bucket %s." % self.bucket)
-            cb_cluster.drop_bucket(self.bucket)
-        else:
-            print("Leaving bucket in place.")
+        for coll_obj in collections:
+            if not self.skipBucket:
+                print("Dropping bucket %s." % coll_obj.bucket)
+                cb_cluster.drop_bucket(coll_obj.bucket)
+            else:
+                print("Leaving bucket %s in place." % coll_obj.bucket)
 
     def getHealth(self):
         try:
@@ -2518,6 +2516,8 @@ class runPerformanceBenchmark(object):
                     self.runLinkRule(cb_cluster, cluster, collections, foreign_keyspace, primary_keyspace)
                 except Exception as e:
                     raise Exception("processRules: link rule failed: %s" % str(e))
+
+        self.rulesRun = True
 
     def printStatusThread(self, count, threads):
         threadVector = [0 for i in range(threads)]
@@ -3135,7 +3135,7 @@ class runPerformanceBenchmark(object):
                                                              time.gmtime(end_time - start_time)))
                 self.runReset()
 
-            if len(rules) > 0:
+            if len(rules) > 0 and not self.rulesRun:
                 self.processRules(collections, rules)
 
         if pause:
@@ -3147,7 +3147,7 @@ class runPerformanceBenchmark(object):
 
         if cleanup:
             try:
-                self.cleanUp()
+                self.cleanUp(collections)
             except Exception as e:
                 print("Error: %s" % str(e))
                 sys.exit(1)
