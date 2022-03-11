@@ -173,7 +173,7 @@ USER_IMAGE_JSON = {
     'image': '{{ rand_image }}',
 }
 
-def break_signal_handler(sig, frame):
+def break_signal_handler(signum, frame):
     print("")
     print("Break received, aborting.")
     sys.exit(1)
@@ -951,7 +951,6 @@ class cbutil(object):
                 raise Exception("Can not create scope: %s" % str(e))
         else:
             self.logger.info("Scope %s exists." % scope)
-            cluster.disconnect()
             return True
 
     def create_collection(self, bucket, scope, collection):
@@ -987,7 +986,6 @@ class cbutil(object):
                 raise Exception("Can not create collection: %s" % str(e))
         else:
             self.logger.info("Collection %s exists." % collection)
-            cluster.disconnect()
             return True
 
     def bucket_count(self, bucket):
@@ -1632,6 +1630,10 @@ class collectionElement(object):
         self.scope = scope
         self.id = None
         self.primary_key = False
+        if name == '_default':
+            self.key_prefix = bucket
+        else:
+            self.key_prefix = name
         self.schema = {}
         self.indexes = []
 
@@ -2427,7 +2429,7 @@ class runPerformanceBenchmark(object):
             if coll_obj.bucket == bucket:
                 if coll_obj.scope == scope:
                     if coll_obj.name == collection:
-                        return coll_obj.id
+                        return coll_obj.key_prefix, coll_obj.id
 
     def runLinkRule(self, cb_cluster, cluster, collections, foreign_keyspace, primary_keyspace):
         loop = asyncio.get_event_loop()
@@ -2439,8 +2441,8 @@ class runPerformanceBenchmark(object):
         foreign_bucket, foreign_scope, foreign_collection, foreign_field = foreign_keyspace
         primary_bucket, primary_scope, primary_collection, primary_field = primary_keyspace
 
-        foreign_id = self.getIdKey(collections, foreign_bucket, foreign_scope, foreign_collection)
-        primary_id = self.getIdKey(collections, primary_bucket, primary_scope, primary_collection)
+        f_key_prefix, foreign_id = self.getIdKey(collections, foreign_bucket, foreign_scope, foreign_collection)
+        p_key_prefix, primary_id = self.getIdKey(collections, primary_bucket, primary_scope, primary_collection)
 
         if not self.useSync:
             result = loop.run_until_complete(
@@ -2490,8 +2492,8 @@ class runPerformanceBenchmark(object):
                                                              primary_collection)
 
         for index, combo in enumerate(link_list):
-            primary_doc_key = combo[0]
-            foreign_doc_key = combo[1]
+            primary_doc_key = p_key_prefix + ':' + combo[0]
+            foreign_doc_key = f_key_prefix + ':' + combo[1]
             if not self.useSync:
                 insert_value = loop.run_until_complete(cb_cluster.cb_subdoc_get_a(
                     primary_coll_c, primary_doc_key, primary_field))
@@ -2879,7 +2881,8 @@ class runPerformanceBenchmark(object):
                 print("Can not load JSON template: %s." % str(e))
                 sys.exit(1)
 
-            record_id = str(format(record_number, '032'))
+            record_id = str(record_number)
+            record_key = coll_obj.key_prefix + ':' + record_id
             idField = coll_obj.id
             idIndexName = next((i['name'] for i in coll_obj.indexes if i['field'] == idField), None)
             queryField = next((i['field'] for i in coll_obj.indexes if i['field'] != idField), idField)
@@ -2901,18 +2904,18 @@ class runPerformanceBenchmark(object):
             jsonDoc = r.processTemplate()
             jsonDoc[idField] = record_id
             if not self.useSync:
-                result = loop.run_until_complete(cb_cluster.cb_upsert_a(collection, record_id, jsonDoc))
+                result = loop.run_until_complete(cb_cluster.cb_upsert_a(collection, record_key, jsonDoc))
             else:
-                result = cb_cluster.cb_upsert_s(collection, record_id, jsonDoc)
+                result = cb_cluster.cb_upsert_s(collection, record_key, jsonDoc)
 
             print("Insert complete.")
             print(result.cas)
 
             print("Attempting to read record %d..." % record_number)
             if not self.useSync:
-                result = loop.run_until_complete(cb_cluster.cb_get_a(collection, record_id))
+                result = loop.run_until_complete(cb_cluster.cb_get_a(collection, record_key))
             else:
-                result = cb_cluster.cb_get_s(collection, record_id)
+                result = cb_cluster.cb_get_s(collection, record_key)
 
             print("Read complete.")
             print(json.dumps(result.content_as[dict], indent=2))
@@ -2954,9 +2957,9 @@ class runPerformanceBenchmark(object):
             if self.runRemoveTest:
                 print("Attempting to remove record %d..." % record_number)
                 if not self.useSync:
-                    result = loop.run_until_complete(cb_cluster.cb_remove_a(collection, record_id))
+                    result = loop.run_until_complete(cb_cluster.cb_remove_a(collection, record_key))
                 else:
-                    result = cb_cluster.cb_remove_s(collection, record_id)
+                    result = cb_cluster.cb_remove_s(collection, record_key)
 
         print("Cleaning up.")
         if not self.skipBucket:
@@ -3034,21 +3037,22 @@ class runPerformanceBenchmark(object):
                     record_number = self.next_record.next
                     if record_number > maximum:
                         break
-                record_id = str(format(record_number, '032'))
+                record_id = str(record_number)
+                record_key = coll_obj.key_prefix + ':' + record_id
                 if opSelect.write(record_number):
                     jsonDoc = r.processTemplate()
                     jsonDoc[self.idField] = record_id
                     if not self.useSync:
-                        tasks.append(cb_cluster.cb_upsert_a(collection, record_id, jsonDoc))
+                        tasks.append(cb_cluster.cb_upsert_a(collection, record_key, jsonDoc))
                     else:
-                        result = cb_cluster.cb_upsert_s(collection, record_id, jsonDoc)
+                        result = cb_cluster.cb_upsert_s(collection, record_key, jsonDoc)
                         tasks.append(result)
                 else:
                     if mode == REMOVE_DATA:
                         if not self.useSync:
-                            tasks.append(cb_cluster.cb_remove_a(collection, record_id))
+                            tasks.append(cb_cluster.cb_remove_a(collection, record_key))
                         else:
-                            result = cb_cluster.cb_remove_s(collection, record_id)
+                            result = cb_cluster.cb_remove_s(collection, record_key)
                             tasks.append(result)
                     elif mode == QUERY_TEST:
                         if not self.useSync:
@@ -3063,9 +3067,9 @@ class runPerformanceBenchmark(object):
                             tasks.append(result)
                     else:
                         if not self.useSync:
-                            tasks.append(cb_cluster.cb_get_a(collection, record_id))
+                            tasks.append(cb_cluster.cb_get_a(collection, record_key))
                         else:
-                            result = cb_cluster.cb_get_s(collection, record_id)
+                            result = cb_cluster.cb_get_s(collection, record_key)
                             tasks.append(result)
             if len(tasks) > 0:
                 if not self.useSync:
