@@ -66,7 +66,13 @@
                       "email": "{{ rand_email }}",
                       "email_verified": "{{ rand_bool }}",
                       "first_name": "{{ rand_first }}",
-                      "last_name": "{{ rand_last }}"
+                      "last_name": "{{ rand_last }}",
+                      "address": "{{ rand_address }}",
+                      "city": "{{ rand_city }}",
+                      "state": "{{ rand_state }}",
+                      "zip_code": "{{ rand_zip_code }}",
+                      "phone": "{{ rand_phone }}",
+                      "date_of_birth": "{{ rand_dob_1 }}"
                     },
                     "idkey": "record_id",
                     "primary_index": true,
@@ -80,6 +86,7 @@
                     "name": "user_images",
                     "schema": {
                       "record_id": "record_id",
+                      "type": "jpeg",
                       "image": "{{ rand_image }}"
                     },
                     "idkey": "record_id",

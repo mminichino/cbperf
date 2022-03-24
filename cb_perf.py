@@ -166,10 +166,17 @@ USER_PROFILE_JSON = {
     'email_verified': '{{ rand_bool }}',
     'first_name': '{{ rand_first }}',
     'last_name': '{{ rand_last }}',
+    'address': '{{ rand_address }}',
+    'city': '{{ rand_city }}',
+    'state': '{{ rand_state }}',
+    'zip_code': '{{ rand_zip_code }}',
+    'phone': '{{ rand_phone }}',
+    'date_of_birth': '{{ rand_dob_1 }}',
 }
 
 USER_IMAGE_JSON = {
     'record_id': 'record_id',
+    'type': 'jpeg',
     'image': '{{ rand_image }}',
 }
 
