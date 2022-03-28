@@ -34,6 +34,7 @@
                     },
                     "idkey": "record_id",
                     "primary_index": false,
+                    "override_count": false,
                     "indexes": [
                       "record_id",
                       "last_name"
@@ -76,6 +77,7 @@
                     },
                     "idkey": "record_id",
                     "primary_index": true,
+                    "override_count": false,
                     "indexes": [
                       "record_id",
                       "nickname",
@@ -91,6 +93,21 @@
                     },
                     "idkey": "record_id",
                     "primary_index": true,
+                    "override_count": false,
+                    "indexes": [
+                      "record_id"
+                    ]
+                  },
+                  {
+                    "name": "service_auth",
+                    "schema": {
+                      "record_id": "record_id",
+                      "token": "{{ rand_hash }}"
+                    },
+                    "idkey": "record_id",
+                    "primary_index": true,
+                    "override_count": true,
+                    "record_count": 1,
                     "indexes": [
                       "record_id"
                     ]

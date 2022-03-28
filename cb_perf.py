@@ -1637,6 +1637,8 @@ class collectionElement(object):
         self.scope = scope
         self.id = None
         self.primary_key = False
+        self.override_count = False
+        self.record_count = None
         if name == '_default':
             self.key_prefix = bucket
         else:
@@ -1677,6 +1679,11 @@ class inventoryManager(object):
                             self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
                             self.schemas[0].buckets[0].scopes[0].collections[0].primary_index \
                                 = collection['primary_index']
+                            self.schemas[0].buckets[0].scopes[0].collections[0].override_count \
+                                = collection['override_count']
+                            if 'record_count' in collection:
+                                self.schemas[0].buckets[0].scopes[0].collections[0].record_count \
+                                    = collection['record_count']
                             if 'indexes' in collection:
                                 for index_field in collection['indexes']:
                                     self.logger.info("adding index for field %s to inventory" % index_field)
@@ -1744,6 +1751,15 @@ class inventoryManager(object):
 
     def getIndex(self, collection, field):
         return next(((i['field'], i['name']) for i in collection.indexes if i['field'] == field), None)
+
+    def overrideRecordCount(self, collection):
+        if type(collection.override_count) != bool:
+            return bool(strtobool(collection.override_count))
+        else:
+            return collection.override_count
+
+    def getRecordCount(self, collection):
+        return int(collection.record_count)
 
 
 class params(object):
@@ -3104,10 +3120,10 @@ class runPerformanceBenchmark(object):
         print("Test module. Mode: %s" % self.modeString(mode))
 
         if mode == LOAD_DATA or mode == REMOVE_DATA:
-            operation_count = int(self.recordCount)
+            default_operation_count = int(self.recordCount)
             run_threads = int(self.loadThreadCount)
         else:
-            operation_count = int(self.operationCount)
+            default_operation_count = int(self.operationCount)
             run_threads = int(self.runThreadCount)
 
         try:
@@ -3125,6 +3141,10 @@ class runPerformanceBenchmark(object):
         if run:
             for coll_obj in collections:
                 inputFileJson = coll_obj.schema
+                if coll_obj.record_count:
+                    operation_count = coll_obj.record_count
+                else:
+                    operation_count = default_operation_count
 
                 statusThread = multiprocessing.Process(target=self.printStatusThread, args=(operation_count, run_threads,))
                 statusThread.daemon = True
