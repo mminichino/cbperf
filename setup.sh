@@ -54,7 +54,7 @@ case "$SYSTEM_UNAME" in
     Linux*)
       machine=Linux
       check_linux_by_type
-      PYTHON_BIN=python3
+      PYTHON_BIN=python3.9
       ;;
     Darwin*)
       machine=MacOS
@@ -72,6 +72,19 @@ case "$SYSTEM_UNAME" in
       exit 1
       ;;
 esac
+
+while getopts "p:" opt
+do
+  case $opt in
+    p)
+      PYTHON_BIN=$OPTARG
+      ;;
+    \?)
+      echo "Invalid Argument"
+      exit 1
+      ;;
+  esac
+done
 
 which $PYTHON_BIN >/dev/null 2>&1
 if [ $? -ne 0 ]; then
