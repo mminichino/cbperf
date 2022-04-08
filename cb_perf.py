@@ -47,6 +47,8 @@ import numpy
 from PIL import Image
 import io
 import base64
+import hmac
+import hashlib
 
 threadLock = multiprocessing.Lock()
 
@@ -769,8 +771,8 @@ class RequestNotFound(Exception):
 
 class cbutil(object):
 
-    def __init__(self, hostname='localhost', username='Administrator', password='password', ssl=False, aio=False,
-                 internal=False):
+    def __init__(self, hostname='localhost', username='Administrator', password='password',
+                 cluster=None, ssl=False, aio=False, internal=False):
         import logging
         self.debug = False
         self.tls = False
@@ -779,6 +781,8 @@ class cbutil(object):
         self.hostname = hostname
         self.username = username
         self.password = password
+        self.cluster = cluster
+        self.cluster_id = None
         self.bucket_memory = None
         self.host_list = []
         self.ext_host_list = []
@@ -798,11 +802,12 @@ class cbutil(object):
         self.collection_a = None
         self.bm = None
         self.qim = None
+        self.capella_url = 'https://cloudapi.cloud.couchbase.com'
         if internal:
             net_string = 'default'
         else:
             net_string = 'external'
-        if ssl:
+        if ssl or cluster:
             self.tls = True
             self.url = "https://"
             self.aport = ":18091"
@@ -819,6 +824,13 @@ class cbutil(object):
         if not self.is_reachable():
             self.logger.error("cbutil: %s is unreachable" % hostname)
             raise Exception("Can not connect to %s." % hostname)
+
+        if cluster:
+            if 'CAPELLA_ACCESS_KEY_ID' in os.environ and 'CAPELLA_SECRET_ACCESS_KEY' in os.environ:
+                self.capella_key = os.environ['CAPELLA_ACCESS_KEY_ID']
+                self.capella_secret = os.environ['CAPELLA_SECRET_ACCESS_KEY']
+            else:
+                raise Exception("Please set CAPELLA_ACCESS_KEY_ID and CAPELLA_SECRET_ACCESS_KEY for Capella clusters")
 
         try:
             self.get_hostlist()
@@ -896,6 +908,17 @@ class cbutil(object):
         return None
 
     def create_bucket(self, bucket, mem_quota=512):
+        if self.cluster_id:
+            return self.create_bucket_capella(bucket, mem_quota)
+        else:
+            return self.create_bucket_direct(bucket, mem_quota)
+
+    def create_bucket_capella(self, bucket, mem_quota=512):
+        if not self.is_bucket(bucket):
+            print("Please create bucket {} in the Capella UI and then rerun this utility.".format(bucket))
+            sys.exit(0)
+
+    def create_bucket_direct(self, bucket, mem_quota=512):
         cluster = self.connect_s()
         bm = self.get_bm(cluster)
         retries = 0
@@ -1195,6 +1218,68 @@ class cbutil(object):
     def get_memquota(self):
         return self.mem_quota
 
+    def call_capella_api_get(self, endpoint):
+        session = requests.Session()
+        retries = Retry(total=60,
+                        backoff_factor=0.1,
+                        status_forcelist=[500, 501, 503])
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        cbc_api_endpoint = endpoint
+        cbc_api_method = 'GET'
+        cbc_api_now = int(datetime.now().timestamp() * 1000)
+        cbc_api_message = cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(cbc_api_now)
+        cbc_api_signature = base64.b64encode(hmac.new(bytes(self.capella_secret, 'utf-8'),
+                                                      bytes(cbc_api_message, 'utf-8'),
+                                                      digestmod=hashlib.sha256).digest())
+        cbc_api_request_headers = {
+            'Authorization': 'Bearer ' + self.capella_key + ':' + cbc_api_signature.decode(),
+            'Couchbase-Timestamp': str(cbc_api_now)
+        }
+
+        session.headers.update(cbc_api_request_headers)
+        response = session.get(self.capella_url + endpoint)
+
+        try:
+            self.check_status_code(response.status_code)
+        except Exception as e:
+            self.logger.error("call_capella_api_get: %s" % str(e))
+            raise
+
+        response_json = json.loads(response.text)
+        return response_json
+
+    def call_capella_api_post(self, endpoint, body):
+        session = requests.Session()
+        retries = Retry(total=60,
+                        backoff_factor=0.1,
+                        status_forcelist=[500, 501, 503])
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        cbc_api_endpoint = endpoint
+        cbc_api_method = 'GET'
+        cbc_api_now = int(datetime.now().timestamp() * 1000)
+        cbc_api_message = cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(cbc_api_now)
+        cbc_api_signature = base64.b64encode(hmac.new(bytes(self.capella_secret, 'utf-8'),
+                                                      bytes(cbc_api_message, 'utf-8'),
+                                                      digestmod=hashlib.sha256).digest())
+        cbc_api_request_headers = {
+            'Authorization': 'Bearer ' + self.capella_key + ':' + cbc_api_signature.decode(),
+            'Couchbase-Timestamp': str(cbc_api_now)
+        }
+
+        session.headers.update(cbc_api_request_headers)
+        response = session.post(self.capella_url + endpoint, json=body)
+
+        try:
+            self.check_status_code(response.status_code)
+        except Exception as e:
+            self.logger.error("call_capella_api_get: %s" % str(e))
+            raise
+
+        response_json = json.loads(response.text)
+        return response_json
+
     def get_hostlist(self):
         host_list = []
         session = requests.Session()
@@ -1203,6 +1288,15 @@ class cbutil(object):
                         status_forcelist=[500, 501, 503])
         session.mount('http://', HTTPAdapter(max_retries=retries))
         session.mount('https://', HTTPAdapter(max_retries=retries))
+
+        if self.cluster:
+            results = self.call_capella_api_get('/v3/clusters')
+            if 'data' in results:
+                for item in results['data']['items']:
+                    if item['name'] == self.cluster:
+                        self.cluster_id = item['id']
+            if not self.cluster_id:
+                raise Exception("Capella cluster {} not found.".format(self.cluster))
 
         response = session.get(self.admin_url + '/pools/default',
                                auth=(self.username, self.password), verify=False, timeout=15)
@@ -1246,10 +1340,15 @@ class cbutil(object):
         ext_host_name = None
         ext_port_list = None
         i = 1
+
         if len(self.srv_host_list) > 0:
             print("Name %s is a domain with SRV records:" % self.rally_point_hostname)
             for record in self.srv_host_list:
                 print(" => %s (%s)" % (record['hostname'], record['address']))
+
+        if self.cluster_id:
+            print("Capella cluster ID: {}".format(self.cluster_id))
+
         print("Cluster Host List:")
         for record in self.host_list:
             if 'external_name' in record:
@@ -1776,6 +1875,7 @@ class params(object):
         parent_parser.add_argument('--limit', action='store_true', help="Limited Network Connectivity")
         parent_parser.add_argument('--internal', action='store_true', help="Use Default over External Network")
         parent_parser.add_argument('--schema', action='store', help="Test Schema", default="default")
+        parent_parser.add_argument('--cluster', action='store', help="Couchbase Capella Cluster Name")
         subparsers = parser.add_subparsers(dest='command')
         run_parser = subparsers.add_parser('run', help="Run Test Scenarios", parents=[parent_parser], add_help=False)
         list_parser = subparsers.add_parser('list', help="List Nodes", parents=[parent_parser], add_help=False)
@@ -1853,12 +1953,13 @@ class runPerformanceBenchmark(object):
         self.bucket = parameters.bucket
         self.scope = '_default'
         self.collection = '_default'
+        self.cluster = parameters.cluster
         if self.inputFile:
             self.schema = "external_file"
         else:
             self.schema = parameters.schema
         self.host = parameters.host
-        self.tls = parameters.tls
+        self.tls = True if self.cluster else parameters.tls
         self.debug = parameters.debug
         self.limitNetworkPorts = parameters.limit
         self.internalNetwork = parameters.internal
@@ -2251,7 +2352,8 @@ class runPerformanceBenchmark(object):
         document_index_count = self.replicaCount + 1
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
         except Exception as e:
             self.logger.critical("%s" % str(e))
             sys.exit(1)
@@ -2288,7 +2390,8 @@ class runPerformanceBenchmark(object):
     def cleanUp(self, collections):
         try:
             self.logger.info("cleanUp: Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
         except Exception as e:
             self.logger.critical("%s" % str(e))
             raise Exception("cleanUp: Can not connect to couchbase: %s" % str(e))
@@ -2304,7 +2407,8 @@ class runPerformanceBenchmark(object):
     def getHealth(self):
         try:
             self.logger.info("cleanUp: Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
         except Exception as e:
             self.logger.critical("%s" % str(e))
             raise Exception("cleanUp: Can not connect to couchbase: %s" % str(e))
@@ -2314,7 +2418,8 @@ class runPerformanceBenchmark(object):
     def getHostList(self):
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
             cb_cluster.print_host_map()
         except Exception as e:
             self.logger.critical("%s" % str(e))
@@ -2537,7 +2642,8 @@ class runPerformanceBenchmark(object):
         print("[i] Processing rules.")
         try:
             self.logger.info("processRules: Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
         except Exception as e:
             print("Rule processing failed: %s" % str(e))
             self.logger.critical("processRules: error: %s" % str(e))
@@ -2754,7 +2860,8 @@ class runPerformanceBenchmark(object):
 
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
             print("CBPerf calibrate (%s) connected to %s version %s." % (self.getMode(), self.host, cb_cluster.version))
             if init:
                 collections, rules = self.doInit(cb_cluster)
@@ -2864,7 +2971,8 @@ class runPerformanceBenchmark(object):
 
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
             collections, rules = self.doInit(cb_cluster)
         except Exception as e:
             print("Dry run failed with error: %s" % str(e))
@@ -3017,7 +3125,8 @@ class runPerformanceBenchmark(object):
 
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
 
             self.logger.info("Connecting to the cluster.")
             if not self.useSync:
@@ -3128,7 +3237,8 @@ class runPerformanceBenchmark(object):
 
         try:
             self.logger.info("Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password, ssl=self.tls, internal=self.internalNetwork)
+            cb_cluster = cbutil(self.host, self.username, self.password,
+                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
             print("CBPerf (%s) connected to %s cluster version %s." % (self.getMode(), self.host, cb_cluster.version))
             if init:
                 collections, rules = self.doInit(cb_cluster)
