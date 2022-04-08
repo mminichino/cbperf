@@ -49,6 +49,7 @@ import io
 import base64
 import hmac
 import hashlib
+from lib.capella.api import capella_api
 
 threadLock = multiprocessing.Lock()
 
@@ -825,13 +826,6 @@ class cbutil(object):
             self.logger.error("cbutil: %s is unreachable" % hostname)
             raise Exception("Can not connect to %s." % hostname)
 
-        if cluster:
-            if 'CAPELLA_ACCESS_KEY_ID' in os.environ and 'CAPELLA_SECRET_ACCESS_KEY' in os.environ:
-                self.capella_key = os.environ['CAPELLA_ACCESS_KEY_ID']
-                self.capella_secret = os.environ['CAPELLA_SECRET_ACCESS_KEY']
-            else:
-                raise Exception("Please set CAPELLA_ACCESS_KEY_ID and CAPELLA_SECRET_ACCESS_KEY for Capella clusters")
-
         try:
             self.get_hostlist()
         except Exception as e:
@@ -1218,70 +1212,8 @@ class cbutil(object):
     def get_memquota(self):
         return self.mem_quota
 
-    def call_capella_api_get(self, endpoint):
-        session = requests.Session()
-        retries = Retry(total=60,
-                        backoff_factor=0.1,
-                        status_forcelist=[500, 501, 503])
-        session.mount('http://', HTTPAdapter(max_retries=retries))
-        session.mount('https://', HTTPAdapter(max_retries=retries))
-        cbc_api_endpoint = endpoint
-        cbc_api_method = 'GET'
-        cbc_api_now = int(datetime.now().timestamp() * 1000)
-        cbc_api_message = cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(cbc_api_now)
-        cbc_api_signature = base64.b64encode(hmac.new(bytes(self.capella_secret, 'utf-8'),
-                                                      bytes(cbc_api_message, 'utf-8'),
-                                                      digestmod=hashlib.sha256).digest())
-        cbc_api_request_headers = {
-            'Authorization': 'Bearer ' + self.capella_key + ':' + cbc_api_signature.decode(),
-            'Couchbase-Timestamp': str(cbc_api_now)
-        }
-
-        session.headers.update(cbc_api_request_headers)
-        response = session.get(self.capella_url + endpoint)
-
-        try:
-            self.check_status_code(response.status_code)
-        except Exception as e:
-            self.logger.error("call_capella_api_get: %s" % str(e))
-            raise
-
-        response_json = json.loads(response.text)
-        return response_json
-
-    def call_capella_api_post(self, endpoint, body):
-        session = requests.Session()
-        retries = Retry(total=60,
-                        backoff_factor=0.1,
-                        status_forcelist=[500, 501, 503])
-        session.mount('http://', HTTPAdapter(max_retries=retries))
-        session.mount('https://', HTTPAdapter(max_retries=retries))
-        cbc_api_endpoint = endpoint
-        cbc_api_method = 'GET'
-        cbc_api_now = int(datetime.now().timestamp() * 1000)
-        cbc_api_message = cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(cbc_api_now)
-        cbc_api_signature = base64.b64encode(hmac.new(bytes(self.capella_secret, 'utf-8'),
-                                                      bytes(cbc_api_message, 'utf-8'),
-                                                      digestmod=hashlib.sha256).digest())
-        cbc_api_request_headers = {
-            'Authorization': 'Bearer ' + self.capella_key + ':' + cbc_api_signature.decode(),
-            'Couchbase-Timestamp': str(cbc_api_now)
-        }
-
-        session.headers.update(cbc_api_request_headers)
-        response = session.post(self.capella_url + endpoint, json=body)
-
-        try:
-            self.check_status_code(response.status_code)
-        except Exception as e:
-            self.logger.error("call_capella_api_get: %s" % str(e))
-            raise
-
-        response_json = json.loads(response.text)
-        return response_json
-
     def get_hostlist(self):
-        host_list = []
+        capella = capella_api()
         session = requests.Session()
         retries = Retry(total=60,
                         backoff_factor=0.1,
@@ -1290,13 +1222,10 @@ class cbutil(object):
         session.mount('https://', HTTPAdapter(max_retries=retries))
 
         if self.cluster:
-            results = self.call_capella_api_get('/v3/clusters')
-            if 'data' in results:
-                for item in results['data']['items']:
-                    if item['name'] == self.cluster:
-                        self.cluster_id = item['id']
-            if not self.cluster_id:
-                raise Exception("Capella cluster {} not found.".format(self.cluster))
+            try:
+                self.cluster_id = capella.get_cluster_id(self.cluster)
+            except Exception:
+                raise
 
         response = session.get(self.admin_url + '/pools/default',
                                auth=(self.username, self.password), verify=False, timeout=15)

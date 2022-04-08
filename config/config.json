@@ -1,0 +1,129 @@
+{
+    "playbooks": {
+        "default": {
+            "load": {
+                "write": 100,
+                "init": true,
+                "run": true,
+                "cleanup": false,
+                "calibrate": false,
+                "pause": true,
+                "test": "LOAD_DATA"
+            },
+            "test1": {
+                "write": 50,
+                "init": false,
+                "run": true,
+                "cleanup": false,
+                "calibrate": false,
+                "pause": true,
+                "test": "KV_TEST"
+            },
+            "test2": {
+                "write": 5,
+                "init": false,
+                "run": true,
+                "cleanup": false,
+                "calibrate": false,
+                "pause": true,
+                "test": "KV_TEST"
+            },
+            "test3": {
+                "write": 0,
+                "init": false,
+                "run": true,
+                "cleanup": false,
+                "calibrate": false,
+                "pause": true,
+                "test": "KV_TEST"
+            },
+            "test4": {
+                "write": 50,
+                "init": false,
+                "run": true,
+                "cleanup": false,
+                "calibrate": false,
+                "pause": true,
+                "test": "QUERY_TEST"
+            },
+            "test5": {
+                "write": 5,
+                "init": false,
+                "run": true,
+                "cleanup": false,
+                "calibrate": false,
+                "pause": true,
+                "test": "QUERY_TEST"
+            },
+            "test6": {
+                "write": 0,
+                "init": false,
+                "run": true,
+                "cleanup": true,
+                "calibrate": false,
+                "pause": false,
+                "test": "QUERY_TEST"
+            }
+        },
+        "calibrate": {
+            "load": {
+                "write": 100,
+                "init": true,
+                "run": true,
+                "cleanup": false,
+                "calibrate": false,
+                "pause": true,
+                "test": "LOAD_DATA"
+            },
+            "test1": {
+                "write": 5,
+                "init": false,
+                "run": true,
+                "cleanup": false,
+                "calibrate": true,
+                "pause": true,
+                "test": "QUERY_TEST"
+            },
+            "test2": {
+                "write": 0,
+                "init": false,
+                "run": true,
+                "cleanup": true,
+                "calibrate": true,
+                "pause": false,
+                "test": "KV_TEST"
+            }
+        },
+        "load": {
+            "load": {
+                "write": 100,
+                "init": true,
+                "run": true,
+                "cleanup": false,
+                "calibrate": false,
+                "pause": false,
+                "test": "LOAD_DATA"
+            }
+        },
+        "remove": {
+            "remove": {
+                "write": 0,
+                "init": false,
+                "run": true,
+                "cleanup": true,
+                "calibrate": false,
+                "pause": false,
+                "test": "REMOVE_DATA"
+            }
+        }
+    },
+    "settings": {
+        "operation_count": 100000,
+        "record_count": 1000000,
+        "kv_batch_size": 100,
+        "query_batch_size": 1,
+        "id_field": "record_id",
+        "query_latency": 1,
+        "kv_latency": 1
+    }
+}
