@@ -20,10 +20,12 @@ class cb_session(object):
         self.rally_cluster_node = self.rally_host_name
         self.node_list = []
         self.srv_host_list = []
+        self.all_hosts = []
         self.rally_dns_domain = False
         self.node_cycle = None
         self.cluster_info = None
         self.sw_version = None
+        self.memory_quota = None
         self.username = username
         self.password = password
         self.ssl = ssl
@@ -71,17 +73,17 @@ class cb_session(object):
             self.logger.setLevel(logging.CRITICAL)
 
     def check_status_code(self, code):
-        self.logger.debug("Capella API call status code {}".format(code))
+        self.logger.debug("Couchbase API call status code {}".format(code))
         if code == 200:
             return True
         elif code == 401:
-            raise NotAuthorized("Capella API: Forbidden: Insufficient privileges")
+            raise NotAuthorized("Couchbase API: Unauthorized: Insufficient privileges")
         elif code == 403:
-            raise ForbiddenError("Capella API: Request Validation Error")
+            raise ForbiddenError("Couchbase API: Forbidden")
         elif code == 404:
-            raise NotFoundError("Capella API: Server Error")
+            raise NotFoundError("Couchbase API: Not Found")
         else:
-            raise Exception("Unknown Capella API call status code {}".format(code))
+            raise Exception("Unknown Couchbase API call status code {}".format(code))
 
     def is_reachable(self):
         resolver = dns.resolver.Resolver()
@@ -113,6 +115,7 @@ class cb_session(object):
     def check_node_connectivity(self, hostname, port):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1.5)
             result = sock.connect_ex((hostname, int(port)))
             sock.close()
         except Exception:
@@ -150,6 +153,18 @@ class cb_session(object):
         else:
             return self.prefix + self.rally_cluster_node + ":" + self.admin_port
 
+    @property
+    def cb_sw_version(self):
+        return self.sw_version
+
+    @property
+    def get_memory_quota(self):
+        return self.memory_quota
+
+    def node_api_urls(self):
+        for node in self.all_hosts:
+            yield self.prefix + node + ":" + self.node_port
+
     def admin_api_get(self, endpoint):
         api_url = self.admin_hostname + endpoint
         self.logger.debug("admin_api_get connecting to {}".format(api_url))
@@ -162,6 +177,32 @@ class cb_session(object):
 
         response_json = json.loads(response.text)
         return response_json
+
+    def index_api_get(self, endpoint):
+        index_data = {}
+        for prefix in list(self.node_api_urls()):
+            url = prefix + endpoint
+            self.logger.debug("index_api_get connecting to {}".format(url))
+            response = self.session.get(url, auth=(self.username, self.password), verify=False, timeout=15)
+
+            try:
+                self.check_status_code(response.status_code)
+            except Exception:
+                raise
+
+            response_json = json.loads(response.text)
+
+            for key in response_json:
+                index_name = key.split(':')[-1]
+                if index_name not in index_data:
+                    index_data[index_name] = {}
+                for attribute in response_json[key]:
+                    if attribute not in index_data[index_name]:
+                        index_data[index_name][attribute] = response_json[key][attribute]
+                    else:
+                        index_data[index_name][attribute] += response_json[key][attribute]
+
+        return index_data
 
     def init_cluster(self):
         try:
@@ -177,8 +218,6 @@ class cb_session(object):
 
         for i in range(len(results['nodes'])):
             record = {}
-            ext_host_name = None
-            host_name = None
 
             if 'alternateAddresses' in results['nodes'][i]:
                 ext_host_name = results['nodes'][i]['alternateAddresses']['external']['hostname']
@@ -188,12 +227,12 @@ class cb_session(object):
                     record['external_name'] = ext_host_name
                     record['external_ports'] = results['nodes'][i]['alternateAddresses']['external']['ports']
                     self.logger.info("Added external node {}".format(ext_host_name))
-                    # if self.check_node_connectivity(ext_host_name, self.node_port):
-                    #     self.logger.info("node API port accessible on {}".format(ext_host_name))
-                    #     record['external_node_api'] = True
-                    # else:
-                    #     self.logger.info("node API port not accessible on {}".format(ext_host_name))
-                    #     record['external_node_api'] = False
+                    if self.check_node_connectivity(ext_host_name, self.node_port):
+                        self.logger.info("node API port accessible on {}".format(ext_host_name))
+                        record['external_node_api'] = True
+                    else:
+                        self.logger.info("node API port not accessible on {}".format(ext_host_name))
+                        record['external_node_api'] = False
 
             host_name = results['nodes'][i]['configuredHostname']
             host_name = host_name.split(':')[0]
@@ -204,6 +243,13 @@ class cb_session(object):
                     self.use_external_network = True
                 else:
                     raise NodeUnreachable("can not connect to node {}".format(host_name))
+            else:
+                if self.check_node_connectivity(host_name, self.node_port):
+                    self.logger.info("node API port accessible on {}".format(host_name))
+                    record['node_api'] = True
+                else:
+                    self.logger.info("node API port not accessible on {}".format(host_name))
+                    record['node_api'] = False
 
             record['host_name'] = host_name
             record['version'] = results['nodes'][i]['version']
@@ -213,6 +259,14 @@ class cb_session(object):
             self.logger.info("Added node {}".format(host_name))
 
         self.cluster_info = results
+        self.memory_quota = results['memoryQuota']
         self.sw_version = self.node_list[0]['version']
+
+        if self.use_external_network:
+            self.all_hosts = list(self.node_list[i]['external_name'] for i, item in enumerate(self.node_list))
+        else:
+            self.all_hosts = list(self.node_list[i]['host_name'] for i, item in enumerate(self.node_list))
+
+        self.node_cycle = cycle(self.all_hosts)
         self.logger.info("connected to cluster version {}".format(self.sw_version))
         return True
