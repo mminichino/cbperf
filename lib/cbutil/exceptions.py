@@ -59,6 +59,22 @@ class AdminApiError(cbUtilError):
     pass
 
 
+class ClusterNotFound(cbUtilException):
+    pass
+
+
+class BucketNotFound(cbUtilException):
+    pass
+
+
+class ScopeNotFound(cbUtilException):
+    pass
+
+
+class CollectionNotFound(cbUtilException):
+    pass
+
+
 class NotFoundError(cbUtilException):
     pass
 

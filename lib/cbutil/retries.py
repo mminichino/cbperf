@@ -8,7 +8,8 @@ from functools import wraps
 
 def retry(retry_count=5,
           factor=0.01,
-          exception_list=None
+          allow_list=None,
+          always_raise_list=None
           ) -> Callable:
     def retry_handler(func):
         @wraps(func)
@@ -17,7 +18,10 @@ def retry(retry_count=5,
                 try:
                     return func(*args, **kwargs)
                 except Exception as err:
-                    if not exception_list or not isinstance(err, exception_list):
+                    if always_raise_list and isinstance(err, always_raise_list):
+                        raise
+
+                    if allow_list and not isinstance(err, allow_list):
                         raise
 
                     if retry_number == retry_count:
