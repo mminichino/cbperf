@@ -59,19 +59,19 @@ class AdminApiError(cbUtilError):
     pass
 
 
-class ClusterNotFound(cbUtilException):
+class ClusterConnectException(cbUtilException):
     pass
 
 
-class BucketNotFound(cbUtilException):
+class BucketCreateException(cbUtilException):
     pass
 
 
-class ScopeNotFound(cbUtilException):
+class ScopeCreateException(cbUtilException):
     pass
 
 
-class CollectionNotFound(cbUtilException):
+class CollectionCreateException(cbUtilException):
     pass
 
 
