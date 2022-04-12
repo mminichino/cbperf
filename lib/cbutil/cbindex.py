@@ -3,12 +3,11 @@
 
 from .sessionmgr import cb_session
 from .exceptions import *
-from .retries import retry
 import logging
 import json
 
 
-class cb_connect(cb_session):
+class cb_index(cb_session):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -21,12 +20,10 @@ class cb_connect(cb_session):
 
             for key in response_json:
                 index_name = key.split(':')[-1]
-                if index_name not in index_data:
-                    index_data[index_name] = {}
-                for attribute in response_json[key]:
-                    if attribute not in index_data[index_name]:
-                        index_data[index_name][attribute] = response_json[key][attribute]
-                    else:
-                        index_data[index_name][attribute] += response_json[key][attribute]
+                index_object = key.split(':')[-2]
+                if index_object not in index_data:
+                    index_data[index_object] = {}
+                if index_name not in index_data[index_object]:
+                    index_data[index_object][index_name] = response_json[key]
 
         return index_data
