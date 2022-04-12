@@ -9,6 +9,8 @@ import logging
 import socket
 import dns.resolver
 from itertools import cycle
+
+import lib.cbutil.exceptions
 from .exceptions import *
 
 
@@ -77,13 +79,13 @@ class cb_session(object):
         if code == 200:
             return True
         elif code == 401:
-            raise NotAuthorized("Couchbase API: Unauthorized: Insufficient privileges")
+            raise NotAuthorized("Unauthorized: Insufficient privileges")
         elif code == 403:
-            raise ForbiddenError("Couchbase API: Forbidden")
+            raise ForbiddenError("Forbidden")
         elif code == 404:
-            raise NotFoundError("Couchbase API: Not Found")
+            raise NotFoundError("Not Found")
         else:
-            raise Exception("Unknown Couchbase API call status code {}".format(code))
+            raise Exception("Unknown API status code {}".format(code))
 
     def is_reachable(self):
         resolver = dns.resolver.Resolver()
@@ -161,7 +163,7 @@ class cb_session(object):
     def get_memory_quota(self):
         return self.memory_quota
 
-    def node_api_urls(self):
+    def node_hostnames(self):
         for node in self.all_hosts:
             yield self.prefix + node + ":" + self.node_port
 
@@ -172,37 +174,29 @@ class cb_session(object):
 
         try:
             self.check_status_code(response.status_code)
-        except Exception:
-            raise
+        except Exception as err:
+            message = api_url + ": " + str(err)
+            raise AdminApiError(message)
 
         response_json = json.loads(response.text)
         return response_json
 
-    def index_api_get(self, endpoint):
-        index_data = {}
-        for prefix in list(self.node_api_urls()):
-            url = prefix + endpoint
-            self.logger.debug("index_api_get connecting to {}".format(url))
-            response = self.session.get(url, auth=(self.username, self.password), verify=False, timeout=15)
+    def node_api_get(self, endpoint):
+        for node_name in list(self.node_hostnames()):
+            api_url = node_name + endpoint
+            self.logger.debug("node_api_get connecting to {}".format(api_url))
+            response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
 
             try:
                 self.check_status_code(response.status_code)
-            except Exception:
-                raise
+            except NotFoundError:
+                continue
+            except Exception as err:
+                message = api_url + ": " + str(err)
+                raise NodeApiError(message)
 
             response_json = json.loads(response.text)
-
-            for key in response_json:
-                index_name = key.split(':')[-1]
-                if index_name not in index_data:
-                    index_data[index_name] = {}
-                for attribute in response_json[key]:
-                    if attribute not in index_data[index_name]:
-                        index_data[index_name][attribute] = response_json[key][attribute]
-                    else:
-                        index_data[index_name][attribute] += response_json[key][attribute]
-
-        return index_data
+            yield response_json
 
     def init_cluster(self):
         try:
