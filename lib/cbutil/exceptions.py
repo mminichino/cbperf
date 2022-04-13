@@ -79,7 +79,35 @@ class CollectionRemoveError(cbUtilError):
     pass
 
 
+class CollectionCountError(cbUtilError):
+    pass
+
+
 class QueryError(cbUtilError):
+    pass
+
+
+class QueryArgumentsError(cbUtilError):
+    pass
+
+
+class IndexStatError(cbUtilError):
+    pass
+
+
+class IndexBucketError(cbUtilError):
+    pass
+
+
+class IndexScopeError(cbUtilError):
+    pass
+
+
+class IndexQueryError(cbUtilError):
+    pass
+
+
+class IndexCollectionError(cbUtilError):
     pass
 
 
@@ -88,6 +116,10 @@ class ClusterConnectException(cbUtilException):
 
 
 class BucketCreateException(cbUtilException):
+    pass
+
+
+class BucketDeleteException(cbUtilException):
     pass
 
 
@@ -104,5 +136,9 @@ class NotFoundError(cbUtilException):
 
 
 class CollectionNameNotFound(cbUtilException):
+    pass
+
+
+class IndexNotReady(cbUtilException):
     pass
 

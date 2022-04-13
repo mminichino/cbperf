@@ -4,6 +4,7 @@
 from .sessionmgr import cb_session
 from .exceptions import *
 from .retries import retry
+from .dbinstance import db_instance
 from datetime import timedelta
 from couchbase_core._libcouchbase import LOCKMODE_NONE
 import couchbase
@@ -22,111 +23,6 @@ from couchbase.exceptions import (CASMismatchException, CouchbaseException, Couc
 import logging
 import asyncio
 import json
-
-
-class db_instance(object):
-
-    def __init__(self):
-        self.cluster_obj_s = None
-        self.cluster_obj_a = None
-        self.bm_obj = None
-        self.qim_obj = None
-        self.bucket_obj_s = None
-        self.bucket_obj_a = None
-        self.bucket_name = None
-        self.scope_obj_s = None
-        self.scope_obj_a = None
-        self.scope_name = None
-        self.collections_s = {}
-        self.collections_a = {}
-
-    def set_cluster(self, cluster_s, cluster_a):
-        self.cluster_obj_s = cluster_s
-        self.bm_obj = cluster_s.buckets()
-        self.qim_obj = QueryIndexManager(cluster_s)
-        self.cluster_obj_a = cluster_a
-
-    def set_bucket(self, name, bucket_s, bucket_a):
-        self.bucket_name = name
-        self.bucket_obj_s = bucket_s
-        self.bucket_obj_a = bucket_a
-
-    def set_scope(self, name, scope_s, scope_a):
-        self.scope_name = name
-        self.scope_obj_s = scope_s
-        self.scope_obj_a = scope_a
-
-    def add_collection(self, name, collection_s, collection_a):
-        self.collections_s[name] = collection_s
-        self.collections_a[name] = collection_a
-
-    @property
-    def cluster_s(self):
-        return self.cluster_obj_s
-
-    @property
-    def cluster_a(self):
-        return self.cluster_obj_a
-
-    @property
-    def bm(self):
-        return self.bm_obj
-
-    @property
-    def qim(self):
-        return self.qim_obj
-
-    @property
-    def bucket_s(self):
-        return self.bucket_obj_s
-
-    @property
-    def bucket_a(self):
-        return self.bucket_obj_a
-
-    @property
-    def cm_s(self):
-        cm_obj = self.bucket_obj_s.collections()
-        return cm_obj
-
-    @property
-    def cm_a(self):
-        cm_obj = self.bucket_obj_a.collections()
-        return cm_obj
-
-    @property
-    def scope_s(self):
-        return self.scope_obj_s
-
-    @property
-    def scope_a(self):
-        return self.scope_obj_a
-
-    def collection_s(self, name):
-        if name in self.collections_s:
-            return self.collections_s[name]
-        else:
-            raise CollectionNameNotFound("{} not configured".format(name))
-
-    def collection_a(self, name):
-        if name in self.collections_a:
-            return self.collections_a[name]
-        else:
-            raise CollectionNameNotFound("{} not configured".format(name))
-
-    def keyspace_s(self, name):
-        if name in self.collections_s:
-            keyspace = self.bucket_name + '.' + self.scope_name + '.' + name
-            return keyspace
-        else:
-            raise CollectionNameNotFound("{} not configured".format(name))
-
-    def keyspace_a(self, name):
-        if name in self.collections_a:
-            keyspace = self.bucket_name + '.' + self.scope_name + '.' + name
-            return keyspace
-        else:
-            raise CollectionNameNotFound("{} not configured".format(name))
 
 
 class cb_connect(cb_session):
@@ -169,24 +65,24 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(ScopeNotFoundException,),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    async def scope(self, name):
+    async def scope(self, name="_default"):
         scope_s = self.db.bucket_s.scope(name)
         scope_a = self.db.bucket_a.scope(name)
         self.db.set_scope(name, scope_s, scope_a)
 
-    def scope_s(self, name):
+    def scope_s(self, name="_default"):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.scope(name))
 
     @retry(always_raise_list=(CollectionNotFoundException,),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    async def collection(self, name):
+    async def collection(self, name="_default"):
         collection_s = self.db.scope_s.collection(name)
         collection_a = self.db.scope_a.collection(name)
         await collection_a.on_connect()
         self.db.add_collection(name, collection_s, collection_a)
 
-    def collection_s(self, name):
+    def collection_s(self, name="_default"):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.collection(name))
 
@@ -228,6 +124,18 @@ class cb_connect(cb_session):
 
         self.bucket_s(name)
 
+    @retry(always_raise_list=(BucketNotFoundException,),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    def drop_bucket(self, name):
+        try:
+            self.db.bm.drop_bucket(name)
+        except BucketNotFoundException:
+            pass
+        except Exception as err:
+            raise BucketDeleteException("can not drop bucket {}: {}".format(name, err))
+
+        self.db.drop_bucket()
+
     @retry(always_raise_list=(ScopeAlreadyExistsException,),
            allow_list=(CouchbaseTransientException, ProtocolException))
     def create_scope(self, name):
@@ -253,9 +161,18 @@ class cb_connect(cb_session):
 
         self.collection_s(name)
 
+    def collection_count(self, name="_default"):
+        try:
+            keyspace = self.db.keyspace_s(name)
+            queryText = 'select count(*) as count from ' + keyspace + ';'
+            result = self.cb_query_s(sql=queryText)
+            return result[0]['count']
+        except Exception as err:
+            CollectionCountError("can not get item count for {}: {}".format(name, err))
+
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    def cb_get_s(self, name, key):
+    def cb_get_s(self, key, name="_default"):
         try:
             collection = self.db.collection_s(name)
             return collection.get(key)
@@ -268,7 +185,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    async def cb_get_a(self, name, key):
+    async def cb_get_a(self, key, name="_default"):
         try:
             collection = self.db.collection_a(name)
             return await collection.get(key)
@@ -281,7 +198,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    def cb_upsert_s(self, name, key, document):
+    def cb_upsert_s(self, key, document, name="_default"):
         try:
             collection = self.db.collection_s(name)
             result = collection.upsert(key, document)
@@ -295,7 +212,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    async def cb_upsert_a(self, name, key, document):
+    async def cb_upsert_a(self, key, document, name="_default"):
         try:
             collection = self.db.collection_a(name)
             result = await collection.upsert(key, document)
@@ -309,7 +226,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(CollectionNameNotFound,),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    def cb_subdoc_upsert_s(self, name, key, field, value):
+    def cb_subdoc_upsert_s(self, key, field, value, name="_default"):
         try:
             collection = self.db.collection_s(name)
             result = collection.mutate_in(key, [SD.upsert(field, value)])
@@ -321,7 +238,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(CollectionNameNotFound,),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    async def cb_subdoc_upsert_a(self, name, key, field, value):
+    async def cb_subdoc_upsert_a(self, key, field, value, name="_default"):
         try:
             collection = self.db.collection_a(name)
             result = await collection.mutate_in(key, [SD.upsert(field, value)])
@@ -333,7 +250,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(CollectionNameNotFound,),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    def cb_subdoc_get_s(self, name, key, field):
+    def cb_subdoc_get_s(self, key, field, name="_default"):
         try:
             collection = self.db.collection_s(name)
             result = collection.lookup_in(key, [SD.get(field)])
@@ -345,7 +262,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(CollectionNameNotFound,),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    async def cb_subdoc_get_a(self, name, key, field):
+    async def cb_subdoc_get_a(self, key, field, name="_default"):
         try:
             collection = self.db.collection_a(name)
             result = await collection.lookup_in(key, [SD.get(field)])
@@ -355,16 +272,26 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionSubdocGetError("can not get {} from {}: {}".format(key, field, err))
 
-    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound),
+    def query_sql_constructor(self, field=None, name="_default", where=None, value=None, sql=None):
+        if not where and not sql and field:
+            keyspace = self.db.keyspace_a(name)
+            query = "SELECT " + field + " FROM " + keyspace + ";"
+        elif not sql and field:
+            keyspace = self.db.keyspace_a(name)
+            query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
+        elif sql:
+            query = sql
+        else:
+            raise QueryArgumentsError("query: either field or sql argument is required")
+
+        return query
+
+    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, QueryArgumentsError),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    def cb_query_s(self, name, field, where=None, value=None):
+    def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None):
         try:
-            keyspace = self.db.keyspace_s(name)
             contents = []
-            if not where:
-                query = "SELECT " + field + " FROM " + keyspace + ";"
-            else:
-                query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
+            query = self.query_sql_constructor(field, name, where, value, sql)
             result = self.db.cluster_s.query(query, QueryOptions(metrics=False, adhoc=True, pipeline_batch=128,
                                                                  max_parallelism=4, pipeline_cap=1024, scan_cap=1024))
             for item in result:
@@ -375,16 +302,12 @@ class cb_connect(cb_session):
         except Exception as err:
             raise QueryError("can not query {} from {}: {}".format(field, name, err))
 
-    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound),
+    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, QueryArgumentsError),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    async def cb_query_a(self, name, field, where=None, value=None):
+    async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None):
         try:
-            keyspace = self.db.keyspace_a(name)
             contents = []
-            if not where:
-                query = "SELECT " + field + " FROM " + keyspace + ";"
-            else:
-                query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
+            query = self.query_sql_constructor(field, name, where, value, sql)
             result = self.db.cluster_a.query(query, QueryOptions(metrics=False, adhoc=True, pipeline_batch=128,
                                                                  max_parallelism=4, pipeline_cap=1024, scan_cap=1024))
             async for item in result:
@@ -397,7 +320,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    def cb_remove_s(self, name, key):
+    def cb_remove_s(self, key, name="_default"):
         try:
             collection = self.db.collection_s(name)
             return collection.remove(key)
@@ -410,7 +333,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    async def cb_remove_a(self, name, key):
+    async def cb_remove_a(self, key, name="_default"):
         try:
             collection = self.db.collection_a(name)
             return await collection.remove(key)
