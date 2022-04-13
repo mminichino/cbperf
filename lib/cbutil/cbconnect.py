@@ -12,10 +12,11 @@ from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions, Quer
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.auth import PasswordAuthenticator
+import couchbase.subdocument as SD
 from couchbase.exceptions import (CASMismatchException, CouchbaseException, CouchbaseTransientException,
                                   DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
                                   BucketAlreadyExistsException, DurabilitySyncWriteAmbiguousException,
-                                  BucketNotFoundException, NetworkException, QueryErrorContext, ScopeNotFoundException,
+                                  BucketNotFoundException, TimeoutException, QueryException, ScopeNotFoundException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException, ProtocolException)
 import logging
@@ -105,13 +106,27 @@ class db_instance(object):
         if name in self.collections_s:
             return self.collections_s[name]
         else:
-            return None
+            raise CollectionNameNotFound("{} not configured".format(name))
 
     def collection_a(self, name):
         if name in self.collections_a:
             return self.collections_a[name]
         else:
-            return None
+            raise CollectionNameNotFound("{} not configured".format(name))
+
+    def keyspace_s(self, name):
+        if name in self.collections_s:
+            keyspace = self.bucket_name + '.' + self.scope_name + '.' + name
+            return keyspace
+        else:
+            raise CollectionNameNotFound("{} not configured".format(name))
+
+    def keyspace_a(self, name):
+        if name in self.collections_a:
+            keyspace = self.bucket_name + '.' + self.scope_name + '.' + name
+            return keyspace
+        else:
+            raise CollectionNameNotFound("{} not configured".format(name))
 
 
 class cb_connect(cb_session):
@@ -237,3 +252,171 @@ class cb_connect(cb_session):
             raise CollectionCreateException("can not create collection {}: {}".format(name, err))
 
         self.collection_s(name)
+
+    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    def cb_get_s(self, name, key):
+        try:
+            collection = self.db.collection_s(name)
+            return collection.get(key)
+        except DocumentNotFoundException:
+            return None
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
+
+    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    async def cb_get_a(self, name, key):
+        try:
+            collection = self.db.collection_a(name)
+            return await collection.get(key)
+        except DocumentNotFoundException:
+            return None
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
+
+    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    def cb_upsert_s(self, name, key, document):
+        try:
+            collection = self.db.collection_s(name)
+            result = collection.upsert(key, document)
+            return result
+        except DocumentExistsException:
+            return None
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionUpsertError("can not upsert {} into {}: {}".format(key, name, err))
+
+    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    async def cb_upsert_a(self, name, key, document):
+        try:
+            collection = self.db.collection_a(name)
+            result = await collection.upsert(key, document)
+            return result
+        except DocumentExistsException:
+            return None
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionUpsertError("can not upsert {} into {}: {}".format(key, name, err))
+
+    @retry(always_raise_list=(CollectionNameNotFound,),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    def cb_subdoc_upsert_s(self, name, key, field, value):
+        try:
+            collection = self.db.collection_s(name)
+            result = collection.mutate_in(key, [SD.upsert(field, value)])
+            return result
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionSubdocUpsertError("can not update {} in {}: {}".format(key, field, err))
+
+    @retry(always_raise_list=(CollectionNameNotFound,),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    async def cb_subdoc_upsert_a(self, name, key, field, value):
+        try:
+            collection = self.db.collection_a(name)
+            result = await collection.mutate_in(key, [SD.upsert(field, value)])
+            return result
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionSubdocUpsertError("can not update {} in {}: {}".format(key, field, err))
+
+    @retry(always_raise_list=(CollectionNameNotFound,),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    def cb_subdoc_get_s(self, name, key, field):
+        try:
+            collection = self.db.collection_s(name)
+            result = collection.lookup_in(key, [SD.get(field)])
+            return result
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionSubdocGetError("can not get {} from {}: {}".format(key, field, err))
+
+    @retry(always_raise_list=(CollectionNameNotFound,),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    async def cb_subdoc_get_a(self, name, key, field):
+        try:
+            collection = self.db.collection_a(name)
+            result = await collection.lookup_in(key, [SD.get(field)])
+            return result
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionSubdocGetError("can not get {} from {}: {}".format(key, field, err))
+
+    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    def cb_query_s(self, name, field, where=None, value=None):
+        try:
+            keyspace = self.db.keyspace_s(name)
+            contents = []
+            if not where:
+                query = "SELECT " + field + " FROM " + keyspace + ";"
+            else:
+                query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
+            result = self.db.cluster_s.query(query, QueryOptions(metrics=False, adhoc=True, pipeline_batch=128,
+                                                                 max_parallelism=4, pipeline_cap=1024, scan_cap=1024))
+            for item in result:
+                contents.append(item)
+            return contents
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise QueryError("can not query {} from {}: {}".format(field, name, err))
+
+    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    async def cb_query_a(self, name, field, where=None, value=None):
+        try:
+            keyspace = self.db.keyspace_a(name)
+            contents = []
+            if not where:
+                query = "SELECT " + field + " FROM " + keyspace + ";"
+            else:
+                query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
+            result = self.db.cluster_a.query(query, QueryOptions(metrics=False, adhoc=True, pipeline_batch=128,
+                                                                 max_parallelism=4, pipeline_cap=1024, scan_cap=1024))
+            async for item in result:
+                contents.append(item)
+            return contents
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise QueryError("can not query {} from {}: {}".format(field, name, err))
+
+    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    def cb_remove_s(self, name, key):
+        try:
+            collection = self.db.collection_s(name)
+            return collection.remove(key)
+        except DocumentNotFoundException:
+            return None
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionRemoveError("can not remove {} from {}: {}".format(key, name, err))
+
+    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
+           allow_list=(CouchbaseTransientException, ProtocolException))
+    async def cb_remove_a(self, name, key):
+        try:
+            collection = self.db.collection_a(name)
+            return await collection.remove(key)
+        except DocumentNotFoundException:
+            return None
+        except CollectionNameNotFound:
+            raise
+        except Exception as err:
+            raise CollectionRemoveError("can not remove {} from {}: {}".format(key, name, err))

@@ -59,6 +59,30 @@ class AdminApiError(cbUtilError):
     pass
 
 
+class CollectionGetError(cbUtilError):
+    pass
+
+
+class CollectionUpsertError(cbUtilError):
+    pass
+
+
+class CollectionSubdocUpsertError(cbUtilError):
+    pass
+
+
+class CollectionSubdocGetError(cbUtilError):
+    pass
+
+
+class CollectionRemoveError(cbUtilError):
+    pass
+
+
+class QueryError(cbUtilError):
+    pass
+
+
 class ClusterConnectException(cbUtilException):
     pass
 
@@ -76,5 +100,9 @@ class CollectionCreateException(cbUtilException):
 
 
 class NotFoundError(cbUtilException):
+    pass
+
+
+class CollectionNameNotFound(cbUtilException):
     pass
 
