@@ -51,6 +51,14 @@ import hmac
 import hashlib
 from lib.capella.api import capella_api
 
+from lib.cbutil.cbconnect import cb_connect
+from lib.cbutil.cbindex import cb_index
+from lib.cbutil.randomize import randomize, fastRandom
+from lib.inventorymgr import inventoryManager
+from lib.executive import print_host_map
+from lib.cbutil.exceptions import *
+from lib.exceptions import *
+
 threadLock = multiprocessing.Lock()
 
 LOAD_DATA = 0x0000
@@ -60,82 +68,7 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '1.1-alpha'
-
-DEFAULT_SCHEMA_INVENTORY = {
-    'inventory': [
-        {
-            'default': {
-                'buckets': [
-                    {
-                        'name': 'cbperf',
-                        'scopes': [
-                            {
-                                'name': '_default',
-                                'collections': [
-                                    {
-                                        'name': '_default',
-                                        'schema': 'DEFAULT_JSON',
-                                        'idkey': 'record_id',
-                                        'primary_index': False,
-                                        'indexes': [
-                                            'record_id',
-                                            'last_name',
-                                        ]
-                                    },
-                                ]
-                            },
-                        ]
-                    },
-                ]
-            }
-        },
-        {
-            'profile_demo': {
-                'buckets': [
-                    {
-                        'name': 'sample_app',
-                        'scopes': [
-                            {
-                                'name': 'profiles',
-                                'collections': [
-                                    {
-                                        'name': 'user_data',
-                                        'schema': 'USER_PROFILE_JSON',
-                                        'idkey': 'record_id',
-                                        'primary_index': True,
-                                        'indexes': [
-                                            'record_id',
-                                            'nickname',
-                                            'user_id',
-                                        ]
-                                    },
-                                    {
-                                        'name': 'user_images',
-                                        'schema': 'USER_IMAGE_JSON',
-                                        'idkey': 'record_id',
-                                        'primary_index': True,
-                                        'indexes': [
-                                            'record_id',
-                                        ]
-                                    }
-                                ]
-                            },
-                        ]
-                    },
-                ],
-                'rules': [
-                    {
-                        'name': 'rule0',
-                        'type': 'link',
-                        'foreign_key': 'sample_app:profiles:user_data:picture',
-                        'primary_key': 'sample_app:profiles:user_images:record_id',
-                    },
-                ]
-            }
-        }
-    ]
-}
+VERSION = '1.5-alpha'
 
 DEFAULT_JSON = {
     'record_id': 'record_id',
@@ -159,527 +92,11 @@ DEFAULT_JSON = {
     ]
 }
 
-USER_PROFILE_JSON = {
-    'record_id': 'record_id',
-    'name': '{{ rand_first }} {{ rand_last }}',
-    'nickname': '{{ rand_nickname }}',
-    'picture': 'link_user_images',
-    'user_id': '{{ rand_username }}',
-    'email': '{{ rand_email }}',
-    'email_verified': '{{ rand_bool }}',
-    'first_name': '{{ rand_first }}',
-    'last_name': '{{ rand_last }}',
-    'address': '{{ rand_address }}',
-    'city': '{{ rand_city }}',
-    'state': '{{ rand_state }}',
-    'zip_code': '{{ rand_zip_code }}',
-    'phone': '{{ rand_phone }}',
-    'date_of_birth': '{{ rand_dob_1 }}',
-}
-
-USER_IMAGE_JSON = {
-    'record_id': 'record_id',
-    'type': 'jpeg',
-    'image': '{{ rand_image }}',
-}
 
 def break_signal_handler(signum, frame):
     print("")
     print("Break received, aborting.")
     sys.exit(1)
-
-class randomize(object):
-
-    def __init__(self):
-        self.nowTime = datetime.now()
-        self.datetimestr = self.nowTime.strftime("%Y-%m-%d %H:%M:%S")
-
-    def _randomNumber(self, n):
-        min_lc = ord(b'0')
-        len_lc = 10
-        ba = bytearray(random.getrandbits(8) for i in range(n))
-        for i, b in enumerate(ba):
-            ba[i] = min_lc + b % len_lc
-        return ba.decode('utf-8')
-
-    def _randomStringLower(self, n):
-        min_lc = ord(b'a')
-        len_lc = 26
-        ba = bytearray(random.getrandbits(8) for i in range(n))
-        for i, b in enumerate(ba):
-            ba[i] = min_lc + b % len_lc
-        return ba.decode('utf-8')
-
-    def _randomStringUpper(self, n):
-        min_lc = ord(b'A')
-        len_lc = 26
-        ba = bytearray(random.getrandbits(8) for i in range(n))
-        for i, b in enumerate(ba):
-            ba[i] = min_lc + b % len_lc
-        return ba.decode('utf-8')
-
-    def _randomHash(self, n):
-        ba = bytearray(random.getrandbits(8) for i in range(n))
-        for i, b in enumerate(ba):
-            min_lc = ord(b'0') if b < 85 else ord(b'A') if b < 170 else ord(b'a')
-            len_lc = 10 if b < 85 else 26
-            ba[i] = min_lc + b % len_lc
-        return ba.decode('utf-8')
-
-    def _randomBits(self, n):
-        yield random.getrandbits(n)
-
-    def _monthNumber(self):
-        value = (random.getrandbits(3) + 1) + (random.getrandbits(2) + 1)
-        return value
-
-    def _monthDay(self, n=31):
-        value = next((i for i in self._randomBits(5) if i >= 1 and i <= n), 1)
-        return value
-
-    def _yearNumber(self):
-        value = int(self._randomNumber(2)) + 1920
-        return value
-
-    @property
-    def creditCard(self):
-        return '-'.join(self._randomNumber(4) for _ in range(4))
-
-    @property
-    def socialSecurityNumber(self):
-        return '-'.join([self._randomNumber(3), self._randomNumber(2), self._randomNumber(4)])
-
-    @property
-    def threeDigits(self):
-        return self._randomNumber(3)
-
-    @property
-    def fourDigits(self):
-        return self._randomNumber(4)
-
-    @property
-    def zipCode(self):
-        return self._randomNumber(5)
-
-    @property
-    def accountNumner(self):
-        return self._randomNumber(10)
-
-    @property
-    def numericSequence(self):
-        return self._randomNumber(16)
-
-    @property
-    def dollarAmount(self):
-        value = random.getrandbits(8) % 5 + 1
-        return self._randomNumber(value) + '.' + self._randomNumber(2)
-
-    @property
-    def booleanValue(self):
-        if random.getrandbits(1) == 1:
-            return True
-        else:
-            return False
-
-    @property
-    def yearValue(self):
-        return str(self._yearNumber())
-
-    @property
-    def monthValue(self):
-        value = self._monthNumber()
-        return f'{value:02}'
-
-    @property
-    def dayValue(self):
-        value = self._monthDay()
-        return f'{value:02}'
-
-    @property
-    def pastDate(self):
-        past_date = datetime.today() - timedelta(days=random.getrandbits(12))
-        return past_date
-
-    @property
-    def dobDate(self):
-        past_date = datetime.today() - timedelta(days=random.getrandbits(14), weeks=1040)
-        return past_date
-
-    def pastDateSlash(self, past_date):
-        return past_date.strftime("%m/%d/%Y")
-
-    def pastDateHyphen(self, past_date):
-        return past_date.strftime("%m-%d-%Y")
-
-    def pastDateText(self, past_date):
-        return past_date.strftime("%b %d %Y")
-
-    def dobSlash(self, past_date):
-        return past_date.strftime("%m/%d/%Y")
-
-    def dobHyphen(self, past_date):
-        return past_date.strftime("%m-%d-%Y")
-
-    def dobText(self, past_date):
-        return past_date.strftime("%b %d %Y")
-
-    @property
-    def hashCode(self):
-        return self._randomHash(16)
-
-    @property
-    def firstName(self):
-        data = [
-            'James',
-            'Robert',
-            'John',
-            'Michael',
-            'William',
-            'David',
-            'Richard',
-            'Joseph',
-            'Thomas',
-            'Charles',
-            'Mary',
-            'Patricia',
-            'Jennifer',
-            'Linda',
-            'Elizabeth',
-            'Barbara',
-            'Susan',
-            'Jessica',
-            'Sarah',
-            'Karen',
-        ]
-        rand_gen = fastRandom(len(data), 0)
-        return data[rand_gen.value]
-
-    @property
-    def lastName(self):
-        data = [
-            'Smith',
-            'Johnson',
-            'Williams',
-            'Brown',
-            'Jones',
-            'Garcia',
-            'Miller',
-            'Davis',
-            'Rodriguez',
-            'Martinez',
-            'Hernandez',
-            'Lopez',
-            'Gonzalez',
-            'Wilson',
-            'Anderson',
-            'Thomas',
-            'Taylor',
-            'Moore',
-            'Jackson',
-            'Martin',
-        ]
-        rand_gen = fastRandom(len(data), 0)
-        return data[rand_gen.value]
-
-    @property
-    def streetType(self):
-        data = [
-            'Street',
-            'Road',
-            'Lane',
-            'Court',
-            'Avenue',
-            'Parkway',
-            'Trail',
-            'Way',
-            'Drive',
-        ]
-        rand_gen = fastRandom(len(data), 0)
-        return data[rand_gen.value]
-
-    @property
-    def streetName(self):
-        data = [
-            'Main',
-            'Church',
-            'Liberty',
-            'Park',
-            'Prospect',
-            'Pine',
-            'River',
-            'Elm',
-            'High',
-            'Union',
-            'Willow',
-            'Dogwood',
-            'New',
-            'North',
-            'South',
-            'East',
-            'West',
-            '1st',
-            '2nd',
-            '3rd',
-        ]
-        rand_gen = fastRandom(len(data), 0)
-        return data[rand_gen.value]
-
-    @property
-    def addressLine(self):
-        return ' '.join([self._randomNumber(4), self.streetName, self.streetType])
-
-    @property
-    def cityName(self):
-        data = [
-            'Mannorburg',
-            'New Highworth',
-            'Salttown',
-            'Farmingchester',
-            'East Sagepool',
-            'Strongdol',
-            'Weirton',
-            'Hapwich',
-            'Lunfield Park',
-            'Cruxbury',
-            'Oakport',
-            'Chatham',
-            'Beachborough',
-            'Farmingbury Falls',
-            'Trinsdale',
-            'Wingview',
-        ]
-        rand_gen = fastRandom(len(data), 0)
-        return data[rand_gen.value]
-
-    @property
-    def stateName(self):
-        data = [
-            'AL',
-            'AK',
-            'AZ',
-            'AR',
-            'CA',
-            'CZ',
-            'CO',
-            'CT',
-            'DE',
-            'DC',
-            'FL',
-            'GA',
-            'GU',
-            'HI',
-            'ID',
-            'IL',
-            'IN',
-            'IA',
-            'KS',
-            'KY',
-            'LA',
-            'ME',
-            'MD',
-            'MA',
-            'MI',
-            'MN',
-            'MS',
-            'MO',
-            'MT',
-            'NE',
-            'NV',
-            'NH',
-            'NJ',
-            'NM',
-            'NY',
-            'NC',
-            'ND',
-            'OH',
-            'OK',
-            'OR',
-            'PA',
-            'PR',
-            'RI',
-            'SC',
-            'SD',
-            'TN',
-            'TX',
-            'UT',
-            'VT',
-            'VI',
-            'VA',
-            'WA',
-            'WV',
-            'WI',
-            'WY',
-        ]
-        rand_gen = fastRandom(len(data), 0)
-        return data[rand_gen.value]
-
-    @property
-    def phoneNumber(self):
-        return '-'.join([self._randomNumber(3), self._randomNumber(3), self._randomNumber(4)])
-
-    @property
-    def dateCode(self):
-        return self.datetimestr
-
-    def nickName(self, first_name="John", last_name="Doe"):
-        return first_name[0].lower() + last_name.lower()
-
-    def emailAddress(self, first_name="John", last_name="Doe"):
-        return first_name.lower() + '.' + last_name.lower() + '@example.com'
-
-    def userName(self, first_name="John", last_name="Doe"):
-        return first_name.lower() + last_name.lower() + self.fourDigits
-
-    def randImage(self):
-        random_matrix = numpy.random.rand(128, 128, 3) * 255
-        im = Image.fromarray(random_matrix.astype('uint8')).convert('RGBA')
-        with io.BytesIO() as output:
-            im.save(output, format="JPEG2000")
-            contents = output.getvalue()
-        encoded = base64.b64encode(contents)
-        encoded = encoded.decode('utf-8')
-        return encoded
-
-    def testAll(self):
-        past_date = self.pastDate
-        dob_date = self.dobDate
-        first_name = self.firstName
-        last_name = self.lastName
-        print("Credit Card: " + self.creditCard)
-        print("SSN        : " + self.socialSecurityNumber)
-        print("Four Digits: " + self.fourDigits)
-        print("ZIP Code   : " + self.zipCode)
-        print("Account    : " + self.accountNumner)
-        print("Dollar     : " + self.dollarAmount)
-        print("Sequence   : " + self.numericSequence)
-        print("Hash       : " + self.hashCode)
-        print("Address    : " + self.addressLine)
-        print("City       : " + self.cityName)
-        print("State      : " + self.stateName)
-        print("First      : " + first_name)
-        print("Last       : " + last_name)
-        print("Nickname   : " + self.nickName(first_name, last_name))
-        print("Email      : " + self.emailAddress(first_name, last_name))
-        print("Username   : " + self.userName(first_name, last_name))
-        print("Phone      : " + self.phoneNumber)
-        print("Boolean    : " + str(self.booleanValue))
-        print("Date       : " + self.dateCode)
-        print("Year       : " + self.yearValue)
-        print("Month      : " + self.monthValue)
-        print("Day        : " + self.dayValue)
-        print("Past Date 1: " + self.pastDateSlash(past_date))
-        print("Past Date 2: " + self.pastDateHyphen(past_date))
-        print("Past Date 3: " + self.pastDateText(past_date))
-        print("DOB Date 1 : " + self.dobSlash(dob_date))
-        print("DOB Date 2 : " + self.dobHyphen(dob_date))
-        print("DOB Date 3 : " + self.dobText(dob_date))
-
-        self.prepareTemplate(DEFAULT_JSON)
-        formatted_data = self.processTemplate()
-        print(json.dumps(formatted_data, indent=2))
-
-        self.prepareTemplate(USER_PROFILE_JSON)
-        formatted_data = self.processTemplate()
-        print(json.dumps(formatted_data, indent=2))
-
-    def prepareTemplate(self, json_block):
-        block_string = json.dumps(json_block)
-        env = Environment(undefined=DebugUndefined)
-        template = env.from_string(block_string)
-        rendered = template.render()
-        ast = env.parse(rendered)
-        self.requested_tags = find_undeclared_variables(ast)
-        self.template = block_string
-        self.compiled = Template(self.template)
-
-    def processTemplate(self):
-        first_name = self.firstName
-        last_name = self.lastName
-        past_date = self.pastDate
-        dob_date = self.dobDate
-        random_image = None
-
-        if 'rand_image' in self.requested_tags:
-            random_image = self.randImage()
-
-        formattedBlock = self.compiled.render(date_time=self.dateCode,
-                                              rand_credit_card=self.creditCard,
-                                              rand_ssn=self.socialSecurityNumber,
-                                              rand_four=self.fourDigits,
-                                              rand_account=self.accountNumner,
-                                              rand_id=self.numericSequence,
-                                              rand_zip_code=self.zipCode,
-                                              rand_dollar=self.dollarAmount,
-                                              rand_hash=self.hashCode,
-                                              rand_address=self.addressLine,
-                                              rand_city=self.cityName,
-                                              rand_state=self.stateName,
-                                              rand_first=first_name,
-                                              rand_last=last_name,
-                                              rand_nickname=self.nickName(first_name, last_name),
-                                              rand_email=self.emailAddress(first_name, last_name),
-                                              rand_username=self.userName(first_name, last_name),
-                                              rand_phone=self.phoneNumber,
-                                              rand_bool=self.booleanValue,
-                                              rand_year=self.yearValue,
-                                              rand_month=self.monthValue,
-                                              rand_day=self.dayValue,
-                                              rand_date_1=self.pastDateSlash(past_date),
-                                              rand_date_2=self.pastDateHyphen(past_date),
-                                              rand_date_3=self.pastDateText(past_date),
-                                              rand_dob_1=self.dobSlash(dob_date),
-                                              rand_dob_2=self.dobHyphen(dob_date),
-                                              rand_dob_3=self.dobText(dob_date),
-                                              rand_image=random_image,
-                                              )
-        finished = formattedBlock.encode('ascii')
-        jsonBlock = json.loads(finished)
-        return jsonBlock
-
-
-class debugOutput(object):
-
-    def __init__(self):
-        self.threads = {}
-        try:
-            self.statDebug = open("stats.debug", 'w')
-            self.telemetryDebug = open("telemetry.debug", 'w')
-        except Exception as e:
-            print("Debug: can not open debug files: %s" % str(e))
-            sys.exit(1)
-
-    def threadSet(self, thread):
-        fileDesc = "query" + str(thread)
-        fileName = fileDesc + ".debug"
-        try:
-            self.threads[fileDesc] = open(fileName, 'w')
-        except Exception as e:
-            print("Debug: can not open debug file stats.debug: %s" % str(e))
-            sys.exit(1)
-
-    def writeStatDebug(self, text):
-        try:
-            self.statDebug.write(str(text) + "\n")
-        except Exception as e:
-            print("writeStatDebug: can not write to file: %s" % str(e))
-            sys.exit(1)
-
-    def writeTelemetryDebug(self, blob):
-        try:
-            # json.dump(blob, self.telemetryDebug)
-            self.telemetryDebug.write(str(blob) + "\n")
-        except Exception as e:
-            print("writeTelemetryDebug: can not write to file: %s" % str(e))
-            sys.exit(1)
-
-    def writeQueryDebug(self, blob, thread):
-        fileDesc = "query" + str(thread)
-        try:
-            # json.dump(blob, self.threads[fileDesc])
-            self.threads[fileDesc].write(str(blob) + "\n")
-        except Exception as e:
-            print("writeQueryDebug: can not write to file: %s" % str(e))
-            sys.exit(1)
 
 
 class mpAtomicCounter(object):
@@ -741,23 +158,6 @@ class rwMixer(object):
             return True
         else:
             return False
-
-
-class fastRandom(object):
-
-    def __init__(self, x=256, start=1):
-        self.max_value = x
-        self.bits = self.max_value.bit_length()
-        self.start_value = start
-
-    @property
-    def value(self):
-        rand_number = random.getrandbits(self.bits) % self.max_value
-        if rand_number < self.start_value:
-            rand_number = self.start_value
-        if rand_number > self.max_value:
-            rand_number = self.max_value
-        return rand_number
 
 
 class NotAuthorized(Exception):
@@ -1638,178 +1038,24 @@ class cbutil(object):
                     continue
 
 
-class schemaElement(object):
-
-    def __init__(self, name):
-        self.name = name
-        self.buckets = []
-        self.rules = []
-
-class bucketElement(object):
-
-    def __init__(self, name):
-        self.name = name
-        self.scopes = []
-
-class scopeElement(object):
-
-    def __init__(self, name):
-        self.name = name
-        self.collections = []
-
-class collectionElement(object):
-
-    def __init__(self, name, bucket, scope):
-        self.name = name
-        self.bucket = bucket
-        self.scope = scope
-        self.id = None
-        self.primary_key = False
-        self.override_count = False
-        self.record_count = None
-        if name == '_default':
-            self.key_prefix = bucket
-        else:
-            self.key_prefix = name
-        self.schema = {}
-        self.indexes = []
-
-class inventoryManager(object):
-
-    def __init__(self, inventory, by_reference=False):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.inventory_json = inventory
-        self.schemas = []
-
-        # print(json.dumps(self.inventory_json, indent=2))
-        for w, schema_object in enumerate(self.inventory_json['inventory']):
-            for key, value in schema_object.items():
-                self.logger.info("adding schema %s to inventory" % key)
-                node = schemaElement(key)
-                self.schemas.insert(0, node)
-                for x, bucket in enumerate(value['buckets']):
-                    self.logger.info("adding bucket %s to inventory" % bucket['name'])
-                    node = bucketElement(bucket['name'])
-                    self.schemas[0].buckets.insert(0, node)
-                    for y, scope in enumerate(value['buckets'][x]['scopes']):
-                        self.logger.info("adding scope %s to inventory" % scope['name'])
-                        node = scopeElement(scope['name'])
-                        self.schemas[0].buckets[0].scopes.insert(0, node)
-                        for z, collection in enumerate(value['buckets'][x]['scopes'][y]['collections']):
-                            self.logger.info("adding collection %s to inventory" % collection['name'])
-                            node = collectionElement(collection['name'], bucket['name'], scope['name'])
-                            self.schemas[0].buckets[0].scopes[0].collections.insert(0, node)
-                            if by_reference:
-                                self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(
-                                    eval(collection['schema']))
-                            else:
-                                self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
-                            self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
-                            self.schemas[0].buckets[0].scopes[0].collections[0].primary_index \
-                                = collection['primary_index']
-                            self.schemas[0].buckets[0].scopes[0].collections[0].override_count \
-                                = collection['override_count']
-                            if 'record_count' in collection:
-                                self.schemas[0].buckets[0].scopes[0].collections[0].record_count \
-                                    = collection['record_count']
-                            if 'indexes' in collection:
-                                for index_field in collection['indexes']:
-                                    self.logger.info("adding index for field %s to inventory" % index_field)
-                                    index_data = {}
-                                    index_data['field'] = index_field
-                                    index_data['name'] = self.indexName(
-                                        self.schemas[0].buckets[0].scopes[0].collections[0], index_field)
-                                    self.schemas[0].buckets[0].scopes[0].collections[0].indexes.append(index_data)
-                if 'rules' in value:
-                    for r, rule in enumerate(value['rules']):
-                        self.logger.info("adding rule %s to inventory" % rule['name'])
-                        self.schemas[0].rules.append(rule)
-
-    def getSchema(self, schema):
-        return next((s for s in self.schemas if s.name == schema), None)
-
-    def nextBucket(self, schema):
-        for i in range(len(schema.buckets)):
-            yield schema.buckets[i]
-
-    def hasRules(self, schema):
-        if len(schema.rules) > 0:
-            return True
-        else:
-            return False
-
-    def nextRule(self, schema):
-        yield next((r for r in schema.rules), None)
-
-    def nextScope(self, bucket):
-        for i in range(len(bucket.scopes)):
-            yield bucket.scopes[i]
-
-    def nextCollection(self, scope):
-        for i in range(len(scope.collections)):
-            yield scope.collections[i]
-
-    def hasIndexes(self, collection):
-        if len(collection.indexes) > 0:
-            return True
-        else:
-            return False
-
-    def hasPrimaryIndex(self, collection):
-        if type(collection.primary_index) != bool:
-            return bool(strtobool(collection.primary_index))
-        else:
-            return collection.primary_index
-
-    def indexName(self, collection, field):
-        if collection.scope != '_default':
-            scope_text = '_' + collection.scope
-        else:
-            scope_text = ''
-        if collection.name != '_default':
-            collection_text = '_' + collection.name
-        else:
-            collection_text = ''
-        field = field.replace('.', '_')
-        return collection.bucket + scope_text + collection_text + '_' + field + '_ix'
-
-    def nextIndex(self, collection):
-        for i in range(len(collection.indexes)):
-            yield collection.indexes[i]['field'], collection.indexes[i]['name']
-
-    def getIndex(self, collection, field):
-        return next(((i['field'], i['name']) for i in collection.indexes if i['field'] == field), None)
-
-    def overrideRecordCount(self, collection):
-        if type(collection.override_count) != bool:
-            return bool(strtobool(collection.override_count))
-        else:
-            return collection.override_count
-
-    def getRecordCount(self, collection):
-        return int(collection.record_count)
-
-
 class params(object):
 
     def __init__(self):
-        parser = argparse.ArgumentParser()
-        parent_parser = argparse.ArgumentParser()
-        parent_parser.add_argument('--user', action='store', help="User Name", default="Administrator")
-        parent_parser.add_argument('--password', action='store', help="User Password", default="password")
-        parent_parser.add_argument('--host', action='store', help="Cluster Node Name", default="localhost")
-        parent_parser.add_argument('--bucket', action='store', help="Test Bucket", default="pillowfight")
+        parser = argparse.ArgumentParser(add_help=False)
+        parent_parser = argparse.ArgumentParser(add_help=False)
+        parent_parser.add_argument('-u', '--user', action='store', help="User Name", default="Administrator")
+        parent_parser.add_argument('-p', '--password', action='store', help="User Password", default="password")
+        parent_parser.add_argument('-h', '--host', action='store', help="Cluster Node Name", default="localhost")
+        parent_parser.add_argument('-b', '--bucket', action='store', help="Test Bucket", default="pillowfight")
         parent_parser.add_argument('--tls', action='store_true', help="Enable SSL")
         parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int, default=3)
         parent_parser.add_argument('--limit', action='store_true', help="Limited Network Connectivity")
         parent_parser.add_argument('--internal', action='store_true', help="Use Default over External Network")
+        parent_parser.add_argument('-e', '--external', action='store_true')
         parent_parser.add_argument('--schema', action='store', help="Test Schema", default="default")
         parent_parser.add_argument('--cluster', action='store', help="Couchbase Capella Cluster Name")
-        subparsers = parser.add_subparsers(dest='command')
-        run_parser = subparsers.add_parser('run', help="Run Test Scenarios", parents=[parent_parser], add_help=False)
-        list_parser = subparsers.add_parser('list', help="List Nodes", parents=[parent_parser], add_help=False)
-        clean_parser = subparsers.add_parser('clean', help="Clean Up", parents=[parent_parser], add_help=False)
-        health_parser = subparsers.add_parser('health', help="Cluster Health", parents=[parent_parser], add_help=False)
+        parent_parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')
+        run_parser = argparse.ArgumentParser(add_help=False)
         run_parser.add_argument('--count', action='store', help="Record Count", type=int)
         run_parser.add_argument('--ops', action='store', help="Operation Count", type=int)
         run_parser.add_argument('--tload', action='store', help="Threads for Load", type=int)
@@ -1825,11 +1071,28 @@ class params(object):
         run_parser.add_argument('--sync', action='store_true', help="Use Synchronous Connections")
         run_parser.add_argument('--clean', action='store_true', help="Run All Document Removal Test")
         run_parser.add_argument('--skipbucket', action='store_true', help="Use Preexisting bucket")
+        subparsers = parser.add_subparsers(dest='command')
+        run_mode = subparsers.add_parser('run', help="Run Test Scenarios", parents=[parent_parser, run_parser], add_help=False)
+        list_mode = subparsers.add_parser('list', help="List Nodes", parents=[parent_parser], add_help=False)
+        clean_mode = subparsers.add_parser('clean', help="Clean Up", parents=[parent_parser], add_help=False)
+        load_mode = subparsers.add_parser('load', help="Load Data", parents=[parent_parser, run_parser], add_help=False)
         self.parser = parser
-        self.run_parser = run_parser
-        self.list_parser = list_parser
-        self.clean_parser = clean_parser
-        self.health_parser = health_parser
+        self.run_parser = run_mode
+        self.list_parser = list_mode
+        self.clean_parser = clean_mode
+        self.load_parser = load_mode
+
+
+class cbPerf(object):
+
+    def __init__(self, parameters):
+        print("CBPerf version %s" % VERSION)
+        self.verb = parameters.command
+
+        if self.verb == 'list':
+            task = print_host_map(parameters)
+            task.run()
+            sys.exit(0)
 
 
 class runPerformanceBenchmark(object):
@@ -1892,6 +1155,7 @@ class runPerformanceBenchmark(object):
         self.debug = parameters.debug
         self.limitNetworkPorts = parameters.limit
         self.internalNetwork = parameters.internal
+        self.externalNetwork = parameters.external
         self.fieldIndex = self.bucket + '_ix1'
         self.idIndex = self.bucket + '_id_ix1'
 
@@ -2012,16 +1276,16 @@ class runPerformanceBenchmark(object):
         else:
             home_dir = '/var/tmp'
 
-        if os.getenv('CBPERF_CONFIG'):
-            config_file = os.getenv('CBPERF_CONFIG')
-        elif os.path.exists("cbperf.cfg"):
-            config_file = "cbperf.cfg"
-        elif os.path.exists(home_dir + '/.cbperf/cbperf.cfg'):
-            config_file = home_dir + '/.cbperf/cbperf.cfg'
-        elif os.path.exists("/etc/cbperf/cbperf.cfg"):
-            config_file = "/etc/cbperf/cbperf.cfg"
+        if os.getenv('CBPERF_CONFIG_FILE'):
+            config_file = os.getenv('CBPERF_CONFIG_FILE')
+        elif os.path.exists("config.json"):
+            config_file = "config.json"
+        elif os.path.exists('config/config.json'):
+            config_file = 'config/config.json'
+        elif os.path.exists("/etc/cbperf/config.json"):
+            config_file = "/etc/cbperf/config.json"
         else:
-            config_file = home_dir + '/.cbperf/cbperf.cfg'
+            config_file = home_dir + '/.cbperf/config.json'
 
         if os.getenv('CBPERF_SCHEMA_FILE'):
             schema_file = os.getenv('CBPERF_SCHEMA_FILE')
@@ -2345,14 +1609,8 @@ class runPerformanceBenchmark(object):
         cb_cluster.health(output=True, restrict=self.limitNetworkPorts)
 
     def getHostList(self):
-        try:
-            self.logger.info("Connecting to cluster with host %s" % self.host)
-            cb_cluster = cbutil(self.host, self.username, self.password,
-                                cluster=self.cluster, ssl=self.tls, internal=self.internalNetwork)
-            cb_cluster.print_host_map()
-        except Exception as e:
-            self.logger.critical("%s" % str(e))
-            sys.exit(1)
+        db = cb_connect(self.host, self.username, self.password, self.tls, self.externalNetwork)
+        db.print_host_map()
 
     def waitOn(self, function, *args, **kwargs):
         count = 0
@@ -3239,16 +2497,16 @@ class runPerformanceBenchmark(object):
 
 
 def main():
+    arg_parser = params()
+    parameters = arg_parser.parser.parse_args()
+
+    test_run = cbPerf(parameters)
     # signal.signal(signal.SIGINT, break_signal_handler)
-    runPerformanceBenchmark()
+    # runPerformanceBenchmark()
 
 
 if __name__ == '__main__':
-
     try:
         main()
     except SystemExit as e:
-        if e.code == 0:
-            os._exit(0)
-        else:
-            os._exit(e.code)
+        sys.exit(e.code)

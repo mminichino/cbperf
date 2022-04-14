@@ -124,6 +124,12 @@
         "query_batch_size": 1,
         "id_field": "record_id",
         "query_latency": 1,
-        "kv_latency": 1
+        "kv_latency": 1,
+        "hostname": "localhost",
+        "username": "Administrator",
+        "password": "password",
+        "ssl": true,
+        "external_network": false,
+        "async": true
     }
 }
