@@ -264,3 +264,35 @@ class cb_session(object):
         self.node_cycle = cycle(self.all_hosts)
         self.logger.info("connected to cluster version {}".format(self.sw_version))
         return True
+
+    def print_host_map(self):
+        ext_host_name = None
+        ext_port_list = None
+        i = 0
+
+        if self.rally_dns_domain:
+            print("Name %s is a domain with SRV records:" % self.rally_host_name)
+            for record in self.srv_host_list:
+                print(" => %s (%s)" % (record['hostname'], record['address']))
+
+        # if self.cluster_id:
+        #     print("Capella cluster ID: {}".format(self.cluster_id))
+
+        print("Cluster Host List:")
+        for record in self.node_list:
+            i += 1
+            if 'external_name' in record:
+                ext_host_name = record['external_name']
+            if 'external_ports' in record:
+                ext_port_list = record['external_ports']
+            host_name = record['host_name']
+            version = record['version']
+            ostype = record['ostype']
+            services = record['services']
+            print(" [%02d] %s" % (i, host_name), end=' ')
+            if ext_host_name:
+                print("[external]> %s" % ext_host_name, end=' ')
+            if ext_port_list:
+                for key in ext_port_list:
+                    print("%s:%s" % (key, ext_port_list[key]), end=' ')
+            print("[Services] %s [version] %s [platform] %s" % (services, version, ostype))

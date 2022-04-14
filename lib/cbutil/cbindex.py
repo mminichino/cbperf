@@ -68,7 +68,7 @@ class cb_index(cb_connect):
 
         return False
 
-    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound),
+    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, IndexExistsError),
            allow_list=(CouchbaseTransientException, ProtocolException))
     def create_index(self, name="_default", field=None, replica=1):
         if name != "_default" and field:
@@ -89,6 +89,8 @@ class cb_index(cb_connect):
             return result
         except CollectionNameNotFound:
             raise
+        except IndexExistsError:
+            return True
         except Exception as err:
             raise IndexQueryError("can not create index on {}: {}".format(name, err))
 

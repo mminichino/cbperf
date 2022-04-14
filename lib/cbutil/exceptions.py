@@ -6,6 +6,13 @@ import os
 import inspect
 
 
+def decode_error_code(code):
+    if code == 219:
+        return IndexExistsError
+    else:
+        return CouchbaseError
+
+
 class cbUtilError(Exception):
 
     def __init__(self, message):
@@ -19,7 +26,11 @@ class cbUtilError(Exception):
 class cbUtilException(Exception):
 
     def __init__(self, message):
-        self.message = message
+        frame = inspect.currentframe().f_back
+        (filename, line, function, lines, index) = inspect.getframeinfo(frame)
+        filename = os.path.basename(filename)
+        self.message = "Error: {} in {} {} at line {}: {}".format(
+            type(self).__name__, filename, function, line, message)
         super().__init__(self.message)
 
 
@@ -140,5 +151,17 @@ class CollectionNameNotFound(cbUtilException):
 
 
 class IndexNotReady(cbUtilException):
+    pass
+
+
+class ClusterHealthCheckError(cbUtilException):
+    pass
+
+
+class CouchbaseError(cbUtilException):
+    pass
+
+
+class IndexExistsError(cbUtilException):
     pass
 

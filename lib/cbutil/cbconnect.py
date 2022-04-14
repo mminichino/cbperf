@@ -7,6 +7,7 @@ from .retries import retry
 from .dbinstance import db_instance
 from datetime import timedelta
 from couchbase_core._libcouchbase import LOCKMODE_NONE
+from couchbase.diagnostics import PingState
 import couchbase
 import acouchbase.cluster
 from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions, QueryIndexManager
@@ -16,7 +17,7 @@ from couchbase.auth import PasswordAuthenticator
 import couchbase.subdocument as SD
 from couchbase.exceptions import (CASMismatchException, CouchbaseException, CouchbaseTransientException,
                                   DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
-                                  BucketAlreadyExistsException, DurabilitySyncWriteAmbiguousException,
+                                  BucketAlreadyExistsException, QueryErrorContext,
                                   BucketNotFoundException, TimeoutException, QueryException, ScopeNotFoundException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException, ProtocolException)
@@ -299,6 +300,9 @@ class cb_connect(cb_session):
             return contents
         except CollectionNameNotFound:
             raise
+        except CouchbaseException as err:
+            error_class = decode_error_code(err.rc)
+            raise error_class(err.context.first_error_message)
         except Exception as err:
             raise QueryError("can not query {} from {}: {}".format(field, name, err))
 
@@ -315,6 +319,9 @@ class cb_connect(cb_session):
             return contents
         except CollectionNameNotFound:
             raise
+        except CouchbaseException as err:
+            error_class = decode_error_code(err.rc)
+            raise error_class(err.context.first_error_message)
         except Exception as err:
             raise QueryError("can not query {} from {}: {}".format(field, name, err))
 
@@ -343,3 +350,35 @@ class cb_connect(cb_session):
             raise
         except Exception as err:
             raise CollectionRemoveError("can not remove {} from {}: {}".format(key, name, err))
+
+    @retry(allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError))
+    def cluster_health_check(self, output=False, restrict=True):
+        if not self.db.cluster_s:
+            raise ClusterHealthCheckError("cluster not connected")
+        try:
+            result = self.db.cluster_s.ping()
+            for endpoint, reports in result.endpoints.items():
+                for report in reports:
+                    if restrict and endpoint.value != 'kv':
+                        continue
+                    report_string = "{0}: {1} took {2} {3}".format(
+                        endpoint.value,
+                        report.remote,
+                        report.latency,
+                        report.state)
+                    if output:
+                        print(report_string)
+                    if not report.state == PingState.OK and not output:
+                        raise ClusterHealthCheckError("{}".format(report_string))
+            if output:
+                diag_result = self.db.cluster_s.diagnostics()
+                for endpoint, reports in diag_result.endpoints.items():
+                    for report in reports:
+                        report_string = "{0}: {1} last activity {2} {3}".format(
+                            endpoint.value,
+                            report.remote,
+                            report.last_activity,
+                            report.state)
+                        print(report_string)
+        except Exception as err:
+            raise ClusterHealthCheckError("cluster health check error: {}".format(err))
