@@ -35,6 +35,15 @@ class cb_connect(cb_session):
         self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
         self.db = db_instance()
 
+    def construct_key(self, key, collection):
+        if type(key) == int or str(key).isdigit():
+            if collection != "_default":
+                return collection + ':' + str(key)
+            else:
+                return self.db.bucket_name + ':' + str(key)
+        else:
+            return key
+
     @retry(allow_list=(ProtocolException, CouchbaseTransientException))
     async def connect(self):
         cluster_s = couchbase.cluster.Cluster(self.cb_connect_string,
@@ -175,8 +184,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     def cb_get_s(self, key, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
-            return collection.get(key)
+            return collection.get(document_id)
         except DocumentNotFoundException:
             return None
         except CollectionNameNotFound:
@@ -188,8 +198,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     async def cb_get_a(self, key, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
-            return await collection.get(key)
+            return await collection.get(document_id)
         except DocumentNotFoundException:
             return None
         except CollectionNameNotFound:
@@ -201,8 +212,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     def cb_upsert_s(self, key, document, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
-            result = collection.upsert(key, document)
+            result = collection.upsert(document_id, document)
             return result
         except DocumentExistsException:
             return None
@@ -215,8 +227,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     async def cb_upsert_a(self, key, document, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
-            result = await collection.upsert(key, document)
+            result = await collection.upsert(document_id, document)
             return result
         except DocumentExistsException:
             return None
@@ -229,8 +242,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     def cb_subdoc_upsert_s(self, key, field, value, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
-            result = collection.mutate_in(key, [SD.upsert(field, value)])
+            result = collection.mutate_in(document_id, [SD.upsert(field, value)])
             return result
         except CollectionNameNotFound:
             raise
@@ -241,8 +255,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     async def cb_subdoc_upsert_a(self, key, field, value, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
-            result = await collection.mutate_in(key, [SD.upsert(field, value)])
+            result = await collection.mutate_in(document_id, [SD.upsert(field, value)])
             return result
         except CollectionNameNotFound:
             raise
@@ -253,8 +268,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     def cb_subdoc_get_s(self, key, field, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
-            result = collection.lookup_in(key, [SD.get(field)])
+            result = collection.lookup_in(document_id, [SD.get(field)])
             return result
         except CollectionNameNotFound:
             raise
@@ -265,8 +281,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     async def cb_subdoc_get_a(self, key, field, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
-            result = await collection.lookup_in(key, [SD.get(field)])
+            result = await collection.lookup_in(document_id, [SD.get(field)])
             return result
         except CollectionNameNotFound:
             raise
@@ -329,8 +346,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     def cb_remove_s(self, key, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
-            return collection.remove(key)
+            return collection.remove(document_id)
         except DocumentNotFoundException:
             return None
         except CollectionNameNotFound:
@@ -342,8 +360,9 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException))
     async def cb_remove_a(self, key, name="_default"):
         try:
+            document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
-            return await collection.remove(key)
+            return await collection.remove(document_id)
         except DocumentNotFoundException:
             return None
         except CollectionNameNotFound:
