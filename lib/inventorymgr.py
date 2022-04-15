@@ -2,7 +2,9 @@
 ##
 
 import logging
+import traceback
 from distutils.util import strtobool
+from .exceptions import *
 
 class schemaElement(object):
 
@@ -37,6 +39,7 @@ class collectionElement(object):
             self.key_prefix = bucket
         else:
             self.key_prefix = name
+        self.schema_variable = None
         self.schema = {}
         self.indexes = []
 
@@ -47,49 +50,55 @@ class inventoryManager(object):
         self.inventory_json = inventory
         self.schemas = []
 
-        # print(json.dumps(self.inventory_json, indent=2))
-        for w, schema_object in enumerate(self.inventory_json['inventory']):
-            for key, value in schema_object.items():
-                self.logger.info("adding schema %s to inventory" % key)
-                node = schemaElement(key)
-                self.schemas.insert(0, node)
-                for x, bucket in enumerate(value['buckets']):
-                    self.logger.info("adding bucket %s to inventory" % bucket['name'])
-                    node = bucketElement(bucket['name'])
-                    self.schemas[0].buckets.insert(0, node)
-                    for y, scope in enumerate(value['buckets'][x]['scopes']):
-                        self.logger.info("adding scope %s to inventory" % scope['name'])
-                        node = scopeElement(scope['name'])
-                        self.schemas[0].buckets[0].scopes.insert(0, node)
-                        for z, collection in enumerate(value['buckets'][x]['scopes'][y]['collections']):
-                            self.logger.info("adding collection %s to inventory" % collection['name'])
-                            node = collectionElement(collection['name'], bucket['name'], scope['name'])
-                            self.schemas[0].buckets[0].scopes[0].collections.insert(0, node)
-                            if by_reference:
-                                self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(
-                                    eval(collection['schema']))
-                            else:
-                                self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
-                            self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
-                            self.schemas[0].buckets[0].scopes[0].collections[0].primary_index \
-                                = collection['primary_index']
-                            self.schemas[0].buckets[0].scopes[0].collections[0].override_count \
-                                = collection['override_count']
-                            if 'record_count' in collection:
-                                self.schemas[0].buckets[0].scopes[0].collections[0].record_count \
-                                    = collection['record_count']
-                            if 'indexes' in collection:
-                                for index_field in collection['indexes']:
-                                    self.logger.info("adding index for field %s to inventory" % index_field)
-                                    index_data = {}
-                                    index_data['field'] = index_field
-                                    index_data['name'] = self.indexName(
-                                        self.schemas[0].buckets[0].scopes[0].collections[0], index_field)
-                                    self.schemas[0].buckets[0].scopes[0].collections[0].indexes.append(index_data)
-                if 'rules' in value:
-                    for r, rule in enumerate(value['rules']):
-                        self.logger.info("adding rule %s to inventory" % rule['name'])
-                        self.schemas[0].rules.append(rule)
+        try:
+            for w, schema_object in enumerate(self.inventory_json['inventory']):
+                for key, value in schema_object.items():
+                    self.logger.info("adding schema %s to inventory" % key)
+                    node = schemaElement(key)
+                    self.schemas.insert(0, node)
+                    for x, bucket in enumerate(value['buckets']):
+                        self.logger.info("adding bucket %s to inventory" % bucket['name'])
+                        node = bucketElement(bucket['name'])
+                        self.schemas[0].buckets.insert(0, node)
+                        for y, scope in enumerate(value['buckets'][x]['scopes']):
+                            self.logger.info("adding scope %s to inventory" % scope['name'])
+                            node = scopeElement(scope['name'])
+                            self.schemas[0].buckets[0].scopes.insert(0, node)
+                            for z, collection in enumerate(value['buckets'][x]['scopes'][y]['collections']):
+                                self.logger.info("adding collection %s to inventory" % collection['name'])
+                                node = collectionElement(collection['name'], bucket['name'], scope['name'])
+                                self.schemas[0].buckets[0].scopes[0].collections.insert(0, node)
+                                if by_reference:
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(
+                                        eval(collection['schema']))
+                                else:
+                                    if type(collection['schema']) == str:
+                                        self.schemas[0].buckets[0].scopes[0].collections[0].schema_variable = collection['schema']
+                                    else:
+                                        self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
+                                self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
+                                self.schemas[0].buckets[0].scopes[0].collections[0].primary_index \
+                                    = collection['primary_index']
+                                self.schemas[0].buckets[0].scopes[0].collections[0].override_count \
+                                    = collection['override_count']
+                                if 'record_count' in collection:
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].record_count \
+                                        = collection['record_count']
+                                if 'indexes' in collection:
+                                    for index_field in collection['indexes']:
+                                        self.logger.info("adding index for field %s to inventory" % index_field)
+                                        index_data = {}
+                                        index_data['field'] = index_field
+                                        index_data['name'] = self.indexName(
+                                            self.schemas[0].buckets[0].scopes[0].collections[0], index_field)
+                                        self.schemas[0].buckets[0].scopes[0].collections[0].indexes.append(index_data)
+                    if 'rules' in value:
+                        for r, rule in enumerate(value['rules']):
+                            self.logger.info("adding rule %s to inventory" % rule['name'])
+                            self.schemas[0].rules.append(rule)
+        except Exception as err:
+            print(traceback.format_exc())
+            raise InventoryConfigError("inventory syntax error: {}".format(err))
 
     def getSchema(self, schema):
         return next((s for s in self.schemas if s.name == schema), None)

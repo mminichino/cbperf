@@ -55,7 +55,7 @@ from lib.cbutil.cbconnect import cb_connect
 from lib.cbutil.cbindex import cb_index
 from lib.cbutil.randomize import randomize, fastRandom
 from lib.inventorymgr import inventoryManager
-from lib.executive import print_host_map
+from lib.executive import print_host_map, test_exec
 from lib.cbutil.exceptions import *
 from lib.exceptions import *
 
@@ -1093,6 +1093,10 @@ class cbPerf(object):
             task = print_host_map(parameters)
             task.run()
             sys.exit(0)
+
+        if self.verb == 'load':
+            task = test_exec(parameters)
+            task.run()
 
 
 class runPerformanceBenchmark(object):

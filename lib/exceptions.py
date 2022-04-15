@@ -34,3 +34,27 @@ class ConfigFileError(cbPerfFatal):
 class SchemaFileError(cbPerfFatal):
     pass
 
+
+class ParameterError(cbPerfFatal):
+    pass
+
+
+class TestExecError(cbPerfFatal):
+    pass
+
+
+class RulesError(cbPerfFatal):
+    pass
+
+
+class TestConfigError(cbPerfFatal):
+    pass
+
+
+class InventoryConfigError(cbPerfFatal):
+    pass
+
+
+class TestRunError(cbPerfFatal):
+    pass
+

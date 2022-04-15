@@ -1,6 +1,33 @@
 {
   "inventory": [
     {
+      "external_file": {
+        "buckets": [
+          {
+            "name": "{{ BUCKET_PARAMETER }}",
+            "scopes": [
+              {
+                "name": "_default",
+                "collections": [
+                  {
+                    "name": "_default",
+                    "schema": "{{ FILE_PARAMETER }}",
+                    "idkey": "{{ ID_FIELD_PARAMETER }}",
+                    "primary_index": false,
+                    "override_count": false,
+                    "indexes": [
+                      "{{ ID_FIELD_PARAMETER }}",
+                      "{{ QUERY_FIELD_PARAMETER }}"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "default": {
         "buckets": [
           {
