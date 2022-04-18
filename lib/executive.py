@@ -15,10 +15,6 @@ import numpy as np
 import asyncio
 import time
 
-KV_TEST = 0x0001
-QUERY_TEST = 0x0002
-REMOVE_DATA = 0x0003
-
 
 class rwMixer(object):
 
@@ -75,6 +71,7 @@ class cbPerfBase(object):
         self.default_id_field = None
         self.default_bucket_memory = 256
         self.run_threads = os.cpu_count() * 2
+        self.thread_max = 512
         self.replica_count = 1
         self.rule_list = None
         self.collection_list = None
@@ -190,6 +187,10 @@ class print_host_map(cbPerfBase):
 
 
 class test_exec(cbPerfBase):
+    KV_TEST = 0x01
+    QUERY_TEST = 0x02
+    REMOVE_DATA = 0x04
+    RANDOM_KEYS = 0x08
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -237,6 +238,22 @@ class test_exec(cbPerfBase):
                 total_data_mb = 256
 
             self.bucket_memory = total_data_mb
+
+    def test_mask(self, bits):
+        if bits & test_exec.KV_TEST:
+            return test_exec.KV_TEST
+        elif bits & test_exec.QUERY_TEST:
+            return test_exec.QUERY_TEST
+        elif bits & test_exec.REMOVE_DATA:
+            return test_exec.REMOVE_DATA
+        else:
+            return 0x0
+
+    def is_random_mask(self, bits):
+        if bits & test_exec.RANDOM_KEYS:
+            return True
+        else:
+            return False
 
     def run(self):
         print("start")
@@ -355,8 +372,9 @@ class test_exec(cbPerfBase):
 
         self.rules_run = True
 
-    def status_output(self, total_count, run_flag, telemetry_queue):
-        tps_vector = [0 for n in range(self.run_threads)]
+    def status_output(self, total_count, run_flag, telemetry_queue, maximum=None):
+        max_threads = maximum if maximum else self.run_threads
+        tps_vector = [0 for n in range(max_threads)]
         sample_count = 1
         total_tps = 0
         total_time = 0
@@ -394,12 +412,16 @@ class test_exec(cbPerfBase):
             if time_delta > max_time:
                 max_time = time_delta
 
-            percentage = round((total_count / total_ops) * 100)
-            print(f"=> {total_ops} of {total_count}, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%%",
-                  end=end_char)
+            if total_count > 0:
+                percentage = round((total_count / total_ops) * 100)
+                print(f"=> {total_ops} of {total_count}, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%%",
+                      end=end_char)
+            else:
+                print(f"=> {total_ops} ops, {time_delta:.6f} time, {trans_per_sec} TPS", end=end_char)
 
         sys.stdout.write("\033[K")
-        print(f"=> {total_count} of {total_count}, {percentage}%%")
+        if total_count > 0:
+            print(f"=> {total_count} of {total_count}, {percentage}%%")
         print("Test Done.")
         print("{} average TPS.".format(round(avg_tps)))
         print("{} maximum TPS.".format(round(max_tps)))
@@ -418,8 +440,10 @@ class test_exec(cbPerfBase):
             telemetry_queue = multiprocessing.Queue()
             count = multiprocessing.Value('i')
             run_flag = multiprocessing.Value('i')
+            status_flag = multiprocessing.Value('i')
             count.value = 0
             run_flag.value = 1
+            status_flag.value = 0
             input_json = coll_obj.schema
 
             if coll_obj.record_count:
@@ -432,14 +456,14 @@ class test_exec(cbPerfBase):
             status_thread.daemon = True
             status_thread.start()
 
-            print(f"Starting test with {operation_count:,} records - {read_p}%% get, {write_p}%% update")
+            print(f"Starting test on {coll_obj.name} with {operation_count:,} records - {read_p}%% get, {write_p}%% update")
             start_time = time.perf_counter()
 
             instances = [
                 multiprocessing.Process(
                     target=self.test_run,
                     args=(mode, input_json, count, coll_obj, operation_count,
-                          telemetry_queue, read_p, write_p, n)) for n in range(self.run_threads)
+                          telemetry_queue, write_p, n, status_flag)) for n in range(self.run_threads)
             ]
             for p in instances:
                 p.daemon = True
@@ -455,19 +479,83 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
-    def test_run(self, mode, input_json, count, coll_obj, record_count,
-                 telemetry_queue, read_p, write_p, n):
+    def ramp_launch(self, read_p=100, write_p=0, mode=KV_TEST):
+        if not self.collection_list:
+            raise TestRunError("test not initialized")
+
+        run_mode = 'async' if self.aio else 'sync'
+
+        print("Beginning {} test ramp with max {} instances.".format(run_mode, self.thread_max))
+
+        for coll_obj in self.collection_list:
+            telemetry_queue = multiprocessing.Queue()
+            count = multiprocessing.Value('i')
+            run_flag = multiprocessing.Value('i')
+            status_flag = multiprocessing.Value('i')
+            count.value = 0
+            run_flag.value = 1
+            status_flag.value = 0
+            input_json = coll_obj.schema
+            operation_count = 0
+            accelerator = 1
+            scale = []
+            n = 0
+
+            status_thread = multiprocessing.Process(
+                target=self.status_output, args=(operation_count, run_flag, telemetry_queue))
+            status_thread.daemon = True
+            status_thread.start()
+
+            print(f"Starting ramp test - {read_p}%% get, {write_p}%% update")
+
+            time_snap = time.perf_counter()
+            start_time = time_snap
+            while True:
+                for i in range(accelerator):
+                    scale.append(multiprocessing.Process(
+                        target=self.test_run,
+                        args=(mode, input_json, count, coll_obj, operation_count,
+                              telemetry_queue, read_p, write_p, n, status_flag)))
+                    scale[n].daemon = True
+                    scale[n].start()
+                    n += 1
+
+                if status_flag.value == 1 or n >= self.thread_max:
+                    break
+
+                time_check = time.perf_counter()
+                time_diff = time_check - time_snap
+                if time_diff >= 60:
+                    time_snap = time.perf_counter()
+                    accelerator *= 2
+                time.sleep(5.0)
+
+            for p in scale:
+                p.terminate()
+                p.join()
+
+            run_flag.value = 0
+            status_thread.join()
+            end_time = time.perf_counter()
+
+            print("Test completed in {}".format(
+                time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
+
+    def test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_flag):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         tasks = []
         rand_gen = fastRandom(record_count)
         id_field = coll_obj.id
         query_field = next((i['field'] for i in coll_obj.indexes if i['field'] != id_field), id_field)
-        is_random = False
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
+        time_threshold = 5
 
-        if mode == QUERY_TEST:
+        mode = self.test_mask(mask)
+        is_random = self.is_random_mask(mask)
+
+        if mode == test_exec.QUERY_TEST:
             run_batch_size = self.default_query_batch_size
         else:
             run_batch_size = self.default_kv_batch_size
@@ -506,14 +594,14 @@ class test_exec(cbPerfBase):
                         result = db.cb_upsert_s(record_number, document, name=coll_obj.name)
                         tasks.append(result)
                 else:
-                    if mode == REMOVE_DATA:
+                    if mode == test_exec.REMOVE_DATA:
                         if self.aio:
                             tasks.append(db.cb_remove_a(record_number, name=coll_obj.name))
                         else:
                             begin_time = time.time()
                             result = db.cb_remove_s(record_number, name=coll_obj.name)
                             tasks.append(result)
-                    elif mode == QUERY_TEST:
+                    elif mode == test_exec.QUERY_TEST:
                         if self.aio:
                             tasks.append(
                                 db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field,
@@ -544,5 +632,7 @@ class test_exec(cbPerfBase):
                 telemetry[2] = loop_total_time
                 telemetry_packet = ':'.join(str(i) for i in telemetry)
                 telemetry_queue.put(telemetry_packet)
+                if loop_total_time >= time_threshold:
+                    status_flag.value = 1
             else:
                 break
