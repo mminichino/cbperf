@@ -76,6 +76,7 @@ class cbPerfBase(object):
         self.rule_list = None
         self.collection_list = None
         self.rules_run = False
+        self.skip_init = False
         self.test_playbook = "default"
         self.read_config_file(config_file)
         self.read_schema_file(schema_file)
@@ -218,6 +219,8 @@ class test_exec(cbPerfBase):
             self.schema = "external_file"
         else:
             self.schema = self.parameters.schema
+        if self.parameters.noinit:
+            self.skip_init = True
 
         if self.operation_count > self.record_count:
             raise ParameterError("Error: Operation count must be equal or less than record count.")
@@ -275,17 +278,20 @@ class test_exec(cbPerfBase):
             step = element[0]
             step_config = element[1]
             print(f"Running test playbook {self.test_playbook} step {step}")
+
             try:
                 write_p = step_config['write']
-                do_init = step_config['init']
-                do_run = step_config['run']
-                do_cleanup = step_config['cleanup']
-                do_pause = step_config['pause']
                 test_type = self.test_lookup(step_config['test'])
             except KeyError:
                 raise TestConfigError("test configuration syntax error")
-            self.test_init(bypass=True)
+
+            if step == "load" and not self.skip_init:
+                self.test_init()
+
             self.test_launch(write_p=write_p, mode=test_type)
+
+            if step == "load" and not self.skip_init:
+                self.process_rules()
 
     def test_init(self, bypass=False):
         collection_list = []
@@ -314,11 +320,15 @@ class test_exec(cbPerfBase):
                             print("Creating scope {}".format(scope.name))
                             db.create_scope(scope.name)
                             db_index.connect_scope(scope.name)
+                        elif not bypass:
+                            db_index.connect_scope('_default')
                         for collection in self.inventory.nextCollection(scope):
                             if collection.name != '_default' and not bypass:
                                 print("Creating collection {}".format(collection.name))
                                 db.create_collection(collection.name)
                                 db_index.connect_collection(collection.name)
+                            elif not bypass:
+                                db_index.connect_collection('_default')
                             if self.inventory.hasPrimaryIndex(collection) and not bypass:
                                 db_index.create_index(collection.name, replica=self.replica_count)
                             if self.inventory.hasIndexes(collection) and not bypass:

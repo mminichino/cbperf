@@ -7,8 +7,10 @@ import inspect
 
 
 def decode_error_code(code):
-    if code == 219:
+    if code == 4300:
         return IndexExistsError
+    elif code == 5000:
+        return TransientError
     else:
         return CouchbaseError
 
@@ -163,5 +165,9 @@ class CouchbaseError(cbUtilException):
 
 
 class IndexExistsError(cbUtilException):
+    pass
+
+
+class TransientError(cbUtilException):
     pass
 

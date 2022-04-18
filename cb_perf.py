@@ -1069,7 +1069,7 @@ class params(object):
         run_parser.add_argument('--dryrun', action='store_true', help="Run Single Record Test Pass")
         run_parser.add_argument('--ramp', action='store_true', help="Run Calibration Style Test")
         run_parser.add_argument('--sync', action='store_true', help="Use Synchronous Connections")
-        run_parser.add_argument('--clean', action='store_true', help="Run All Document Removal Test")
+        run_parser.add_argument('--noinit', action='store_true', help="Skip init phase")
         run_parser.add_argument('--skipbucket', action='store_true', help="Use Preexisting bucket")
         subparsers = parser.add_subparsers(dest='command')
         run_mode = subparsers.add_parser('run', help="Run Test Scenarios", parents=[parent_parser, run_parser], add_help=False)
@@ -1093,8 +1093,7 @@ class cbPerf(object):
             task = print_host_map(parameters)
             task.run()
             sys.exit(0)
-
-        if self.verb == 'load':
+        else:
             task = test_exec(parameters)
             task.run()
 

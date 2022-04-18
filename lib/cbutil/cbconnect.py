@@ -305,7 +305,7 @@ class cb_connect(cb_session):
         return query
 
     @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, QueryArgumentsError),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TransientError))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None):
         try:
             contents = []
@@ -318,13 +318,13 @@ class cb_connect(cb_session):
         except CollectionNameNotFound:
             raise
         except CouchbaseException as err:
-            error_class = decode_error_code(err.rc)
+            error_class = decode_error_code(err.context.first_error_code)
             raise error_class(err.context.first_error_message)
         except Exception as err:
             raise QueryError("can not query {} from {}: {}".format(field, name, err))
 
     @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, QueryArgumentsError),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TransientError))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None):
         try:
             contents = []
@@ -337,7 +337,7 @@ class cb_connect(cb_session):
         except CollectionNameNotFound:
             raise
         except CouchbaseException as err:
-            error_class = decode_error_code(err.rc)
+            error_class = decode_error_code(err.context.first_error_code)
             raise error_class(err.context.first_error_message)
         except Exception as err:
             raise QueryError("can not query {} from {}: {}".format(field, name, err))
