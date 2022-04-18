@@ -8,7 +8,7 @@
                 "cleanup": false,
                 "calibrate": false,
                 "pause": true,
-                "test": "LOAD_DATA"
+                "test": "KV_TEST"
             },
             "test1": {
                 "write": 50,
@@ -65,7 +65,7 @@
                 "test": "QUERY_TEST"
             }
         },
-        "calibrate": {
+        "ramp": {
             "load": {
                 "write": 100,
                 "init": true,
@@ -73,10 +73,10 @@
                 "cleanup": false,
                 "calibrate": false,
                 "pause": true,
-                "test": "LOAD_DATA"
+                "test": "KV_TEST"
             },
             "test1": {
-                "write": 5,
+                "write": 0,
                 "init": false,
                 "run": true,
                 "cleanup": false,
@@ -102,7 +102,7 @@
                 "cleanup": false,
                 "calibrate": false,
                 "pause": false,
-                "test": "LOAD_DATA"
+                "test": "KV_TEST"
             }
         },
         "remove": {

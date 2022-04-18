@@ -1067,7 +1067,7 @@ class params(object):
         run_parser.add_argument('--query', action='store', help="Field to query in JSON File", default="last_name")
         run_parser.add_argument('--load', action='store_true', help="Only Load Data")
         run_parser.add_argument('--dryrun', action='store_true', help="Run Single Record Test Pass")
-        run_parser.add_argument('--model', action='store_true', help="Run Calibration Style Test")
+        run_parser.add_argument('--ramp', action='store_true', help="Run Calibration Style Test")
         run_parser.add_argument('--sync', action='store_true', help="Use Synchronous Connections")
         run_parser.add_argument('--clean', action='store_true', help="Run All Document Removal Test")
         run_parser.add_argument('--skipbucket', action='store_true', help="Use Preexisting bucket")

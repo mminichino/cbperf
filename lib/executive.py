@@ -171,7 +171,7 @@ class cbPerfBase(object):
     def get_next_task(self):
         try:
             for item in self.playbooks[self.test_playbook]:
-                yield item, self.playbooks[self.test_playbook][item]['test']
+                yield item, self.playbooks[self.test_playbook][item]
         except KeyError:
             raise TestConfigError("test scenario syntax error")
 
@@ -222,6 +222,11 @@ class test_exec(cbPerfBase):
         if self.operation_count > self.record_count:
             raise ParameterError("Error: Operation count must be equal or less than record count.")
 
+        if self.parameters.command == 'load':
+            self.test_playbook = "load"
+        elif self.parameters.command == 'load' and self.parameters.ramp:
+            self.test_playbook = "ramp"
+
         if not self.bucket_memory:
             one_mb = 1024 * 1024
             if self.input_file:
@@ -249,6 +254,16 @@ class test_exec(cbPerfBase):
         else:
             return 0x0
 
+    def test_lookup(self, name):
+        if name == "KV_TEST":
+            return test_exec.KV_TEST
+        elif name == "QUERY_TEST":
+            return test_exec.QUERY_TEST
+        elif name == "REMOVE_DATA":
+            return test_exec.REMOVE_DATA
+        else:
+            raise TestConfigError("unknown test type {}".format(name))
+
     def is_random_mask(self, bits):
         if bits & test_exec.RANDOM_KEYS:
             return True
@@ -256,11 +271,21 @@ class test_exec(cbPerfBase):
             return False
 
     def run(self):
-        print("start")
         for index, element in enumerate(self.get_next_task()):
-            pass
-        self.test_init(bypass=True)
-        self.test_launch()
+            step = element[0]
+            step_config = element[1]
+            print(f"Running test playbook {self.test_playbook} step {step}")
+            try:
+                write_p = step_config['write']
+                do_init = step_config['init']
+                do_run = step_config['run']
+                do_cleanup = step_config['cleanup']
+                do_pause = step_config['pause']
+                test_type = self.test_lookup(step_config['test'])
+            except KeyError:
+                raise TestConfigError("test configuration syntax error")
+            self.test_init(bypass=True)
+            self.test_launch(write_p=write_p, mode=test_type)
 
     def test_init(self, bypass=False):
         collection_list = []
@@ -456,7 +481,7 @@ class test_exec(cbPerfBase):
             status_thread.daemon = True
             status_thread.start()
 
-            print(f"Starting test on {coll_obj.name} with {operation_count:,} records - {read_p}%% get, {write_p}%% update")
+            print(f"Starting test on {coll_obj.name} with {operation_count:,} records - {read_p}% get, {write_p}% update")
             start_time = time.perf_counter()
 
             instances = [
@@ -484,6 +509,7 @@ class test_exec(cbPerfBase):
             raise TestRunError("test not initialized")
 
         run_mode = 'async' if self.aio else 'sync'
+        mask = mode | test_exec.RANDOM_KEYS
 
         print("Beginning {} test ramp with max {} instances.".format(run_mode, self.thread_max))
 
@@ -506,7 +532,7 @@ class test_exec(cbPerfBase):
             status_thread.daemon = True
             status_thread.start()
 
-            print(f"Starting ramp test - {read_p}%% get, {write_p}%% update")
+            print(f"Starting ramp test - {read_p}% get, {write_p}% update")
 
             time_snap = time.perf_counter()
             start_time = time_snap
@@ -514,7 +540,7 @@ class test_exec(cbPerfBase):
                 for i in range(accelerator):
                     scale.append(multiprocessing.Process(
                         target=self.test_run,
-                        args=(mode, input_json, count, coll_obj, operation_count,
+                        args=(mask, input_json, count, coll_obj, operation_count,
                               telemetry_queue, read_p, write_p, n, status_flag)))
                     scale[n].daemon = True
                     scale[n].start()
