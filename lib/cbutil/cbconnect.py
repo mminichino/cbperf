@@ -6,7 +6,7 @@ from .exceptions import *
 from .retries import retry
 from .dbinstance import db_instance
 from datetime import timedelta
-from couchbase_core._libcouchbase import LOCKMODE_NONE
+from couchbase.options import LOCKMODE_NONE
 from couchbase.diagnostics import PingState
 import couchbase
 import acouchbase.cluster
@@ -44,7 +44,7 @@ class cb_connect(cb_session):
         else:
             return key
 
-    @retry(allow_list=(ProtocolException, CouchbaseTransientException))
+    @retry(allow_list=(ProtocolException, CouchbaseTransientException, TimeoutException))
     async def connect(self):
         cluster_s = couchbase.cluster.Cluster(self.cb_connect_string,
                                               authenticator=self.auth,
@@ -62,7 +62,8 @@ class cb_connect(cb_session):
         loop.run_until_complete(self.connect())
 
     @retry(always_raise_list=(BucketNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           retry_count=10,
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     async def bucket(self, name):
         bucket_s = self.db.cluster_s.bucket(name)
         bucket_a = self.db.cluster_a.bucket(name)
@@ -74,7 +75,7 @@ class cb_connect(cb_session):
         loop.run_until_complete(self.bucket(name))
 
     @retry(always_raise_list=(ScopeNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     async def scope(self, name="_default"):
         scope_s = self.db.bucket_s.scope(name)
         scope_a = self.db.bucket_a.scope(name)
@@ -85,7 +86,7 @@ class cb_connect(cb_session):
         loop.run_until_complete(self.scope(name))
 
     @retry(always_raise_list=(CollectionNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     async def collection(self, name="_default"):
         collection_s = self.db.scope_s.collection(name)
         collection_a = self.db.scope_a.collection(name)
@@ -97,7 +98,7 @@ class cb_connect(cb_session):
         loop.run_until_complete(self.collection(name))
 
     @retry(always_raise_list=(BucketDoesNotExistException,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def is_bucket(self, name):
         try:
             return self.db.bm.get_bucket(name)
@@ -105,7 +106,7 @@ class cb_connect(cb_session):
             return None
 
     @retry(always_raise_list=(AttributeError,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def is_scope(self, scope):
         try:
             return next((s for s in self.db.cm_s.get_all_scopes() if s.name == scope), None)
@@ -113,7 +114,7 @@ class cb_connect(cb_session):
             return None
 
     @retry(always_raise_list=(AttributeError,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def is_collection(self, collection):
         try:
             return next((c for c in self.db.scope_s.collections if c.name == collection), None)
@@ -121,7 +122,7 @@ class cb_connect(cb_session):
             return None
 
     @retry(always_raise_list=(BucketAlreadyExistsException,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def create_bucket(self, name, quota=256):
         try:
             self.db.bm.create_bucket(CreateBucketSettings(name=name,
@@ -135,7 +136,7 @@ class cb_connect(cb_session):
         self.bucket_s(name)
 
     @retry(always_raise_list=(BucketNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def drop_bucket(self, name):
         try:
             self.db.bm.drop_bucket(name)
@@ -147,7 +148,7 @@ class cb_connect(cb_session):
         self.db.drop_bucket()
 
     @retry(always_raise_list=(ScopeAlreadyExistsException,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def create_scope(self, name):
         try:
             self.db.cm_s.create_scope(name)
@@ -159,7 +160,7 @@ class cb_connect(cb_session):
         self.scope_s(name)
 
     @retry(always_raise_list=(CollectionAlreadyExistsException,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def create_collection(self, name):
         try:
             collection_spec = CollectionSpec(name, scope_name=self.db.scope_name)
@@ -181,7 +182,7 @@ class cb_connect(cb_session):
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def cb_get_s(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -195,7 +196,7 @@ class cb_connect(cb_session):
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     async def cb_get_a(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -371,35 +372,3 @@ class cb_connect(cb_session):
             raise
         except Exception as err:
             raise CollectionRemoveError("can not remove {} from {}: {}".format(key, name, err))
-
-    @retry(allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError))
-    def cluster_health_check(self, output=False, restrict=True):
-        if not self.db.cluster_s:
-            raise ClusterHealthCheckError("cluster not connected")
-        try:
-            result = self.db.cluster_s.ping()
-            for endpoint, reports in result.endpoints.items():
-                for report in reports:
-                    if restrict and endpoint.value != 'kv':
-                        continue
-                    report_string = "{0}: {1} took {2} {3}".format(
-                        endpoint.value,
-                        report.remote,
-                        report.latency,
-                        report.state)
-                    if output:
-                        print(report_string)
-                    if not report.state == PingState.OK and not output:
-                        raise ClusterHealthCheckError("{}".format(report_string))
-            if output:
-                diag_result = self.db.cluster_s.diagnostics()
-                for endpoint, reports in diag_result.endpoints.items():
-                    for report in reports:
-                        report_string = "{0}: {1} last activity {2} {3}".format(
-                            endpoint.value,
-                            report.remote,
-                            report.last_activity,
-                            report.state)
-                        print(report_string)
-        except Exception as err:
-            raise ClusterHealthCheckError("cluster health check error: {}".format(err))

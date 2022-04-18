@@ -60,7 +60,19 @@ class CbUtilEnvironmentError(cbUtilError):
     pass
 
 
-class NodeUnreachable(cbUtilError):
+class NodeUnreachable(cbUtilException):
+    pass
+
+
+class NodeConnectionTimeout(cbUtilException):
+    pass
+
+
+class NodeConnectionError(cbUtilException):
+    pass
+
+
+class NodeConnectionFailed(cbUtilException):
     pass
 
 
@@ -157,6 +169,18 @@ class IndexNotReady(cbUtilException):
 
 
 class ClusterHealthCheckError(cbUtilException):
+    pass
+
+
+class ClusterKVServiceError(cbUtilException):
+    pass
+
+
+class ClusterQueryServiceError(cbUtilException):
+    pass
+
+
+class ClusterViewServiceError(cbUtilException):
     pass
 
 

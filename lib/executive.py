@@ -229,7 +229,7 @@ class test_exec(cbPerfBase):
 
         if self.parameters.command == 'load':
             self.test_playbook = "load"
-        elif self.parameters.command == 'load' and self.parameters.ramp:
+        elif self.parameters.command == 'run' and self.parameters.ramp:
             self.test_playbook = "ramp"
 
         if not self.bucket_memory:
@@ -300,7 +300,10 @@ class test_exec(cbPerfBase):
             if step == "load" and not self.skip_init:
                 self.test_init()
 
-            self.test_launch(write_p=write_p, mode=test_type)
+            if self.test_playbook == "ramp" and step != "load":
+                self.ramp_launch(write_p=write_p, mode=test_type)
+            else:
+                self.test_launch(write_p=write_p, mode=test_type)
 
             if step == "load" and not self.skip_init:
                 self.process_rules()
@@ -550,6 +553,11 @@ class test_exec(cbPerfBase):
             scale = []
             n = 0
 
+            if coll_obj.record_count:
+                record_count = coll_obj.record_count
+            else:
+                record_count = self.record_count
+
             status_thread = multiprocessing.Process(
                 target=self.status_output, args=(operation_count, run_flag, telemetry_queue))
             status_thread.daemon = True
@@ -563,8 +571,8 @@ class test_exec(cbPerfBase):
                 for i in range(accelerator):
                     scale.append(multiprocessing.Process(
                         target=self.test_run,
-                        args=(mask, input_json, count, coll_obj, operation_count,
-                              telemetry_queue, read_p, write_p, n, status_flag)))
+                        args=(mask, input_json, count, coll_obj, record_count,
+                              telemetry_queue, write_p, n, status_flag)))
                     scale[n].daemon = True
                     scale[n].start()
                     n += 1

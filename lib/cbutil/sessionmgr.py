@@ -9,9 +9,15 @@ import logging
 import socket
 import dns.resolver
 from itertools import cycle
-
+from datetime import timedelta
+from couchbase.exceptions import (CouchbaseTransientException, TimeoutException, ProtocolException)
+from couchbase.diagnostics import PingState
+from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions, QueryIndexManager
+from couchbase.auth import PasswordAuthenticator
+from couchbase.options import LOCKMODE_NONE
 import lib.cbutil.exceptions
 from .exceptions import *
+from .retries import retry
 
 
 class cb_session(object):
@@ -87,6 +93,7 @@ class cb_session(object):
         else:
             raise Exception("Unknown API status code {}".format(code))
 
+    @retry(allow_list=(TransientError, NodeUnreachable))
     def is_reachable(self):
         resolver = dns.resolver.Resolver()
 
@@ -103,32 +110,39 @@ class cb_session(object):
         except dns.resolver.NXDOMAIN:
             self.logger.info("rally name {} is a node name".format(self.rally_host_name))
             pass
+        except dns.exception.Timeout:
+            raise TransientError("{} lookup timeout".format(self.srv_prefix + self.rally_host_name))
         except Exception:
             raise
 
-        if not self.check_node_connectivity(self.rally_cluster_node, self.admin_port):
-            raise NodeUnreachable("can not connect to node {}".format(self.rally_cluster_node))
+        try:
+            self.check_node_connectivity(self.rally_cluster_node, self.admin_port)
+        except (NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed) as err:
+            raise NodeUnreachable("can not connect to node {}: {}".format(self.rally_cluster_node, err))
 
         self.logger.info("initial connect node name: {}".format(self.rally_cluster_node))
         self.logger.debug("is_reachable: rally_host_name: {}".format(self.rally_host_name))
         self.logger.debug("is_reachable: rally_cluster_node: {}".format(self.rally_cluster_node))
         return True
 
+    @retry(allow_list=(NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
     def check_node_connectivity(self, hostname, port):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1.5)
+            sock.settimeout(2)
             result = sock.connect_ex((hostname, int(port)))
             sock.close()
-        except Exception:
-            self.logger.debug("{} port {} lookup failure".format(hostname, port))
-            return False
+        except socket.timeout:
+            raise NodeConnectionTimeout("timeout connecting to {}:{}".format(hostname, port))
+        except socket.error as err:
+            raise NodeConnectionError("error connecting to {}:{}: {}".format(hostname, port, err))
+
         if result == 0:
             self.logger.debug("{} port {} is reachable".format(hostname, port))
             return True
         else:
             self.logger.debug("{} port {} is not reachable".format(hostname, port))
-            return False
+            raise NodeConnectionFailed("node {}:{} unreachable".format(hostname, port))
 
     @property
     def cb_parameters(self):
@@ -162,6 +176,10 @@ class cb_session(object):
     @property
     def get_memory_quota(self):
         return self.memory_quota
+
+    @property
+    def is_node_api(self):
+        return self.node_api_accessible
 
     def node_hostnames(self):
         for node in self.all_hosts:
@@ -198,6 +216,8 @@ class cb_session(object):
             response_json = json.loads(response.text)
             yield response_json
 
+    @retry(retry_count=10, allow_list=(TransientError, ClusterKVServiceError, ClusterHealthCheckError, NodeUnreachable,
+                                       ClusterInitError, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
     def init_cluster(self):
         try:
             self.is_reachable()
@@ -221,12 +241,6 @@ class cb_session(object):
                     record['external_name'] = ext_host_name
                     record['external_ports'] = results['nodes'][i]['alternateAddresses']['external']['ports']
                     self.logger.info("Added external node {}".format(ext_host_name))
-                    if self.check_node_connectivity(ext_host_name, self.node_port):
-                        self.logger.info("node API port accessible on {}".format(ext_host_name))
-                        record['external_node_api'] = True
-                    else:
-                        self.logger.info("node API port not accessible on {}".format(ext_host_name))
-                        record['external_node_api'] = False
 
             host_name = results['nodes'][i]['configuredHostname']
             host_name = host_name.split(':')[0]
@@ -237,13 +251,6 @@ class cb_session(object):
                     self.use_external_network = True
                 else:
                     raise NodeUnreachable("can not connect to node {}".format(host_name))
-            else:
-                if self.check_node_connectivity(host_name, self.node_port):
-                    self.logger.info("node API port accessible on {}".format(host_name))
-                    record['node_api'] = True
-                else:
-                    self.logger.info("node API port not accessible on {}".format(host_name))
-                    record['node_api'] = False
 
             record['host_name'] = host_name
             record['version'] = results['nodes'][i]['version']
@@ -255,6 +262,19 @@ class cb_session(object):
         self.cluster_info = results
         self.memory_quota = results['memoryQuota']
         self.sw_version = self.node_list[0]['version']
+
+        try:
+            self.cluster_health_check(restrict=False)
+        except ClusterQueryServiceError:
+            self.node_api_accessible = False
+        except ClusterViewServiceError:
+            pass
+        except ClusterKVServiceError:
+            raise ClusterInitError("KV service unhealthy")
+        except ClusterHealthCheckError as err:
+            raise ClusterInitError("cluster health check error: {}".format(err))
+        except Exception:
+            raise
 
         if self.use_external_network:
             self.all_hosts = list(self.node_list[i]['external_name'] for i, item in enumerate(self.node_list))
@@ -296,3 +316,48 @@ class cb_session(object):
                 for key in ext_port_list:
                     print("%s:%s" % (key, ext_port_list[key]), end=' ')
             print("[Services] %s [version] %s [platform] %s" % (services, version, ostype))
+
+    @retry(allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError, TimeoutException))
+    def cluster_health_check(self, output=False, restrict=True):
+        cb_auth = PasswordAuthenticator(self.username, self.password)
+        cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
+        cluster = Cluster(self.cb_connect_string, authenticator=cb_auth, lockmode=LOCKMODE_NONE, timeout_options=cb_timeouts)
+
+        try:
+            result = cluster.ping()
+        except Exception as err:
+            raise ClusterHealthCheckError("cluster health check error: {}".format(err))
+
+        for endpoint, reports in result.endpoints.items():
+            for report in reports:
+                if restrict and endpoint.value != 'kv':
+                    continue
+                report_string = "{0}: {1} took {2} {3}".format(
+                    endpoint.value,
+                    report.remote,
+                    report.latency,
+                    report.state)
+                if output:
+                    print(report_string)
+                if not report.state == PingState.OK:
+                    if endpoint.value == 'kv':
+                        raise ClusterKVServiceError("{} KV service not ok".format(self.cb_connect_string))
+                    elif endpoint.value == 'n1ql':
+                        raise ClusterQueryServiceError("{} query service not ok".format(self.cb_connect_string))
+                    elif endpoint.value == 'views':
+                        raise ClusterViewServiceError("{} view service not ok".format(self.cb_connect_string))
+                    else:
+                        raise ClusterHealthCheckError("{} service {} not ok".format(self.cb_connect_string, endpoint.value))
+
+        if output:
+            diag_result = cluster.diagnostics()
+            for endpoint, reports in diag_result.endpoints.items():
+                for report in reports:
+                    report_string = "{0}: {1} last activity {2} {3}".format(
+                        endpoint.value,
+                        report.remote,
+                        report.last_activity,
+                        report.state)
+                    print(report_string)
+
+        cluster.disconnect()
