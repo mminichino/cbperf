@@ -296,7 +296,7 @@ class cb_connect(cb_session):
             query = "SELECT " + field + " FROM " + keyspace + ";"
         elif not sql and field:
             keyspace = self.db.keyspace_a(name)
-            query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + value + "\";"
+            query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + str(value) + "\";"
         elif sql:
             query = sql
         else:
@@ -307,6 +307,7 @@ class cb_connect(cb_session):
     @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, QueryArgumentsError),
            allow_list=(CouchbaseTransientException, ProtocolException, TransientError))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None):
+        query = ""
         try:
             contents = []
             query = self.query_sql_constructor(field, name, where, value, sql)
@@ -321,11 +322,12 @@ class cb_connect(cb_session):
             error_class = decode_error_code(err.context.first_error_code)
             raise error_class(err.context.first_error_message)
         except Exception as err:
-            raise QueryError("can not query {} from {}: {}".format(field, name, err))
+            raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
     @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, QueryArgumentsError),
            allow_list=(CouchbaseTransientException, ProtocolException, TransientError))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None):
+        query = ""
         try:
             contents = []
             query = self.query_sql_constructor(field, name, where, value, sql)
@@ -340,7 +342,7 @@ class cb_connect(cb_session):
             error_class = decode_error_code(err.context.first_error_code)
             raise error_class(err.context.first_error_message)
         except Exception as err:
-            raise QueryError("can not query {} from {}: {}".format(field, name, err))
+            raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
            allow_list=(CouchbaseTransientException, ProtocolException))

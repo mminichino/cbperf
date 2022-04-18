@@ -15,6 +15,8 @@ import numpy as np
 import asyncio
 import time
 
+VERSION = '1.0'
+
 
 class rwMixer(object):
 
@@ -267,6 +269,16 @@ class test_exec(cbPerfBase):
         else:
             raise TestConfigError("unknown test type {}".format(name))
 
+    def test_print_name(self, code):
+        if code == test_exec.KV_TEST:
+            return "key-value"
+        elif code == test_exec.QUERY_TEST:
+            return "query"
+        elif code == test_exec.REMOVE_DATA:
+            return "remove"
+        else:
+            raise TestConfigError("unknown test code {}".format(code))
+
     def is_random_mask(self, bits):
         if bits & test_exec.RANDOM_KEYS:
             return True
@@ -468,8 +480,9 @@ class test_exec(cbPerfBase):
             raise TestRunError("test not initialized")
 
         run_mode = 'async' if self.aio else 'sync'
+        mode_text = self.test_print_name(mode)
 
-        print("Beginning {} test with {} instances.".format(run_mode, self.run_threads))
+        print("Beginning {} {} test with {} instances.".format(run_mode, mode_text, self.run_threads))
 
         for coll_obj in self.collection_list:
             telemetry_queue = multiprocessing.Queue()
