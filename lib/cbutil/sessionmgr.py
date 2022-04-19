@@ -218,13 +218,13 @@ class cb_session(object):
             response_json = json.loads(response.text)
             yield response_json
 
-    @retry(retry_count=10, allow_list=(TransientError, ClusterKVServiceError, ClusterHealthCheckError, NodeUnreachable,
+    @retry(retry_count=10, allow_list=(TransientError, ClusterKVServiceError, ClusterHealthCheckError, NodeUnreachable, DNSLookupTimeout,
                                        ClusterInitError, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
     def init_cluster(self):
         try:
             self.is_reachable()
-        except Exception as e:
-            raise ClusterInitError("cluster not reachable at {}: {}".format(self.rally_host_name, e))
+        except Exception as err:
+            raise ClusterInitError("cluster not reachable at {}: {}".format(self.rally_host_name, err))
 
         results = self.admin_api_get('/pools/default')
 
