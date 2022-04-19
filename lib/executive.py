@@ -2,6 +2,8 @@
 ##
 
 import multiprocessing
+import logging
+import logging.handlers
 from queue import Empty
 from lib.cbutil.cbconnect import cb_connect
 from lib.cbutil.cbindex import cb_index
@@ -87,6 +89,7 @@ class cbPerfBase(object):
         self.operation_count = self.default_operation_count
         self.bucket_memory = None
         self.id_field = self.default_id_field
+        self.log_file = "cb_perf.log"
 
         if parameters.user:
             self.username = parameters.user
@@ -423,9 +426,10 @@ class test_exec(cbPerfBase):
 
         self.rules_run = True
 
-    def status_output(self, total_count, run_flag, telemetry_queue, thread_count):
+    def status_output(self, total_count, run_flag, telemetry_queue, status_vector):
         max_threads = self.thread_max if total_count == 0 else self.run_threads
         tps_vector = [0 for n in range(max_threads)]
+        tps_history = []
         sample_count = 1
         total_tps = 0
         total_time = 0
@@ -435,7 +439,28 @@ class test_exec(cbPerfBase):
         avg_time = 0
         percentage = 0
         total_ops = 0
+        slope = 0
+        slope_count = 0
+        slope_total = 0
+        slope_avg = 0
+        slm = 0
+        slx = 0
         end_char = '\r'
+
+        def calc_slope(idx, data, segment):
+            _idx = np.concatenate(([0], idx))
+            _data = np.concatenate(([0], data))
+            sum_idx = np.cumsum(_idx)
+            sum_data = np.cumsum(_data)
+            exp_idx = np.cumsum(_idx * _idx)
+            exp_data = np.cumsum(_idx * _data)
+
+            sum_idx = sum_idx[segment:] - sum_idx[:-segment]
+            sum_data = sum_data[segment:] - sum_data[:-segment]
+            exp_idx = exp_idx[segment:] - exp_idx[:-segment]
+            exp_data = exp_data[segment:] - exp_data[:-segment]
+
+            return (segment * exp_data - sum_idx * sum_data) / (segment * exp_idx - sum_idx * sum_idx)
 
         while run_flag.value == 1:
             try:
@@ -458,6 +483,19 @@ class test_exec(cbPerfBase):
             avg_time = total_time / sample_count
             sample_count += 1
 
+            tps_history.append(trans_per_sec)
+            if len(tps_history) >= 10:
+                tps_history = tps_history[len(tps_history) - 10:len(tps_history)]
+                index = list(range(1, len(tps_history)+1))
+                np_slope = calc_slope(index, tps_history, 10)
+                slope = np_slope.tolist()[0]
+                slope_total += slope
+                slope_count += 1
+                slope_avg = slope_total / slope_count
+                if slope_count > 1000:
+                    if slope_avg < 0:
+                        status_vector[0] = 1
+
             if trans_per_sec > max_tps:
                 max_tps = trans_per_sec
             if time_delta > max_time:
@@ -468,10 +506,11 @@ class test_exec(cbPerfBase):
                 print(f"=> {total_ops} of {total_count}, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%%",
                       end=end_char)
             else:
-                print(f"=> {total_ops} ops, {thread_count.value} threads, {time_delta:.6f} time, {trans_per_sec} TPS", end=end_char)
+                print(f"=> {total_ops} ops, {status_vector[1]} threads, {time_delta:.6f} time, {trans_per_sec} TPS, {status_vector[2]} errors, trend {slope_avg:+.2f}",
+                      end=end_char)
 
-        sys.stdout.write("\033[K")
         if total_count > 0:
+            sys.stdout.write("\033[K")
             print(f"=> {total_count} of {total_count}, {percentage}%%")
         print("Test Done.")
         print("{} average TPS.".format(round(avg_tps)))
@@ -494,10 +533,12 @@ class test_exec(cbPerfBase):
             run_flag = multiprocessing.Value('i')
             status_flag = multiprocessing.Value('i')
             thread_count = multiprocessing.Value('i')
+            status_vector = multiprocessing.Array('i', [0]*10)
             count.value = 0
             run_flag.value = 1
             status_flag.value = 0
             thread_count.value = self.run_threads
+            status_vector[1] = self.run_threads
             input_json = coll_obj.schema
 
             if coll_obj.record_count:
@@ -505,19 +546,23 @@ class test_exec(cbPerfBase):
             else:
                 operation_count = self.record_count
 
-            status_thread = multiprocessing.Process(
-                target=self.status_output, args=(operation_count, run_flag, telemetry_queue, thread_count))
+            status_thread = multiprocessing.Process(target=self.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
             status_thread.daemon = True
             status_thread.start()
 
             print(f"Starting test on {coll_obj.name} with {operation_count:,} records - {read_p}% get, {write_p}% update")
             start_time = time.perf_counter()
 
+            if self.aio:
+                test_run_func = self.test_run_a
+            else:
+                test_run_func = self.test_run_s
+
             instances = [
                 multiprocessing.Process(
-                    target=self.test_run,
+                    target=test_run_func,
                     args=(mode, input_json, count, coll_obj, operation_count,
-                          telemetry_queue, write_p, n, status_flag)) for n in range(self.run_threads)
+                          telemetry_queue, write_p, n, status_vector)) for n in range(self.run_threads)
             ]
             for p in instances:
                 p.daemon = True
@@ -539,18 +584,8 @@ class test_exec(cbPerfBase):
         if not self.collection_list:
             raise TestRunError("test not initialized")
 
-        def sig_int_handler(signum, frame):
-            for p in scale:
-                p.terminate()
-                p.join()
-            if run_flag:
-                run_flag.value = 0
-            if status_thread:
-                status_thread.join()
-
         run_mode = 'async' if self.aio else 'sync'
         mask = mode | test_exec.RANDOM_KEYS
-        signal.signal(signal.SIGINT, sig_int_handler)
 
         print("Beginning {} test ramp with max {} instances.".format(run_mode, self.thread_max))
 
@@ -560,6 +595,7 @@ class test_exec(cbPerfBase):
             run_flag = multiprocessing.Value('i')
             status_flag = multiprocessing.Value('i')
             thread_count = multiprocessing.Value('i')
+            status_vector = multiprocessing.Array('i', [0]*10)
             count.value = 0
             run_flag.value = 1
             status_flag.value = 0
@@ -576,26 +612,31 @@ class test_exec(cbPerfBase):
                 record_count = self.record_count
 
             status_thread = multiprocessing.Process(
-                target=self.status_output, args=(operation_count, run_flag, telemetry_queue, thread_count))
+                target=self.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
             status_thread.daemon = True
             status_thread.start()
 
             print(f"Starting ramp test - {read_p}% get, {write_p}% update")
 
+            if self.aio:
+                test_run_func = self.test_run_a
+            else:
+                test_run_func = self.test_run_s
+
             time_snap = time.perf_counter()
             start_time = time_snap
             while True:
-                thread_count.value += accelerator
+                status_vector[1] += accelerator
                 for i in range(accelerator):
                     scale.append(multiprocessing.Process(
-                        target=self.test_run,
+                        target=test_run_func,
                         args=(mask, input_json, count, coll_obj, record_count,
-                              telemetry_queue, write_p, n, status_flag)))
+                              telemetry_queue, write_p, n, status_vector)))
                     scale[n].daemon = True
                     scale[n].start()
                     n += 1
 
-                if status_flag.value == 1 or n >= self.thread_max:
+                if status_vector[0] == 1 or n >= self.thread_max:
                     break
 
                 time_check = time.perf_counter()
@@ -616,9 +657,10 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
-    def test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_flag):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    def test_run_a(self, *args, **kwargs):
+        asyncio.run(self.async_test_run(*args, **kwargs))
+
+    async def async_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
         tasks = []
         rand_gen = fastRandom(record_count)
         id_field = coll_obj.id
@@ -626,14 +668,12 @@ class test_exec(cbPerfBase):
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
         time_threshold = 5
-
-        def test_exception_handler(event_loop, context):
-            event_loop.default_exception_handler(context)
-            exception = context.get('exception')
-            if isinstance(exception, Exception):
-                status_flag.value = 1
-                loop.stop()
-                raise TestRunException("test instance {} run error: {}".format(n, exception))
+        handler = logging.handlers.WatchedFileHandler(os.environ.get("CB_PERF_LOGFILE", self.log_file))
+        formatter = logging.Formatter(logging.BASIC_FORMAT)
+        handler.setFormatter(formatter)
+        logger = logging.getLogger('test_run')
+        logger.setLevel("INFO")
+        logger.addHandler(handler)
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
@@ -644,21 +684,25 @@ class test_exec(cbPerfBase):
             run_batch_size = self.default_kv_batch_size
 
         try:
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
-            db.connect_s()
-            db.bucket_s(coll_obj.bucket)
-            db.scope_s(coll_obj.scope)
-            db.collection_s(coll_obj.name)
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, quick=True)
+            await db.connect()
+            await db.bucket(coll_obj.bucket)
+            await db.scope(coll_obj.scope)
+            await db.collection(coll_obj.name)
         except Exception as err:
-            status_flag.value = 1
-            raise TestRunException("test instance {} run error: {}".format(n, err))
+            status_vector[0] = 1
+            status_vector[2] += 1
+            logger.info(f"db connection error: {err}")
+            return
 
         try:
             r = randomize()
             r.prepareTemplate(input_json)
         except Exception as err:
-            status_flag.value = 1
-            raise TestRunError("Can not load JSON template: {}".format(err))
+            status_vector[0] = 1
+            status_vector[2] += 1
+            logger.info(f"randomizer error: {err}")
+            return
 
         while True:
             try:
@@ -676,54 +720,27 @@ class test_exec(cbPerfBase):
                     if op_select.write(record_number):
                         document = r.processTemplate()
                         document[self.id_field] = record_number
-                        if self.aio:
-                            tasks.append(db.cb_upsert_a(record_number, document, name=coll_obj.name))
-                        else:
-                            begin_time = time.time()
-                            result = db.cb_upsert_s(record_number, document, name=coll_obj.name)
-                            tasks.append(result)
+                        tasks.append(asyncio.ensure_future(db.cb_upsert_a(record_number, document, name=coll_obj.name)))
                     else:
                         if mode == test_exec.REMOVE_DATA:
-                            if self.aio:
-                                tasks.append(db.cb_remove_a(record_number, name=coll_obj.name))
-                            else:
-                                begin_time = time.time()
-                                result = db.cb_remove_s(record_number, name=coll_obj.name)
-                                tasks.append(result)
+                            tasks.append(asyncio.ensure_future(db.cb_remove_a(record_number, name=coll_obj.name)))
                         elif mode == test_exec.QUERY_TEST:
-                            if self.aio:
-                                tasks.append(
-                                    db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field,
-                                                  value=record_number))
-                            else:
-                                begin_time = time.time()
-                                result = db.cb_query_s(field=query_field, name=coll_obj.name, where=id_field,
-                                                       value=record_number)
-                                tasks.append(result)
+                            tasks.append(asyncio.ensure_future(db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field, value=record_number)))
                         else:
-                            if self.aio:
-                                tasks.append(db.cb_get_a(record_number, name=coll_obj.name))
-                            else:
-                                begin_time = time.time()
-                                result = db.cb_get_s(record_number, name=coll_obj.name)
-                                tasks.append(result)
+                            tasks.append(asyncio.ensure_future(db.cb_get_a(record_number, name=coll_obj.name)))
             except Exception as err:
-                status_flag.value = 1
-                raise TestRunException("test instance {} run error: {}".format(n, err))
+                status_vector[0] = 1
+                status_vector[2] += 1
+                logger.info(f"execution error: {err}")
+                return
             if len(tasks) > 0:
-                if self.aio:
-                    begin_time = time.time()
-                    try:
-                        # results = loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-                        all_tasks = asyncio.gather(*tasks, return_exceptions=False)
-                        loop.set_exception_handler(test_exception_handler)
-                        results = loop.run_until_complete(all_tasks)
-                    except KeyboardInterrupt:
-                        status_flag.value = 1
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, Exception):
+                        status_vector[0] = 1
+                        status_vector[2] += 1
+                        logger.info(f"task error: {result}")
                         return
-                    except Exception as err:
-                        status_flag.value = 1
-                        raise TestRunException("test instance {} run error: {}".format(n, err))
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
                 telemetry[0] = n
@@ -732,6 +749,96 @@ class test_exec(cbPerfBase):
                 telemetry_packet = ':'.join(str(i) for i in telemetry)
                 telemetry_queue.put(telemetry_packet)
                 if loop_total_time >= time_threshold:
-                    status_flag.value = 1
+                    status_vector[0] = 1
+            else:
+                break
+
+    def test_run_s(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
+        tasks = []
+        rand_gen = fastRandom(record_count)
+        id_field = coll_obj.id
+        query_field = next((i['field'] for i in coll_obj.indexes if i['field'] != id_field), id_field)
+        op_select = rwMixer(write_p)
+        telemetry = [0 for n in range(3)]
+        time_threshold = 5
+        handler = logging.handlers.WatchedFileHandler(os.environ.get("CB_PERF_LOGFILE", self.log_file))
+        formatter = logging.Formatter(logging.BASIC_FORMAT)
+        handler.setFormatter(formatter)
+        logger = logging.getLogger('test_run')
+        logger.setLevel("INFO")
+        logger.addHandler(handler)
+
+        mode = self.test_mask(mask)
+        is_random = self.is_random_mask(mask)
+
+        if mode == test_exec.QUERY_TEST:
+            run_batch_size = self.default_query_batch_size
+        else:
+            run_batch_size = self.default_kv_batch_size
+
+        try:
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, quick=True)
+            db.connect_s()
+            db.bucket_s(coll_obj.bucket)
+            db.scope_s(coll_obj.scope)
+            db.collection_s(coll_obj.name)
+        except Exception as err:
+            status_vector[0] = 1
+            status_vector[2] += 1
+            logger.info(f"db connection error: {err}")
+            return
+
+        try:
+            r = randomize()
+            r.prepareTemplate(input_json)
+        except Exception as err:
+            status_vector[0] = 1
+            status_vector[2] += 1
+            logger.info(f"randomizer error: {err}")
+            return
+
+        while True:
+            try:
+                tasks.clear()
+                begin_time = time.time()
+                for y in range(int(run_batch_size)):
+                    if is_random:
+                        record_number = rand_gen.value
+                    else:
+                        with count.get_lock():
+                            count.value += 1
+                            record_number = count.value
+                        if record_number > record_count:
+                            break
+                    if op_select.write(record_number):
+                        document = r.processTemplate()
+                        document[self.id_field] = record_number
+                        result = db.cb_upsert_s(record_number, document, name=coll_obj.name)
+                        tasks.append(result)
+                    else:
+                        if mode == test_exec.REMOVE_DATA:
+                            result = db.cb_remove_s(record_number, name=coll_obj.name)
+                            tasks.append(result)
+                        elif mode == test_exec.QUERY_TEST:
+                            result = db.cb_query_s(field=query_field, name=coll_obj.name, where=id_field, value=record_number)
+                            tasks.append(result)
+                        else:
+                            result = db.cb_get_s(record_number, name=coll_obj.name)
+                            tasks.append(result)
+            except Exception as err:
+                status_vector[0] = 1
+                status_vector[2] += 1
+                logger.info(f"task error: {err}")
+                return
+            if len(tasks) > 0:
+                end_time = time.time()
+                loop_total_time = end_time - begin_time
+                telemetry[0] = n
+                telemetry[1] = len(tasks)
+                telemetry[2] = loop_total_time
+                telemetry_packet = ':'.join(str(i) for i in telemetry)
+                telemetry_queue.put(telemetry_packet)
+                if loop_total_time >= time_threshold:
+                    status_vector[0] = 1
             else:
                 break

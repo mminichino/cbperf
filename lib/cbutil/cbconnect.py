@@ -17,7 +17,7 @@ from couchbase.auth import PasswordAuthenticator
 import couchbase.subdocument as SD
 from couchbase.exceptions import (CASMismatchException, CouchbaseException, CouchbaseTransientException,
                                   DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
-                                  BucketAlreadyExistsException, QueryErrorContext,
+                                  BucketAlreadyExistsException, QueryErrorContext, HTTPException,
                                   BucketNotFoundException, TimeoutException, QueryException, ScopeNotFoundException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException, ProtocolException)
@@ -44,7 +44,7 @@ class cb_connect(cb_session):
         else:
             return key
 
-    @retry(retry_count=10, allow_list=(ProtocolException, CouchbaseTransientException, TimeoutException))
+    @retry(retry_count=10, allow_list=(ProtocolException, CouchbaseTransientException, TimeoutException, SystemError, HTTPException))
     async def connect(self):
         cluster_s = couchbase.cluster.Cluster(self.cb_connect_string,
                                               authenticator=self.auth,

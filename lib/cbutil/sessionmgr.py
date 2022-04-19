@@ -22,7 +22,7 @@ from .retries import retry
 
 class cb_session(object):
 
-    def __init__(self, hostname: str, username: str, password: str, ssl=True, external=False):
+    def __init__(self, hostname: str, username: str, password: str, ssl=True, external=False, quick=False):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.rally_host_name = hostname
         self.rally_cluster_node = self.rally_host_name
@@ -40,6 +40,7 @@ class cb_session(object):
         self.use_external_network = external
         self.external_network_present = False
         self.node_api_accessible = True
+        self.quick_connect = quick
 
         if self.ssl:
             self.prefix = "https://"
@@ -96,8 +97,8 @@ class cb_session(object):
     @retry(allow_list=(DNSLookupTimeout, NodeUnreachable))
     def is_reachable(self):
         resolver = dns.resolver.Resolver()
-        resolver.timeout = 10
-        resolver.lifetime = 20
+        resolver.timeout = 15
+        resolver.lifetime = 25
 
         try:
             answer = resolver.resolve(self.srv_prefix + self.rally_host_name, "SRV")
@@ -131,7 +132,7 @@ class cb_session(object):
     def check_node_connectivity(self, hostname, port):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)
+            sock.settimeout(10)
             result = sock.connect_ex((hostname, int(port)))
             sock.close()
         except socket.timeout:
@@ -222,7 +223,8 @@ class cb_session(object):
                                        ClusterInitError, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
     def init_cluster(self):
         try:
-            self.is_reachable()
+            if not self.quick_connect:
+                self.is_reachable()
         except Exception as err:
             raise ClusterInitError("cluster not reachable at {}: {}".format(self.rally_host_name, err))
 
@@ -237,27 +239,19 @@ class cb_session(object):
 
             if 'alternateAddresses' in results['nodes'][i]:
                 ext_host_name = results['nodes'][i]['alternateAddresses']['external']['hostname']
-                if self.check_node_connectivity(ext_host_name, self.admin_port):
-                    self.logger.info("external name {} is reachable".format(ext_host_name))
-                    self.external_network_present = True
-                    record['external_name'] = ext_host_name
-                    record['external_ports'] = results['nodes'][i]['alternateAddresses']['external']['ports']
-                    self.logger.info("Added external node {}".format(ext_host_name))
+                record['external_name'] = ext_host_name
+                record['external_ports'] = results['nodes'][i]['alternateAddresses']['external']['ports']
+                self.external_network_present = True
+                self.logger.info("Added external node {}".format(ext_host_name))
 
             host_name = results['nodes'][i]['configuredHostname']
             host_name = host_name.split(':')[0]
-
-            if not self.check_node_connectivity(host_name, self.admin_port):
-                self.logger.info("node name {} is not reachable".format(host_name))
-                if self.external_network_present:
-                    self.use_external_network = True
-                else:
-                    raise NodeUnreachable("can not connect to node {}".format(host_name))
 
             record['host_name'] = host_name
             record['version'] = results['nodes'][i]['version']
             record['ostype'] = results['nodes'][i]['os']
             record['services'] = ','.join(results['nodes'][i]['services'])
+
             self.node_list.append(record)
             self.logger.info("Added node {}".format(host_name))
 
@@ -265,18 +259,19 @@ class cb_session(object):
         self.memory_quota = results['memoryQuota']
         self.sw_version = self.node_list[0]['version']
 
-        try:
-            self.cluster_health_check(restrict=False)
-        except ClusterQueryServiceError:
-            self.node_api_accessible = False
-        except ClusterViewServiceError:
-            pass
-        except ClusterKVServiceError:
-            raise ClusterInitError("KV service unhealthy")
-        except ClusterHealthCheckError as err:
-            raise ClusterInitError("cluster health check error: {}".format(err))
-        except Exception:
-            raise
+        if not self.quick_connect:
+            try:
+                self.cluster_health_check(restrict=False)
+            except ClusterQueryServiceError:
+                self.node_api_accessible = False
+            except ClusterViewServiceError:
+                pass
+            except ClusterKVServiceError:
+                raise ClusterInitError("KV service unhealthy")
+            except ClusterHealthCheckError as err:
+                raise ClusterInitError("cluster health check error: {}".format(err))
+            except Exception:
+                raise
 
         if self.use_external_network:
             self.all_hosts = list(self.node_list[i]['external_name'] for i, item in enumerate(self.node_list))

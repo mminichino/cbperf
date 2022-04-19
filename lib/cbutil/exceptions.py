@@ -36,7 +36,7 @@ class cbUtilException(Exception):
         super().__init__(self.message)
 
 
-class HTTPException(cbUtilError):
+class HTTPExceptionError(cbUtilError):
     pass
 
 
@@ -52,7 +52,7 @@ class ForbiddenError(cbUtilError):
     pass
 
 
-class ClusterInitError(cbUtilError):
+class ClusterInitError(cbUtilException):
     pass
 
 
@@ -88,23 +88,23 @@ class AdminApiError(cbUtilError):
     pass
 
 
-class CollectionGetError(cbUtilError):
+class CollectionGetError(cbUtilException):
     pass
 
 
-class CollectionUpsertError(cbUtilError):
+class CollectionUpsertError(cbUtilException):
     pass
 
 
-class CollectionSubdocUpsertError(cbUtilError):
+class CollectionSubdocUpsertError(cbUtilException):
     pass
 
 
-class CollectionSubdocGetError(cbUtilError):
+class CollectionSubdocGetError(cbUtilException):
     pass
 
 
-class CollectionRemoveError(cbUtilError):
+class CollectionRemoveError(cbUtilException):
     pass
 
 
@@ -112,7 +112,7 @@ class CollectionCountError(cbUtilError):
     pass
 
 
-class QueryError(cbUtilError):
+class QueryError(cbUtilException):
     pass
 
 
