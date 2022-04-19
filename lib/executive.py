@@ -635,71 +635,81 @@ class test_exec(cbPerfBase):
         else:
             run_batch_size = self.default_kv_batch_size
 
-        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
-        db.connect_s()
-        db.bucket_s(coll_obj.bucket)
-        db.scope_s(coll_obj.scope)
-        db.collection_s(coll_obj.name)
+        try:
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
+            db.connect_s()
+            db.bucket_s(coll_obj.bucket)
+            db.scope_s(coll_obj.scope)
+            db.collection_s(coll_obj.name)
+        except Exception as err:
+            status_flag.value = 1
+            raise TestRunException("test instance {} run error: {}".format(n, err))
 
         try:
             r = randomize()
             r.prepareTemplate(input_json)
         except Exception as err:
+            status_flag.value = 1
             raise TestRunError("Can not load JSON template: {}".format(err))
 
         while True:
-            tasks.clear()
-            begin_time = time.time()
-            for y in range(int(run_batch_size)):
-                if is_random:
-                    record_number = rand_gen.value
-                else:
-                    with count.get_lock():
-                        count.value += 1
-                        record_number = count.value
-                    if record_number > record_count:
-                        break
-                if op_select.write(record_number):
-                    document = r.processTemplate()
-                    document[self.id_field] = record_number
-                    if self.aio:
-                        tasks.append(db.cb_upsert_a(record_number, document, name=coll_obj.name))
+            try:
+                tasks.clear()
+                begin_time = time.time()
+                for y in range(int(run_batch_size)):
+                    if is_random:
+                        record_number = rand_gen.value
                     else:
-                        begin_time = time.time()
-                        result = db.cb_upsert_s(record_number, document, name=coll_obj.name)
-                        tasks.append(result)
-                else:
-                    if mode == test_exec.REMOVE_DATA:
+                        with count.get_lock():
+                            count.value += 1
+                            record_number = count.value
+                        if record_number > record_count:
+                            break
+                    if op_select.write(record_number):
+                        document = r.processTemplate()
+                        document[self.id_field] = record_number
                         if self.aio:
-                            tasks.append(db.cb_remove_a(record_number, name=coll_obj.name))
+                            tasks.append(db.cb_upsert_a(record_number, document, name=coll_obj.name))
                         else:
                             begin_time = time.time()
-                            result = db.cb_remove_s(record_number, name=coll_obj.name)
-                            tasks.append(result)
-                    elif mode == test_exec.QUERY_TEST:
-                        if self.aio:
-                            tasks.append(
-                                db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field,
-                                              value=record_number))
-                        else:
-                            begin_time = time.time()
-                            result = db.cb_query_s(field=query_field, name=coll_obj.name, where=id_field,
-                                                   value=record_number)
+                            result = db.cb_upsert_s(record_number, document, name=coll_obj.name)
                             tasks.append(result)
                     else:
-                        if self.aio:
-                            tasks.append(db.cb_get_a(record_number, name=coll_obj.name))
+                        if mode == test_exec.REMOVE_DATA:
+                            if self.aio:
+                                tasks.append(db.cb_remove_a(record_number, name=coll_obj.name))
+                            else:
+                                begin_time = time.time()
+                                result = db.cb_remove_s(record_number, name=coll_obj.name)
+                                tasks.append(result)
+                        elif mode == test_exec.QUERY_TEST:
+                            if self.aio:
+                                tasks.append(
+                                    db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field,
+                                                  value=record_number))
+                            else:
+                                begin_time = time.time()
+                                result = db.cb_query_s(field=query_field, name=coll_obj.name, where=id_field,
+                                                       value=record_number)
+                                tasks.append(result)
                         else:
-                            begin_time = time.time()
-                            result = db.cb_get_s(record_number, name=coll_obj.name)
-                            tasks.append(result)
+                            if self.aio:
+                                tasks.append(db.cb_get_a(record_number, name=coll_obj.name))
+                            else:
+                                begin_time = time.time()
+                                result = db.cb_get_s(record_number, name=coll_obj.name)
+                                tasks.append(result)
+            except Exception as err:
+                status_flag.value = 1
+                raise TestRunException("test instance {} run error: {}".format(n, err))
             if len(tasks) > 0:
                 if self.aio:
                     begin_time = time.time()
                     try:
-                        result = loop.run_until_complete(asyncio.gather(*tasks))
+                        result = loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
                     except Exception as err:
-                        raise TestRunError("run error: {}".format(err))
+                        status_flag.value = 1
+                        raise TestRunException("test instance {} run error: {}".format(n, err))
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
                 telemetry[0] = n

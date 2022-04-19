@@ -215,7 +215,8 @@ class cb_connect(cb_session):
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
     @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           retry_count=10,
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, CollectionUpsertError))
     def cb_upsert_s(self, key, document, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -230,7 +231,8 @@ class cb_connect(cb_session):
             raise CollectionUpsertError("can not upsert {} into {}: {}".format(key, name, err))
 
     @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+           retry_count=10,
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, CollectionUpsertError))
     async def cb_upsert_a(self, key, document, name="_default"):
         try:
             document_id = self.construct_key(key, name)

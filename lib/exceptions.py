@@ -58,3 +58,7 @@ class InventoryConfigError(cbPerfFatal):
 class TestRunError(cbPerfFatal):
     pass
 
+
+class TestRunException(cbPerfException):
+    pass
+
