@@ -627,6 +627,14 @@ class test_exec(cbPerfBase):
         telemetry = [0 for n in range(3)]
         time_threshold = 5
 
+        def test_exception_handler(event_loop, context):
+            event_loop.default_exception_handler(context)
+            exception = context.get('exception')
+            if isinstance(exception, Exception):
+                status_flag.value = 1
+                loop.stop()
+                raise TestRunException("test instance {} run error: {}".format(n, exception))
+
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
 
@@ -706,7 +714,13 @@ class test_exec(cbPerfBase):
                 if self.aio:
                     begin_time = time.time()
                     try:
-                        result = loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                        # results = loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                        all_tasks = asyncio.gather(*tasks, return_exceptions=False)
+                        loop.set_exception_handler(test_exception_handler)
+                        results = loop.run_until_complete(all_tasks)
+                    except KeyboardInterrupt:
+                        status_flag.value = 1
+                        return
                     except Exception as err:
                         status_flag.value = 1
                         raise TestRunException("test instance {} run error: {}".format(n, err))
