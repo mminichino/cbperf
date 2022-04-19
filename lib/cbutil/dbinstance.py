@@ -2,7 +2,9 @@
 ##
 
 from .exceptions import *
+from .retries import retry
 from couchbase.cluster import QueryIndexManager
+from couchbase.exceptions import (CouchbaseTransientException, TimeoutException, ProtocolException)
 
 class db_instance(object):
 
@@ -20,6 +22,7 @@ class db_instance(object):
         self.collections_s = {}
         self.collections_a = {}
 
+    @retry(retry_count=10, allow_list=(ProtocolException, CouchbaseTransientException, TimeoutException))
     def set_cluster(self, cluster_s, cluster_a):
         self.cluster_obj_s = cluster_s
         self.bm_obj = cluster_s.buckets()

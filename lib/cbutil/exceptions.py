@@ -76,6 +76,10 @@ class NodeConnectionFailed(cbUtilException):
     pass
 
 
+class DNSLookupTimeout(cbUtilException):
+    pass
+
+
 class NodeApiError(cbUtilError):
     pass
 

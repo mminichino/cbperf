@@ -14,6 +14,7 @@ import os
 import numpy as np
 import asyncio
 import time
+import signal
 
 VERSION = '1.0'
 
@@ -422,8 +423,8 @@ class test_exec(cbPerfBase):
 
         self.rules_run = True
 
-    def status_output(self, total_count, run_flag, telemetry_queue, maximum=None):
-        max_threads = maximum if maximum else self.run_threads
+    def status_output(self, total_count, run_flag, telemetry_queue, thread_count):
+        max_threads = self.thread_max if total_count == 0 else self.run_threads
         tps_vector = [0 for n in range(max_threads)]
         sample_count = 1
         total_tps = 0
@@ -467,7 +468,7 @@ class test_exec(cbPerfBase):
                 print(f"=> {total_ops} of {total_count}, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%%",
                       end=end_char)
             else:
-                print(f"=> {total_ops} ops, {time_delta:.6f} time, {trans_per_sec} TPS", end=end_char)
+                print(f"=> {total_ops} ops, {thread_count.value} threads, {time_delta:.6f} time, {trans_per_sec} TPS", end=end_char)
 
         sys.stdout.write("\033[K")
         if total_count > 0:
@@ -492,9 +493,11 @@ class test_exec(cbPerfBase):
             count = multiprocessing.Value('i')
             run_flag = multiprocessing.Value('i')
             status_flag = multiprocessing.Value('i')
+            thread_count = multiprocessing.Value('i')
             count.value = 0
             run_flag.value = 1
             status_flag.value = 0
+            thread_count.value = self.run_threads
             input_json = coll_obj.schema
 
             if coll_obj.record_count:
@@ -503,7 +506,7 @@ class test_exec(cbPerfBase):
                 operation_count = self.record_count
 
             status_thread = multiprocessing.Process(
-                target=self.status_output, args=(operation_count, run_flag, telemetry_queue))
+                target=self.status_output, args=(operation_count, run_flag, telemetry_queue, thread_count))
             status_thread.daemon = True
             status_thread.start()
 
@@ -531,11 +534,23 @@ class test_exec(cbPerfBase):
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
     def ramp_launch(self, read_p=100, write_p=0, mode=KV_TEST):
+        scale = []
+
         if not self.collection_list:
             raise TestRunError("test not initialized")
 
+        def sig_int_handler(signum, frame):
+            for p in scale:
+                p.terminate()
+                p.join()
+            if run_flag:
+                run_flag.value = 0
+            if status_thread:
+                status_thread.join()
+
         run_mode = 'async' if self.aio else 'sync'
         mask = mode | test_exec.RANDOM_KEYS
+        signal.signal(signal.SIGINT, sig_int_handler)
 
         print("Beginning {} test ramp with max {} instances.".format(run_mode, self.thread_max))
 
@@ -544,13 +559,15 @@ class test_exec(cbPerfBase):
             count = multiprocessing.Value('i')
             run_flag = multiprocessing.Value('i')
             status_flag = multiprocessing.Value('i')
+            thread_count = multiprocessing.Value('i')
             count.value = 0
             run_flag.value = 1
             status_flag.value = 0
+            thread_count.value = 0
             input_json = coll_obj.schema
             operation_count = 0
             accelerator = 1
-            scale = []
+            scale.clear()
             n = 0
 
             if coll_obj.record_count:
@@ -559,7 +576,7 @@ class test_exec(cbPerfBase):
                 record_count = self.record_count
 
             status_thread = multiprocessing.Process(
-                target=self.status_output, args=(operation_count, run_flag, telemetry_queue))
+                target=self.status_output, args=(operation_count, run_flag, telemetry_queue, thread_count))
             status_thread.daemon = True
             status_thread.start()
 
@@ -568,6 +585,7 @@ class test_exec(cbPerfBase):
             time_snap = time.perf_counter()
             start_time = time_snap
             while True:
+                thread_count.value += accelerator
                 for i in range(accelerator):
                     scale.append(multiprocessing.Process(
                         target=self.test_run,

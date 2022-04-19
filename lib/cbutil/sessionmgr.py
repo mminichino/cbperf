@@ -93,9 +93,10 @@ class cb_session(object):
         else:
             raise Exception("Unknown API status code {}".format(code))
 
-    @retry(allow_list=(TransientError, NodeUnreachable))
+    @retry(allow_list=(DNSLookupTimeout, NodeUnreachable))
     def is_reachable(self):
         resolver = dns.resolver.Resolver()
+        resolver.timeout = 15
 
         try:
             answer = resolver.resolve(self.srv_prefix + self.rally_host_name, "SRV")
@@ -111,7 +112,7 @@ class cb_session(object):
             self.logger.info("rally name {} is a node name".format(self.rally_host_name))
             pass
         except dns.exception.Timeout:
-            raise TransientError("{} lookup timeout".format(self.srv_prefix + self.rally_host_name))
+            raise DNSLookupTimeout("{} lookup timeout".format(self.srv_prefix + self.rally_host_name))
         except Exception:
             raise
 
@@ -129,7 +130,7 @@ class cb_session(object):
     def check_node_connectivity(self, hostname, port):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
+            sock.settimeout(5)
             result = sock.connect_ex((hostname, int(port)))
             sock.close()
         except socket.timeout:
@@ -317,7 +318,7 @@ class cb_session(object):
                     print("%s:%s" % (key, ext_port_list[key]), end=' ')
             print("[Services] %s [version] %s [platform] %s" % (services, version, ostype))
 
-    @retry(allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError, TimeoutException))
+    @retry(retry_count=10, allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError, TimeoutException, ClusterKVServiceError))
     def cluster_health_check(self, output=False, restrict=True):
         cb_auth = PasswordAuthenticator(self.username, self.password)
         cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
@@ -339,6 +340,7 @@ class cb_session(object):
                     report.state)
                 if output:
                     print(report_string)
+                    continue
                 if not report.state == PingState.OK:
                     if endpoint.value == 'kv':
                         raise ClusterKVServiceError("{} KV service not ok".format(self.cb_connect_string))

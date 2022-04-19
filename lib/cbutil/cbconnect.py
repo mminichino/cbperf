@@ -44,7 +44,7 @@ class cb_connect(cb_session):
         else:
             return key
 
-    @retry(allow_list=(ProtocolException, CouchbaseTransientException, TimeoutException))
+    @retry(retry_count=10, allow_list=(ProtocolException, CouchbaseTransientException, TimeoutException))
     async def connect(self):
         cluster_s = couchbase.cluster.Cluster(self.cb_connect_string,
                                               authenticator=self.auth,
@@ -70,6 +70,9 @@ class cb_connect(cb_session):
         await bucket_a.on_connect()
         self.db.set_bucket(name, bucket_s, bucket_a)
 
+    @retry(always_raise_list=(BucketNotFoundException,),
+           retry_count=10,
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def bucket_s(self, name):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.bucket(name))
@@ -182,7 +185,8 @@ class cb_connect(cb_session):
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+           retry_count=10,
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, CollectionGetError))
     def cb_get_s(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -196,7 +200,8 @@ class cb_connect(cb_session):
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+           retry_count=10,
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, CollectionGetError))
     async def cb_get_a(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
