@@ -96,7 +96,8 @@ class cb_session(object):
     @retry(allow_list=(DNSLookupTimeout, NodeUnreachable))
     def is_reachable(self):
         resolver = dns.resolver.Resolver()
-        resolver.timeout = 20
+        resolver.timeout = 10
+        resolver.lifetime = 20
 
         try:
             answer = resolver.resolve(self.srv_prefix + self.rally_host_name, "SRV")
