@@ -509,6 +509,8 @@ class test_exec(cbPerfBase):
         if total_count > 0:
             sys.stdout.write("\033[K")
             print(f"=> {total_count} of {total_count}, {percentage}%%")
+        else:
+            print("")
         print("Test Done.")
         print("{} average TPS.".format(round(avg_tps)))
         print("{} maximum TPS.".format(round(max_tps)))
