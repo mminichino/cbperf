@@ -492,9 +492,6 @@ class test_exec(cbPerfBase):
                 slope_total += slope
                 slope_count += 1
                 slope_avg = slope_total / slope_count
-                if slope_count > 1000:
-                    if slope_avg < 0:
-                        status_vector[0] = 1
 
             if trans_per_sec > max_tps:
                 max_tps = trans_per_sec
@@ -506,7 +503,7 @@ class test_exec(cbPerfBase):
                 print(f"=> {total_ops} of {total_count}, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%%",
                       end=end_char)
             else:
-                print(f"=> {total_ops} ops, {status_vector[1]} threads, {time_delta:.6f} time, {trans_per_sec} TPS, {status_vector[2]} errors, trend {slope_avg:+.2f}",
+                print(f"=> {total_ops} ops, {status_vector[1]} threads, {time_delta:.6f} time, {trans_per_sec} TPS, {status_vector[2]} errors, TPS trend {slope_avg:+.2f}",
                       end=end_char)
 
         if total_count > 0:
