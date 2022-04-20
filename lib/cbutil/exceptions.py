@@ -196,6 +196,10 @@ class IndexExistsError(cbUtilException):
     pass
 
 
+class IndexNotFoundError(cbUtilException):
+    pass
+
+
 class TransientError(cbUtilException):
     pass
 

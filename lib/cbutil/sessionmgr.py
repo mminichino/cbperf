@@ -8,9 +8,10 @@ import json
 import logging
 import socket
 import dns.resolver
+import traceback
 from itertools import cycle
 from datetime import timedelta
-from couchbase.exceptions import (CouchbaseTransientException, TimeoutException, ProtocolException)
+from couchbase.exceptions import (CouchbaseTransientException, TimeoutException, ProtocolException, HTTPException)
 from couchbase.diagnostics import PingState
 from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions, QueryIndexManager
 from couchbase.auth import PasswordAuthenticator
@@ -318,10 +319,16 @@ class cb_session(object):
     def cluster_health_check(self, output=False, restrict=True):
         cb_auth = PasswordAuthenticator(self.username, self.password)
         cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
-        cluster = Cluster(self.cb_connect_string, authenticator=cb_auth, lockmode=LOCKMODE_NONE, timeout_options=cb_timeouts)
 
         try:
+            cluster = Cluster(self.cb_connect_string, authenticator=cb_auth, lockmode=LOCKMODE_NONE, timeout_options=cb_timeouts)
             result = cluster.ping()
+        except SystemError as err:
+            if isinstance(err.__cause__, HTTPException) and err.__cause__.rc == 1049:
+                self.use_external_network = not self.use_external_network
+                raise ClusterHealthCheckError("HTTP unknown host: {}".format(err.__cause__))
+            else:
+                raise ClusterHealthCheckError("HTTP error: {}".format(err))
         except Exception as err:
             raise ClusterHealthCheckError("cluster health check error: {}".format(err))
 
@@ -329,7 +336,7 @@ class cb_session(object):
             for report in reports:
                 if restrict and endpoint.value != 'kv':
                     continue
-                report_string = "{0}: {1} took {2} {3}".format(
+                report_string = " {0}: {1} took {2} {3}".format(
                     endpoint.value,
                     report.remote,
                     report.latency,
@@ -348,10 +355,11 @@ class cb_session(object):
                         raise ClusterHealthCheckError("{} service {} not ok".format(self.cb_connect_string, endpoint.value))
 
         if output:
+            print("Cluster Diagnostics:")
             diag_result = cluster.diagnostics()
             for endpoint, reports in diag_result.endpoints.items():
                 for report in reports:
-                    report_string = "{0}: {1} last activity {2} {3}".format(
+                    report_string = " {0}: {1} last activity {2} {3}".format(
                         endpoint.value,
                         report.remote,
                         report.last_activity,

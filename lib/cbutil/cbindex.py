@@ -1,24 +1,12 @@
 ##
 ##
 
-from .sessionmgr import cb_session
 from .exceptions import *
-from .dbinstance import db_instance
 from .cbconnect import cb_connect
 from .retries import retry
-import couchbase
-from couchbase.auth import PasswordAuthenticator
-from couchbase_core._libcouchbase import LOCKMODE_NONE
-from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions, QueryIndexManager
-from couchbase.exceptions import (CASMismatchException, CouchbaseException, CouchbaseTransientException,
-                                  DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
-                                  BucketAlreadyExistsException, DurabilitySyncWriteAmbiguousException,
-                                  BucketNotFoundException, TimeoutException, QueryException, ScopeNotFoundException,
-                                  ScopeAlreadyExistsException, CollectionAlreadyExistsException,
-                                  CollectionNotFoundException, ProtocolException)
+from couchbase.exceptions import (CouchbaseTransientException, TimeoutException, QueryException,  ProtocolException)
 import logging
 import json
-from datetime import timedelta
 
 
 class cb_index(cb_connect):
@@ -117,8 +105,7 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexQueryError("can not drop index on {}: {}".format(name, err))
 
-    @retry(factor=0.5, allow_list=(IndexNotReady,))
-    def index_wait(self, name="_default", field=None):
+    def get_index_search_terms(self, name, field):
         if name != "_default" and field:
             index = name + '_' + field + '_ix'
         elif field:
@@ -131,19 +118,30 @@ class cb_index(cb_connect):
         else:
             lookup = name
 
-        index_stats = self.index_stats()
+        return index, lookup
+
+    @retry(factor=0.5, allow_list=(IndexNotReady,))
+    def index_wait(self, name="_default", field=None):
+        index, lookup = self.get_index_search_terms(name, field)
         record_count = self.collection_count(name)
 
-        for key in index_stats:
-            if key == lookup:
-                for item in index_stats[key]:
-                    if item == index:
-                        pending = index_stats[key][item]['num_docs_pending']
-                        queued = index_stats[key][item]['num_docs_queued']
-                        count = index_stats[key][item]['items_count']
-                        if (pending != 0 and queued != 0) or count < record_count:
-                            raise IndexNotReady("{} not ready, count {} pending {} queued {}".format(
-                                index, count, pending, queued))
+        if not self.node_api_accessible:
+            try:
+                self.alt_index_check(name=name, field=field, check_count=record_count)
+            except Exception:
+                raise IndexNotReady(f"alt check index {index} not ready")
+        else:
+            index_stats = self.index_stats()
+            for key in index_stats:
+                if key == lookup:
+                    for item in index_stats[key]:
+                        if item == index:
+                            pending = index_stats[key][item]['num_docs_pending']
+                            queued = index_stats[key][item]['num_docs_queued']
+                            count = index_stats[key][item]['items_count']
+                            if (pending != 0 and queued != 0) or count < record_count:
+                                raise IndexNotReady("{} not ready, count {} pending {} queued {}".format(
+                                    index, count, pending, queued))
 
     def index_stats(self, name=None):
         if not name:
@@ -164,3 +162,37 @@ class cb_index(cb_connect):
                     index_data[index_object][index_name] = response_json[key]
 
         return index_data
+
+    def get_index_key(self, name="_default", field=None):
+        index, lookup = self.get_index_search_terms(name, field)
+        query_text = 'SELECT * FROM system:indexes ;'
+        doc_key_field = 'meta().id'
+
+        result_index = self.cb_query_s(sql=query_text)
+
+        for row in result_index:
+            for key, value in row.items():
+                if value['name'] == index and value['keyspace_id'] == lookup:
+                    if len(value['index_key']) == 0:
+                        return doc_key_field
+                    else:
+                        return value['index_key'][0]
+
+        raise IndexNotFoundError(f"index {index} not found")
+
+    def alt_index_check(self, name="_default", field=None, check_count=0):
+        index, lookup = self.get_index_search_terms(name, field)
+        keyspace = self.db.keyspace_s(name)
+
+        try:
+            query_field = self.get_index_key(name, field)
+        except Exception:
+            raise
+
+        query_text = f"SELECT {query_field} FROM {keyspace} WHERE {query_field} LIKE \"%\" ;"
+        result = self.cb_query_s(sql=query_text)
+
+        if len(result) == check_count and len(result) > 0:
+            return True
+        else:
+            raise IndexNotReady(f"index {index} not ready")

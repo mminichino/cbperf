@@ -188,9 +188,17 @@ class print_host_map(cbPerfBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        if self.parameters.ping:
+            self.cluster_ping = self.parameters.ping
+        else:
+            self.cluster_ping = False
+
     def run(self):
         db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
         db.print_host_map()
+        if self.cluster_ping:
+            print("Cluster Status:")
+            db.cluster_health_check(output=True, restrict=False)
 
 
 class test_exec(cbPerfBase):
