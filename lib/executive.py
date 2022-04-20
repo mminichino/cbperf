@@ -439,12 +439,10 @@ class test_exec(cbPerfBase):
         avg_time = 0
         percentage = 0
         total_ops = 0
-        slope = 0
+        slope_window = 100
         slope_count = 0
         slope_total = 0
         slope_avg = 0
-        slm = 0
-        slx = 0
         end_char = '\r'
 
         def calc_slope(idx, data, segment):
@@ -484,10 +482,10 @@ class test_exec(cbPerfBase):
             sample_count += 1
 
             tps_history.append(trans_per_sec)
-            if len(tps_history) >= 10:
-                tps_history = tps_history[len(tps_history) - 10:len(tps_history)]
+            if len(tps_history) >= slope_window:
+                tps_history = tps_history[len(tps_history) - slope_window:len(tps_history)]
                 index = list(range(1, len(tps_history)+1))
-                np_slope = calc_slope(index, tps_history, 10)
+                np_slope = calc_slope(index, tps_history, slope_window)
                 slope = np_slope.tolist()[0]
                 slope_total += slope
                 slope_count += 1
@@ -500,22 +498,25 @@ class test_exec(cbPerfBase):
 
             if total_count > 0:
                 percentage = round((total_count / total_ops) * 100)
-                print(f"=> {total_ops} of {total_count}, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%%",
+                print(f"=> {total_ops} of {total_count}, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%",
                       end=end_char)
             else:
                 print(f"=> {total_ops} ops, {status_vector[1]} threads, {time_delta:.6f} time, {trans_per_sec} TPS, {status_vector[2]} errors, TPS trend {slope_avg:+.2f}",
                       end=end_char)
 
+        sys.stdout.write("\033[K")
         if total_count > 0:
-            sys.stdout.write("\033[K")
-            print(f"=> {total_count} of {total_count}, {percentage}%%")
-        else:
-            print("")
+            print(f"=> {total_count} of {total_count}, {percentage}%")
         print("Test Done.")
-        print("{} average TPS.".format(round(avg_tps)))
-        print("{} maximum TPS.".format(round(max_tps)))
-        print("{:.6f} average time.".format(avg_time))
-        print("{:.6f} maximum time.".format(max_time))
+        if total_count == 0:
+            print(f"{total_ops:,} completed operations")
+            print(f"{status_vector[1]} threads")
+        print(f"{status_vector[2]} errors")
+        print(f"{slope_avg:+.2f} TPS trend")
+        print(f"{round(avg_tps):,} average TPS")
+        print(f"{round(max_tps):,} maximum TPS")
+        print(f"{avg_time:.6f} average time")
+        print(f"{max_time:.6f} maximum time")
 
     def test_launch(self, read_p=0, write_p=100, mode=KV_TEST):
         if not self.collection_list:
