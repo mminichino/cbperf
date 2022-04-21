@@ -7,7 +7,7 @@ import hashlib
 import datetime
 from urllib.parse import urlparse
 from requests.auth import AuthBase
-from .exceptions import *
+from .capexceptions import *
 
 
 class capella_auth(AuthBase):
@@ -16,12 +16,12 @@ class capella_auth(AuthBase):
         if 'CAPELLA_ACCESS_KEY_ID' in os.environ:
             self.capella_key = os.environ['CAPELLA_ACCESS_KEY_ID']
         else:
-            raise MissingAuthKey("Please set CAPELLA_ACCESS_KEY_ID for Capella API access")
+            raise CapellaMissingAuthKey("Please set CAPELLA_ACCESS_KEY_ID for Capella API access")
 
         if 'CAPELLA_SECRET_ACCESS_KEY' in os.environ:
             self.capella_secret = os.environ['CAPELLA_SECRET_ACCESS_KEY']
         else:
-            raise MissingSecretKey("Please set CAPELLA_SECRET_ACCESS_KEY for Capella API access")
+            raise CapellaMissingSecretKey("Please set CAPELLA_SECRET_ACCESS_KEY for Capella API access")
 
     def __call__(self, r):
         cbc_api_endpoint = urlparse(r.url).path

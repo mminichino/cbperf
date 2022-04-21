@@ -6,8 +6,8 @@ from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 import json
 import logging
-from .auth import capella_auth
-from .exceptions import *
+from .capauth import capella_auth
+from .capexceptions import *
 
 
 class capella_session(object):
@@ -27,11 +27,11 @@ class capella_session(object):
         if code == 200:
             return True
         elif code == 403:
-            raise NotAuthorized("Capella API: Forbidden: Insufficient privileges")
+            raise CapellaNotAuthorized("Capella API: Forbidden: Insufficient privileges")
         elif code == 422:
-            raise RequestValidationError("Capella API: Request Validation Error")
+            raise CapellaRequestValidationError("Capella API: Request Validation Error")
         elif code == 500:
-            raise InternalServerError("Capella API: Server Error")
+            raise CapellaInternalServerError("Capella API: Server Error")
         else:
             raise Exception("Unknown Capella API call status code {}".format(code))
 

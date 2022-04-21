@@ -6,6 +6,7 @@ from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 import json
 import logging
+import logging.handlers
 import socket
 import dns.resolver
 import traceback
@@ -18,13 +19,133 @@ from couchbase.auth import PasswordAuthenticator
 from couchbase.options import LOCKMODE_NONE
 import lib.cbutil.exceptions
 from .exceptions import *
+from .capexceptions import *
+from .cbdebug import cb_debug
 from .retries import retry
+from .capella import capella_api
+
+
+class cb_session_cache(object):
+
+    def __init__(self):
+        self._node_list = []
+        self._memory_quota = None
+        self._cluster_info = None
+        self._sw_version = None
+        self._all_hosts = []
+        self._node_api_accessible = True
+        self._external_network_present = False
+        self._use_external_network = False
+        self._rally_cluster_node = None
+        self._srv_host_list = []
+        self._rally_dns_domain = False
+        self._capella_target = False
+        self._capella_session = None
+
+    def extract(self, session):
+        self._node_list = session.node_list
+        self._memory_quota = session.memory_quota
+        self._cluster_info = session.cluster_info
+        self._sw_version = session.sw_version
+        self._all_hosts = session.all_hosts
+        self._node_api_accessible = session.node_api_accessible
+        self._external_network_present = session.external_network_present
+        self._use_external_network = session.use_external_network
+        self._rally_cluster_node = session.rally_cluster_node
+        self._srv_host_list = session.srv_host_list
+        self._rally_dns_domain = session.rally_dns_domain
+        self._capella_target = session.capella_target
+        self._capella_session = session.capella_session
+
+    def store_node_list(self, value):
+        self._node_list = value
+
+    def store_memory_quota(self, value):
+        self._memory_quota = value
+
+    def store_cluster_info(self, value):
+        self._cluster_info = value
+
+    def store_sw_version(self, value):
+        self._sw_version = value
+
+    def store_all_hosts(self, value):
+        self._all_hosts = value
+
+    def store_node_api_accessible(self, value):
+        self._node_api_accessible = value
+
+    def store_external_network_present(self, value):
+        self._external_network_present = value
+
+    def store_use_external_network(self, value):
+        self._use_external_network = value
+
+    def store_rally_cluster_node(self, value):
+        self._rally_cluster_node = value
+
+    def store_srv_host_list(self, value):
+        self._srv_host_list = value
+
+    def store_rally_dns_domain(self, value):
+        self._rally_dns_domain = value
+
+    @property
+    def node_list(self):
+        return self._node_list
+
+    @property
+    def memory_quota(self):
+        return self._memory_quota
+
+    @property
+    def cluster_info(self):
+        return self._cluster_info
+
+    @property
+    def sw_version(self):
+        return self._sw_version
+
+    @property
+    def all_hosts(self):
+        return self._all_hosts
+
+    @property
+    def node_api_accessible(self):
+        return self._node_api_accessible
+
+    @property
+    def external_network_present(self):
+        return self._external_network_present
+
+    @property
+    def use_external_network(self):
+        return self._use_external_network
+
+    @property
+    def rally_cluster_node(self):
+        return self._rally_cluster_node
+
+    @property
+    def srv_host_list(self):
+        return self._srv_host_list
+
+    @property
+    def rally_dns_domain(self):
+        return self._rally_dns_domain
+
+    @property
+    def capella_target(self):
+        return self._capella_target
+
+    @property
+    def capella_session(self):
+        return self._capella_session
 
 
 class cb_session(object):
 
-    def __init__(self, hostname: str, username: str, password: str, ssl=True, external=False, quick=False):
-        self.logger = logging.getLogger(self.__class__.__name__)
+    def __init__(self, hostname: str, username: str, password: str, ssl=True, external=False, restore=None):
         self.rally_host_name = hostname
         self.rally_cluster_node = self.rally_host_name
         self.node_list = []
@@ -41,7 +162,13 @@ class cb_session(object):
         self.use_external_network = external
         self.external_network_present = False
         self.node_api_accessible = True
-        self.quick_connect = quick
+        self.restore_session = restore
+        self._session_cache = cb_session_cache()
+        self.capella_target = False
+        self.capella_session = None
+        self.debugger = cb_debug(self.__class__.__name__)
+        self.debug = self.debugger.do_debug
+        self.logger = self.debugger.logger
 
         if self.ssl:
             self.prefix = "https://"
@@ -151,9 +278,9 @@ class cb_session(object):
     @property
     def cb_parameters(self):
         if self.ssl:
-            return "?ssl=no_verify&config_total_timeout=15&config_node_timeout=10&network=" + self.cb_network
+            return "?ssl=no_verify&config_total_timeout=30&config_node_timeout=15&network=" + self.cb_network
         else:
-            return "?config_total_timeout=15&config_node_timeout=10&network=" + self.cb_network
+            return "?config_total_timeout=30&config_node_timeout=15&network=" + self.cb_network
 
     @property
     def cb_connect_string(self):
@@ -223,11 +350,44 @@ class cb_session(object):
     @retry(retry_count=10, allow_list=(TransientError, ClusterKVServiceError, ClusterHealthCheckError, NodeUnreachable, DNSLookupTimeout,
                                        ClusterInitError, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
     def init_cluster(self):
+        if self.restore_session:
+            try:
+                if self.debug:
+                    self.logger.debug(f"cluster init from cache")
+                self.node_list = self.restore_session.node_list
+                self.memory_quota = self.restore_session.memory_quota
+                self.cluster_info = self.restore_session.cluster_info
+                self.sw_version = self.restore_session.sw_version
+                self.all_hosts = self.restore_session.all_hosts
+                self.node_api_accessible = self.restore_session.node_api_accessible
+                self.external_network_present = self.restore_session.external_network_present
+                self.use_external_network = self.restore_session.use_external_network
+                self.rally_cluster_node = self.restore_session.rally_cluster_node
+                self.srv_host_list = self.restore_session.srv_host_list
+                self.rally_dns_domain = self.restore_session.rally_dns_domain
+                self.capella_target = self.restore_session.capella_target
+                self.capella_session = self.restore_session.capella_session
+                self.node_cycle = cycle(self.all_hosts)
+                return True
+            except Exception as err:
+                raise ClusterInitError(f"can not read restore cache: {err}")
+
+        if self.debug:
+            self.logger.debug(f"cluster init with host {self.rally_host_name}")
+
         try:
-            if not self.quick_connect:
-                self.is_reachable()
+            self.is_reachable()
         except Exception as err:
             raise ClusterInitError("cluster not reachable at {}: {}".format(self.rally_host_name, err))
+
+        domain_name_check = '.'.join(self.rally_host_name.split('.')[-3:])
+        if domain_name_check == 'cloud.couchbase.com':
+            self.capella_target = True
+            try:
+                self.capella_session = capella_api()
+                self.capella_session.connect()
+            except Exception as err:
+                raise ClusterInitError(f"{err}")
 
         results = self.admin_api_get('/pools/default')
 
@@ -260,19 +420,21 @@ class cb_session(object):
         self.memory_quota = results['memoryQuota']
         self.sw_version = self.node_list[0]['version']
 
-        if not self.quick_connect:
-            try:
-                self.cluster_health_check(restrict=False)
-            except ClusterQueryServiceError:
-                self.node_api_accessible = False
-            except ClusterViewServiceError:
-                pass
-            except ClusterKVServiceError:
-                raise ClusterInitError("KV service unhealthy")
-            except ClusterHealthCheckError as err:
-                raise ClusterInitError("cluster health check error: {}".format(err))
-            except Exception:
-                raise
+        if self.debug:
+            self.logger.debug(f"cluster init connect string: {self.cb_connect_string}")
+
+        try:
+            self.cluster_health_check(restrict=False)
+        except ClusterQueryServiceError:
+            self.node_api_accessible = False
+        except ClusterViewServiceError:
+            pass
+        except ClusterKVServiceError:
+            raise ClusterInitError("KV service unhealthy")
+        except ClusterHealthCheckError as err:
+            raise ClusterInitError("cluster health check error: {}".format(err))
+        except Exception:
+            raise
 
         if self.use_external_network:
             self.all_hosts = list(self.node_list[i]['external_name'] for i, item in enumerate(self.node_list))
@@ -281,7 +443,12 @@ class cb_session(object):
 
         self.node_cycle = cycle(self.all_hosts)
         self.logger.info("connected to cluster version {}".format(self.sw_version))
+        self._session_cache.extract(self)
         return True
+
+    @property
+    def session_cache(self):
+        return self._session_cache
 
     def print_host_map(self):
         ext_host_name = None
@@ -293,8 +460,8 @@ class cb_session(object):
             for record in self.srv_host_list:
                 print(" => %s (%s)" % (record['hostname'], record['address']))
 
-        # if self.cluster_id:
-        #     print("Capella cluster ID: {}".format(self.cluster_id))
+        if self.capella_session:
+            print(f"Capella cluster ID: {self.capella_session.cluster_id}")
 
         print("Cluster Host List:")
         for record in self.node_list:

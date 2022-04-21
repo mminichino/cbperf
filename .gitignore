@@ -9,6 +9,7 @@ data-load.dat
 *.debug
 test.py
 cb_perf.log
+cb_debug.log
 
 # ignore standard Eclipse files
 .project

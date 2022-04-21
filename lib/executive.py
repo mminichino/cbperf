@@ -11,6 +11,7 @@ from lib.cbutil.randomize import randomize, fastRandom
 from lib.inventorymgr import inventoryManager
 from lib.cbutil.exceptions import *
 from lib.exceptions import *
+from lib.cbutil.cbdebug import cb_debug
 import json
 import os
 import numpy as np
@@ -89,8 +90,9 @@ class cbPerfBase(object):
         self.record_count = self.default_operation_count
         self.operation_count = self.default_operation_count
         self.bucket_memory = None
+        self.session_cache = None
         self.id_field = self.default_id_field
-        self.log_file = "cb_perf.log"
+        self.log_file = os.environ.get("CB_PERF_LOGFILE", "cb_perf.log")
 
         if parameters.user:
             self.username = parameters.user
@@ -326,11 +328,21 @@ class test_exec(cbPerfBase):
                 self.process_rules()
                 self.check_indexes()
 
+    def write_cache(self):
+        try:
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
+            self.session_cache = db.session_cache
+        except Exception as err:
+            raise TestExecError(f"can not initialize db connection: {err}")
+
     def test_init(self, bypass=False):
         collection_list = []
         rule_list = []
 
-        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
+        if not self.session_cache:
+            self.write_cache()
+
+        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
         db.connect_s()
         db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network)
         cluster_memory = db.get_memory_quota
@@ -384,7 +396,7 @@ class test_exec(cbPerfBase):
         loop = asyncio.get_event_loop()
         primary_key_list = []
 
-        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
+        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
         db.connect_s()
 
         if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:
@@ -444,7 +456,7 @@ class test_exec(cbPerfBase):
         end_char = ''
         print("Waiting for indexes to settle")
         try:
-            db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network)
+            db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
             schema = self.inventory.getSchema(self.schema)
             if schema:
                 for bucket in self.inventory.nextBucket(schema):
@@ -472,7 +484,7 @@ class test_exec(cbPerfBase):
         try:
             print("Pausing to check cluster health ...", end=end_char)
             time.sleep(0.5)
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, quick=True)
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
             db.cluster_health_check()
             print("done.")
         except Exception as err:
@@ -632,6 +644,8 @@ class test_exec(cbPerfBase):
 
     def ramp_launch(self, read_p=100, write_p=0, mode=KV_TEST):
         scale = []
+        debugger = cb_debug("ramp_launch", filename=self.log_file, level=1)
+        logger = debugger.logger
 
         if not self.collection_list:
             raise TestRunError("test not initialized")
@@ -677,7 +691,25 @@ class test_exec(cbPerfBase):
 
             time_snap = time.perf_counter()
             start_time = time_snap
+            throttle_count = 0
             while True:
+                if status_vector[0] == 1:
+                    break
+
+                if n >= self.thread_max:
+                    status_vector[0] = 1
+                    break
+
+                if status_vector[3] < status_vector[1]:
+                    if throttle_count == 30:
+                        status_vector[0] = 1
+                        break
+                    logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    throttle_count += 1
+                    time.sleep(0.5)
+                    continue
+
+                throttle_count = 0
                 status_vector[1] += accelerator
                 for i in range(accelerator):
                     scale.append(multiprocessing.Process(
@@ -687,9 +719,6 @@ class test_exec(cbPerfBase):
                     scale[n].daemon = True
                     scale[n].start()
                     n += 1
-
-                if status_vector[0] == 1 or n >= self.thread_max:
-                    break
 
                 time_check = time.perf_counter()
                 time_diff = time_check - time_snap
@@ -725,13 +754,11 @@ class test_exec(cbPerfBase):
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
         time_threshold = 5
+        debugger = cb_debug(f"test_thread_{n:03d}", filename=self.log_file, level=1)
+        logger = debugger.logger
         begin_time = time.time()
-        handler = logging.handlers.WatchedFileHandler(os.environ.get("CB_PERF_LOGFILE", self.log_file))
-        formatter = logging.Formatter(logging.BASIC_FORMAT)
-        handler.setFormatter(formatter)
-        logger = logging.getLogger('test_run')
-        logger.setLevel("INFO")
-        logger.addHandler(handler)
+
+        logger.info(f"beginning test instance {n}")
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
@@ -746,11 +773,9 @@ class test_exec(cbPerfBase):
             return
 
         try:
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, quick=True)
-            await db.connect()
-            await db.bucket(coll_obj.bucket)
-            await db.scope(coll_obj.scope)
-            await db.collection(coll_obj.name)
+            logger.info(f"instance {n}: connecting to {self.host}")
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
+            await db.quick_connect(coll_obj.bucket, coll_obj.scope, coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
@@ -766,6 +791,12 @@ class test_exec(cbPerfBase):
             logger.info(f"instance {n}: randomizer error: {err}")
             return
 
+        if status_vector[0] == 1:
+            logger.info(f"test instance {n} aborting run due to stop signal")
+            return
+
+        status_vector[3] += 1
+        logger.info(f"instance {n}: commencing run")
         while True:
             try:
                 tasks.clear()
@@ -795,19 +826,14 @@ class test_exec(cbPerfBase):
                 status_vector[2] += 1
                 logger.info(f"instance {n}: execution error: {err}")
             if len(tasks) > 0:
+                await asyncio.sleep(0)
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for result in results:
                     if isinstance(result, Exception):
                         status_vector[0] = 1
                         status_vector[2] += 1
-                        logger.info(f"instance {n}: task error {status_vector[2]}: {result}")
+                        logger.info(f"instance {n}: task error #{status_vector[2]}: {result}")
                 if status_vector[0] == 1:
-                    outstanding = [task for task in asyncio.all_tasks() if not task.done()]
-                    for task in outstanding:
-                        try:
-                            task.exception()
-                        except Exception as err:
-                            logger.info(f"instance {n}: task error {status_vector[2]}: {err}")
                     return
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
@@ -837,6 +863,8 @@ class test_exec(cbPerfBase):
         logger.setLevel("INFO")
         logger.addHandler(handler)
 
+        logger.info(f"beginning test instance {n}")
+
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
 
@@ -850,7 +878,8 @@ class test_exec(cbPerfBase):
             return
 
         try:
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, quick=True)
+            logger.info(f"instance {n}: connecting to {self.host}")
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
             db.connect_s()
             db.bucket_s(coll_obj.bucket)
             db.scope_s(coll_obj.scope)
@@ -870,6 +899,7 @@ class test_exec(cbPerfBase):
             logger.info(f"instance {n}: randomizer error: {err}")
             return
 
+        logger.info(f"instance {n}: commencing run")
         while True:
             try:
                 tasks.clear()
@@ -901,7 +931,7 @@ class test_exec(cbPerfBase):
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
-                logger.info(f"instance {n}: task error {status_vector[2]}: {err}")
+                logger.info(f"instance {n}: task error #{status_vector[2]}: {err}")
                 return
             if len(tasks) > 0:
                 end_time = time.time()

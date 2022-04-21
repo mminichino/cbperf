@@ -4,6 +4,7 @@
 import sys
 import os
 import inspect
+from .cbdebug import cb_debug
 
 
 def decode_error_code(code):
@@ -28,11 +29,14 @@ class cbUtilError(Exception):
 class cbUtilException(Exception):
 
     def __init__(self, message):
+        debug = cb_debug(self.__class__.__name__)
         frame = inspect.currentframe().f_back
         (filename, line, function, lines, index) = inspect.getframeinfo(frame)
         filename = os.path.basename(filename)
-        self.message = "Error: {} in {} {} at line {}: {}".format(
-            type(self).__name__, filename, function, line, message)
+        self.message = "Error: {} in {} {} at line {}: {}".format(type(self).__name__, filename, function, line, message)
+        if debug.do_debug:
+            logger = debug.logger
+            logger.debug(self.message)
         super().__init__(self.message)
 
 

@@ -32,7 +32,7 @@ class cb_connect(cb_session):
         super().__init__(*args, **kwargs)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.auth = PasswordAuthenticator(self.username, self.password)
-        self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
+        self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=240), kv_timeout=timedelta(seconds=240))
         self.db = db_instance()
 
     def construct_key(self, key, collection):
@@ -47,6 +47,7 @@ class cb_connect(cb_session):
     @retry(retry_count=10, allow_list=(ClusterConnectException,))
     async def connect(self):
         try:
+            self.db.drop_cluster()
             cluster_s = couchbase.cluster.Cluster(self.cb_connect_string,
                                                   authenticator=self.auth,
                                                   lockmode=LOCKMODE_NONE,
@@ -116,6 +117,17 @@ class cb_connect(cb_session):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.collection(name))
 
+    @retry(retry_count=10)
+    async def quick_connect(self, bucket, scope, collection):
+        try:
+            await self.connect()
+            await self.bucket(bucket)
+            await self.scope(scope)
+            await self.collection(collection)
+            return True
+        except Exception as err:
+            raise ClusterConnectException(f"quick connect error: {err}")
+
     @retry(always_raise_list=(BucketDoesNotExistException,),
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def is_bucket(self, name):
@@ -144,9 +156,15 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def create_bucket(self, name, quota=256):
         try:
-            self.db.bm.create_bucket(CreateBucketSettings(name=name,
-                                                          bucket_type=BucketType.COUCHBASE,
-                                                          ram_quota_mb=quota))
+            if self.capella_target:
+                try:
+                    self.is_bucket(name)
+                except BucketDoesNotExistException:
+                    self.capella_session.capella_create_bucket(name, quota)
+            else:
+                self.db.bm.create_bucket(CreateBucketSettings(name=name,
+                                                              bucket_type=BucketType.COUCHBASE,
+                                                              ram_quota_mb=quota))
         except BucketAlreadyExistsException:
             pass
         except Exception as err:
