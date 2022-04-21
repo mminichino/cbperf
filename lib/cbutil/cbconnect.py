@@ -20,7 +20,7 @@ from couchbase.exceptions import (CASMismatchException, CouchbaseException, Couc
                                   BucketAlreadyExistsException, QueryErrorContext, HTTPException,
                                   BucketNotFoundException, TimeoutException, QueryException, ScopeNotFoundException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
-                                  CollectionNotFoundException, ProtocolException)
+                                  CollectionNotFoundException, ProtocolException, ObjectDestroyedException)
 import logging
 import asyncio
 import json
@@ -44,22 +44,38 @@ class cb_connect(cb_session):
         else:
             return key
 
-    @retry(retry_count=10, allow_list=(ProtocolException, CouchbaseTransientException, TimeoutException, SystemError, HTTPException))
+    @retry(retry_count=10, allow_list=(ClusterConnectException,))
     async def connect(self):
-        cluster_s = couchbase.cluster.Cluster(self.cb_connect_string,
-                                              authenticator=self.auth,
-                                              lockmode=LOCKMODE_NONE,
-                                              timeout_options=self.timeouts)
-        cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string,
-                                               authenticator=self.auth,
-                                               lockmode=LOCKMODE_NONE,
-                                               timeout_options=self.timeouts)
-        await cluster_a.on_connect()
-        self.db.set_cluster(cluster_s, cluster_a)
+        try:
+            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string,
+                                                  authenticator=self.auth,
+                                                  lockmode=LOCKMODE_NONE,
+                                                  timeout_options=self.timeouts)
+            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string,
+                                                   authenticator=self.auth,
+                                                   lockmode=LOCKMODE_NONE,
+                                                   timeout_options=self.timeouts)
+            await cluster_a.on_connect()
+            self.db.set_cluster(cluster_s, cluster_a)
+            return True
+        except SystemError as err:
+            if isinstance(err.__cause__, HTTPException):
+                raise ClusterConnectException("cluster connect HTTP error: {}".format(err.__cause__))
+            else:
+                raise ClusterConnectException("cluster connect network error: {}".format(err))
+        except HTTPException as err:
+            raise ClusterConnectException("cluster connect HTTP error: {}".format(err))
+        except Exception as err:
+            raise ClusterConnectException("cluster connect general error: {}".format(err))
 
+    @retry(retry_count=10, allow_list=(ClusterConnectException,))
     def connect_s(self):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.connect())
+        try:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(self.connect())
+            return True
+        except Exception:
+            raise
 
     @retry(always_raise_list=(BucketNotFoundException,),
            retry_count=10,
@@ -312,8 +328,8 @@ class cb_connect(cb_session):
 
         return query
 
-    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, QueryArgumentsError),
-           allow_list=(CouchbaseTransientException, ProtocolException, TransientError))
+    @retry(always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError),
+           allow_list=(CouchbaseTransientException, ProtocolException, TransientError, TimeoutException))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None):
         query = ""
         try:
@@ -332,8 +348,8 @@ class cb_connect(cb_session):
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
-    @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, QueryArgumentsError),
-           allow_list=(CouchbaseTransientException, ProtocolException, TransientError))
+    @retry(always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError),
+           allow_list=(CouchbaseTransientException, ProtocolException, TransientError, TimeoutException))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None):
         query = ""
         try:

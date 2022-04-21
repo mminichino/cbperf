@@ -203,3 +203,7 @@ class IndexNotFoundError(cbUtilException):
 class TransientError(cbUtilException):
     pass
 
+
+class TestPauseError(cbUtilException):
+    pass
+

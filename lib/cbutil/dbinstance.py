@@ -43,6 +43,15 @@ class db_instance(object):
         self.collections_s[name] = collection_s
         self.collections_a[name] = collection_a
 
+    def drop_cluster(self):
+        self.cluster_obj_s = None
+        self.cluster_obj_a = None
+        self.bm_obj = None
+        self.qim_obj = None
+        self.drop_bucket()
+        self.drop_scope()
+        self.drop_collections()
+
     def drop_bucket(self):
         self.bucket_name = None
         self.bucket_obj_s = None
@@ -113,6 +122,10 @@ class db_instance(object):
             return self.collections_a[name]
         else:
             raise CollectionNameNotFound("{} not configured".format(name))
+
+    def get_collections(self):
+        for name in self.collections_s.keys():
+            yield name
 
     def keyspace_s(self, name):
         if name in self.collections_s:
