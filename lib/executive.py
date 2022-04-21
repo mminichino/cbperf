@@ -808,7 +808,6 @@ class test_exec(cbPerfBase):
                             task.exception()
                         except Exception as err:
                             logger.info(f"instance {n}: task error {status_vector[2]}: {err}")
-                    logging.shutdown()
                     return
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
