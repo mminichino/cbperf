@@ -118,8 +118,8 @@
         }
     },
     "settings": {
-        "operation_count": 100000,
-        "record_count": 1000000,
+        "operation_count": 1000,
+        "record_count": 1000,
         "kv_batch_size": 100,
         "query_batch_size": 1,
         "id_field": "record_id",

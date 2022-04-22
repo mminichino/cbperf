@@ -128,6 +128,17 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException(f"quick connect error: {err}")
 
+    @retry(retry_count=10)
+    def quick_connect_s(self, bucket, scope, collection):
+        try:
+            self.connect_s()
+            self.bucket_s(bucket)
+            self.scope_s(scope)
+            self.collection_s(collection)
+            return True
+        except Exception as err:
+            raise ClusterConnectException(f"quick connect error: {err}")
+
     @retry(always_raise_list=(BucketDoesNotExistException,),
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def is_bucket(self, name):
@@ -176,7 +187,14 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def drop_bucket(self, name):
         try:
-            self.db.bm.drop_bucket(name)
+            if self.capella_target:
+                try:
+                    self.is_bucket(name)
+                    self.capella_session.capella_delete_bucket(name)
+                except BucketDoesNotExistException:
+                    return True
+            else:
+                self.db.bm.drop_bucket(name)
         except BucketNotFoundException:
             pass
         except Exception as err:
@@ -280,8 +298,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionUpsertError("can not upsert {} into {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(CollectionNameNotFound,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def cb_subdoc_upsert_s(self, key, field, value, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -293,8 +310,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionSubdocUpsertError("can not update {} in {}: {}".format(key, field, err))
 
-    @retry(always_raise_list=(CollectionNameNotFound,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     async def cb_subdoc_upsert_a(self, key, field, value, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -305,6 +321,21 @@ class cb_connect(cb_session):
             raise
         except Exception as err:
             raise CollectionSubdocUpsertError("can not update {} in {}: {}".format(key, field, err))
+
+    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    def cb_subdoc_multi_upsert_s(self, key_list, field, value_list, name="_default"):
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.cb_subdoc_multi_upsert_a(key_list, field, value_list, name))
+
+    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    async def cb_subdoc_multi_upsert_a(self, key_list, field, value_list, name="_default"):
+        tasks = []
+        for n in range(len(key_list)):
+            tasks.append(asyncio.create_task(self.cb_subdoc_upsert_a(key_list[n], field, value_list[n], name=name)))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
 
     @retry(always_raise_list=(CollectionNameNotFound,),
            allow_list=(CouchbaseTransientException, ProtocolException))

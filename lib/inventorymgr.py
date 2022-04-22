@@ -35,6 +35,7 @@ class collectionElement(object):
         self.primary_key = False
         self.override_count = False
         self.record_count = None
+        self.batch_size = None
         if name == '_default':
             self.key_prefix = bucket
         else:
@@ -77,13 +78,12 @@ class inventoryManager(object):
                                     else:
                                         self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
                                 self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
-                                self.schemas[0].buckets[0].scopes[0].collections[0].primary_index \
-                                    = collection['primary_index']
-                                self.schemas[0].buckets[0].scopes[0].collections[0].override_count \
-                                    = collection['override_count']
+                                self.schemas[0].buckets[0].scopes[0].collections[0].primary_index = collection['primary_index']
+                                self.schemas[0].buckets[0].scopes[0].collections[0].override_count = collection['override_count']
                                 if 'record_count' in collection:
-                                    self.schemas[0].buckets[0].scopes[0].collections[0].record_count \
-                                        = collection['record_count']
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].record_count = collection['record_count']
+                                if 'batch_size' in collection:
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].batch_size = collection['batch_size']
                                 if 'indexes' in collection:
                                     for index_field in collection['indexes']:
                                         self.logger.info("adding index for field %s to inventory" % index_field)
@@ -99,6 +99,11 @@ class inventoryManager(object):
         except Exception as err:
             print(traceback.format_exc())
             raise InventoryConfigError("inventory syntax error: {}".format(err))
+
+    @property
+    def schemaList(self):
+        for s in self.schemas:
+            yield s.name
 
     def getSchema(self, schema):
         return next((s for s in self.schemas if s.name == schema), None)

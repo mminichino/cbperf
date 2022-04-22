@@ -6,7 +6,7 @@ Couchbase Performance Utility
 
 import argparse
 import signal
-from lib.executive import print_host_map, test_exec
+from lib.executive import print_host_map, test_exec, schema_admin
 from lib.exceptions import *
 
 
@@ -42,6 +42,9 @@ class params(object):
         parent_parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')
         list_parser = argparse.ArgumentParser(add_help=False)
         list_parser.add_argument('--ping', action='store_true', help='Show cluster ping output')
+        schema_parser = argparse.ArgumentParser(add_help=False)
+        schema_parser.add_argument('--list', action='store_true', help='Show schema list')
+        schema_parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')
         run_parser = argparse.ArgumentParser(add_help=False)
         run_parser.add_argument('--schema', action='store', help="Test Schema", default="default")
         run_parser.add_argument('--cluster', action='store', help="Couchbase Capella Cluster Name")
@@ -63,13 +66,15 @@ class params(object):
         subparsers = parser.add_subparsers(dest='command')
         run_mode = subparsers.add_parser('run', help="Run Test Scenarios", parents=[parent_parser, run_parser], add_help=False)
         list_mode = subparsers.add_parser('list', help="List Nodes", parents=[parent_parser, list_parser], add_help=False)
-        clean_mode = subparsers.add_parser('clean', help="Clean Up", parents=[parent_parser], add_help=False)
+        clean_mode = subparsers.add_parser('clean', help="Clean Up", parents=[parent_parser, run_parser], add_help=False)
         load_mode = subparsers.add_parser('load', help="Load Data", parents=[parent_parser, run_parser], add_help=False)
+        schema_mode = subparsers.add_parser('schema', help="Schema Admin", parents=[schema_parser], add_help=False)
         self.parser = parser
         self.run_parser = run_mode
         self.list_parser = list_mode
         self.clean_parser = clean_mode
         self.load_parser = load_mode
+        self.schema_parser = schema_mode
 
 
 class cbPerf(object):
@@ -83,6 +88,14 @@ class cbPerf(object):
         if self.verb == 'list':
             task = print_host_map(self.args)
             task.run()
+            sys.exit(0)
+        elif self.verb == 'schema':
+            task = schema_admin(self.args)
+            task.run()
+            sys.exit(0)
+        elif self.verb == 'clean':
+            task = test_exec(self.args)
+            task.test_clean()
             sys.exit(0)
         else:
             task = test_exec(self.args)

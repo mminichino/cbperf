@@ -46,3 +46,6 @@ class capella_api(capella_session):
 
     def capella_create_bucket(self, bucket, quota):
         raise CapellaNotImplemented(f"please create bucket {bucket} in the Capella UI to continue")
+
+    def capella_delete_bucket(self, bucket):
+        raise CapellaNotImplemented(f"please delete bucket {bucket} in the Capella UI")

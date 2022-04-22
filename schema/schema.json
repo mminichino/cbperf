@@ -121,6 +121,7 @@
                     "idkey": "record_id",
                     "primary_index": true,
                     "override_count": false,
+                    "batch_size": 10,
                     "indexes": [
                       "record_id"
                     ]

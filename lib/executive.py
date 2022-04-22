@@ -94,17 +94,6 @@ class cbPerfBase(object):
         self.id_field = self.default_id_field
         self.log_file = os.environ.get("CB_PERF_LOGFILE", "cb_perf.log")
 
-        if parameters.user:
-            self.username = parameters.user
-        if parameters.password:
-            self.password = parameters.password
-        if parameters.tls:
-            self.tls = parameters.tls
-        if parameters.host:
-            self.host = parameters.host
-        if parameters.external:
-            self.external_network = parameters.external
-
     def locate_config_files(self):
         if 'HOME' in os.environ:
             home_dir = os.environ['HOME']
@@ -186,11 +175,35 @@ class cbPerfBase(object):
             raise TestConfigError("test scenario syntax error")
 
 
+class schema_admin(cbPerfBase):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def run(self):
+        if self.parameters.list:
+            self.schema_list()
+
+    def schema_list(self):
+        for name in self.inventory.schemaList:
+            print(f" {name}")
+
+
 class print_host_map(cbPerfBase):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        if self.parameters.user:
+            self.username = self.parameters.user
+        if self.parameters.password:
+            self.password = self.parameters.password
+        if self.parameters.tls:
+            self.tls = self.parameters.tls
+        if self.parameters.host:
+            self.host = self.parameters.host
+        if self.parameters.external:
+            self.external_network = self.parameters.external
         if self.parameters.ping:
             self.cluster_ping = self.parameters.ping
         else:
@@ -213,6 +226,16 @@ class test_exec(cbPerfBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        if self.parameters.user:
+            self.username = self.parameters.user
+        if self.parameters.password:
+            self.password = self.parameters.password
+        if self.parameters.tls:
+            self.tls = self.parameters.tls
+        if self.parameters.host:
+            self.host = self.parameters.host
+        if self.parameters.external:
+            self.external_network = self.parameters.external
         if self.parameters.count:
             self.record_count = self.parameters.count
         if self.parameters.ops:
@@ -335,6 +358,24 @@ class test_exec(cbPerfBase):
         except Exception as err:
             raise TestExecError(f"can not initialize db connection: {err}")
 
+    def test_clean(self):
+        if not self.session_cache:
+            self.write_cache()
+
+        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
+        db.connect_s()
+
+        print(f"Running cleanup for schema {self.schema}")
+
+        try:
+            schema = self.inventory.getSchema(self.schema)
+            if schema:
+                for bucket in self.inventory.nextBucket(schema):
+                    print(f"Dropping bucket {bucket.name}")
+                    db.drop_bucket(bucket.name)
+        except Exception as err:
+            raise TestExecError(f"cleanup failed: {err}")
+
     def test_init(self, bypass=False):
         collection_list = []
         rule_list = []
@@ -392,9 +433,14 @@ class test_exec(cbPerfBase):
         except Exception as err:
             raise TestExecError("Initialization failed: {}".format(err))
 
+    def list_block(self, list_data, count):
+        for i in range(0, len(list_data), count):
+            yield list_data[i:i + count]
+
     def run_link_rule(self, foreign_keyspace, primary_keyspace):
         loop = asyncio.get_event_loop()
         primary_key_list = []
+        end_char = '\r'
 
         db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
         db.connect_s()
@@ -416,6 +462,7 @@ class test_exec(cbPerfBase):
         db.collection_s(foreign_collection)
         db.collection_s(primary_collection)
 
+        print(f" [1] Building primary key list")
         if self.aio:
             result = loop.run_until_complete(db.cb_query_a(field=primary_field, name=primary_collection))
         else:
@@ -429,12 +476,18 @@ class test_exec(cbPerfBase):
         if foreign_record_count != len(primary_key_list):
             raise RulesError("runLinkRule: primary and foreign record counts are unequal")
 
-        for index, key in enumerate(primary_key_list):
+        print(f" [2] Inserting keys into field {foreign_field} in {foreign_collection}")
+        total_inserted = 0
+        for sub_list in list(self.list_block(primary_key_list, self.default_kv_batch_size)):
+            total_inserted += len(sub_list)
+            progress = round((total_inserted / foreign_record_count) * 100)
+            print(f"     {progress}%", end=end_char)
             if self.aio:
-                insert_value = loop.run_until_complete(db.cb_subdoc_upsert_a(key, foreign_field, key,
-                                                                             name=foreign_collection))
+                loop.run_until_complete(db.cb_subdoc_multi_upsert_a(sub_list, foreign_field, sub_list, name=foreign_collection))
             else:
-                insert_value = db.cb_subdoc_upsert_s(key, foreign_field, key, name=foreign_collection)
+                db.cb_subdoc_multi_upsert_s(sub_list, foreign_field, sub_list, name=foreign_collection)
+        sys.stdout.write("\033[K")
+        print("Done.")
 
     def process_rules(self):
         print("[i] Processing rules.")
@@ -561,8 +614,8 @@ class test_exec(cbPerfBase):
                 max_time = time_delta
 
             if total_count > 0:
-                percentage = round((total_count / total_ops) * 100)
-                print(f"=> {total_ops} of {total_count}, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%",
+                percentage = round((total_ops / total_count) * 100)
+                print(f"=> {total_ops} of {total_count}, {status_vector[1]} threads, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%",
                       end=end_char)
             else:
                 print(f"=> {total_ops} ops, {status_vector[1]} threads, {time_delta:.6f} time, {trans_per_sec} TPS, {status_vector[2]} errors, TPS trend {slope_avg:+.2f}",
@@ -574,7 +627,7 @@ class test_exec(cbPerfBase):
         print("Test Done.")
         if total_count == 0:
             print(f"{total_ops:,} completed operations")
-            print(f"{status_vector[1]} threads")
+        print(f"{status_vector[1]} threads")
         print(f"{status_vector[2]} errors")
         print(f"{slope_avg:+.2f} TPS trend")
         print(f"{round(avg_tps):,} average TPS")
@@ -583,6 +636,9 @@ class test_exec(cbPerfBase):
         print(f"{max_time:.6f} maximum time")
 
     def test_launch(self, read_p=0, write_p=100, mode=KV_TEST):
+        debugger = cb_debug("test_launch", filename=self.log_file, level=1)
+        logger = debugger.logger
+
         if not self.collection_list:
             raise TestRunError("test not initialized")
 
@@ -602,7 +658,7 @@ class test_exec(cbPerfBase):
             run_flag.value = 1
             status_flag.value = 0
             thread_count.value = self.run_threads
-            status_vector[1] = self.run_threads
+            # status_vector[1] = self.run_threads
             input_json = coll_obj.schema
 
             if coll_obj.record_count:
@@ -622,15 +678,33 @@ class test_exec(cbPerfBase):
             else:
                 test_run_func = self.test_run_s
 
-            instances = [
-                multiprocessing.Process(
+            instances = []
+            throttle_count = 0
+            n = 0
+            while True:
+                if n == self.run_threads:
+                    break
+
+                if not any(p.is_alive() for p in instances) and n > 0:
+                    break
+
+                if status_vector[3] < status_vector[1]:
+                    if throttle_count == 30:
+                        break
+                    logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    throttle_count += 1
+                    time.sleep(0.5)
+                    continue
+
+                throttle_count = 0
+                instances.append(multiprocessing.Process(
                     target=test_run_func,
                     args=(mode, input_json, count, coll_obj, operation_count,
-                          telemetry_queue, write_p, n, status_vector)) for n in range(self.run_threads)
-            ]
-            for p in instances:
-                p.daemon = True
-                p.start()
+                          telemetry_queue, write_p, n, status_vector)))
+                instances[n].daemon = True
+                instances[n].start()
+                status_vector[1] += 1
+                n += 1
 
             for p in instances:
                 p.join()
@@ -763,7 +837,9 @@ class test_exec(cbPerfBase):
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
 
-        if mode == test_exec.QUERY_TEST:
+        if coll_obj.batch_size:
+            run_batch_size = coll_obj.batch_size
+        elif mode == test_exec.QUERY_TEST:
             run_batch_size = self.default_query_batch_size
         else:
             run_batch_size = self.default_kv_batch_size
@@ -868,7 +944,9 @@ class test_exec(cbPerfBase):
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
 
-        if mode == test_exec.QUERY_TEST:
+        if coll_obj.batch_size:
+            run_batch_size = coll_obj.batch_size
+        elif mode == test_exec.QUERY_TEST:
             run_batch_size = self.default_query_batch_size
         else:
             run_batch_size = self.default_kv_batch_size
@@ -880,10 +958,7 @@ class test_exec(cbPerfBase):
         try:
             logger.info(f"instance {n}: connecting to {self.host}")
             db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            db.connect_s()
-            db.bucket_s(coll_obj.bucket)
-            db.scope_s(coll_obj.scope)
-            db.collection_s(coll_obj.name)
+            db.quick_connect_s(coll_obj.bucket, coll_obj.scope, coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
@@ -899,6 +974,11 @@ class test_exec(cbPerfBase):
             logger.info(f"instance {n}: randomizer error: {err}")
             return
 
+        if status_vector[0] == 1:
+            logger.info(f"test instance {n} aborting run due to stop signal")
+            return
+
+        status_vector[3] += 1
         logger.info(f"instance {n}: commencing run")
         while True:
             try:
