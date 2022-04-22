@@ -240,18 +240,22 @@ class test_exec(cbPerfBase):
             self.record_count = self.parameters.count
         if self.parameters.ops:
             self.operation_count = self.parameters.ops
-        if self.parameters.trun:
-            self.run_threads = self.parameters.trun
+        if self.parameters.threads:
+            self.run_threads = self.parameters.threads
         if self.parameters.memquota:
             self.bucket_memory = self.parameters.memquota
         if self.parameters.file:
             self.input_file = self.parameters.file
         if self.parameters.id:
             self.id_field = self.parameters.id
-        if self.parameters.query:
-            self.query_field = self.parameters.query
+        # if self.parameters.query:
+        #     self.query_field = self.parameters.query
         if self.parameters.debug:
             self.debug = self.parameters.debug
+        if self.parameters.skiprules:
+            self.run_rules = False
+        else:
+            self.run_rules = True
         if self.parameters.sync:
             self.aio = False
             self.batchSize = 1
@@ -348,7 +352,8 @@ class test_exec(cbPerfBase):
                 self.pause_test()
 
             if step == "load" and not self.skip_init:
-                self.process_rules()
+                if self.run_rules:
+                    self.process_rules()
                 self.check_indexes()
 
     def write_cache(self):

@@ -89,7 +89,7 @@
                       "record_id": "record_id",
                       "name": "{{ rand_first }} {{ rand_last }}",
                       "nickname": "{{ rand_nickname }}",
-                      "picture": "link_user_images",
+                      "picture": "",
                       "user_id": "{{ rand_username }}",
                       "email": "{{ rand_email }}",
                       "email_verified": "{{ rand_bool }}",
