@@ -5,6 +5,7 @@ from .sessionmgr import cb_session
 from .exceptions import *
 from .retries import retry
 from .dbinstance import db_instance
+from .cbdebug import cb_debug
 from datetime import timedelta
 from couchbase.options import LOCKMODE_NONE
 from couchbase.diagnostics import PingState
@@ -34,6 +35,9 @@ class cb_connect(cb_session):
         self.auth = PasswordAuthenticator(self.username, self.password)
         self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=240), kv_timeout=timedelta(seconds=240))
         self.db = db_instance()
+        self.debugger = cb_debug(self.__class__.__name__)
+        self.debug = self.debugger.do_debug
+        self.logger = self.debugger.logger
 
     def construct_key(self, key, collection):
         if type(key) == int or str(key).isdigit():
@@ -392,7 +396,8 @@ class cb_connect(cb_session):
         except CollectionNameNotFound:
             raise
         except CouchbaseException as err:
-            error_class = decode_error_code(err.context.first_error_code)
+            error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
+            self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
             raise error_class(err.context.first_error_message)
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
@@ -412,7 +417,8 @@ class cb_connect(cb_session):
         except CollectionNameNotFound:
             raise
         except CouchbaseException as err:
-            error_class = decode_error_code(err.context.first_error_code)
+            error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
+            self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
             raise error_class(err.context.first_error_message)
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))

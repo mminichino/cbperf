@@ -3,15 +3,19 @@
 
 import sys
 import os
+import re
 import inspect
 from .cbdebug import cb_debug
 
 
-def decode_error_code(code):
+def decode_error_code(code, message):
     if code == 4300:
         return IndexExistsError
     elif code == 5000:
-        return TransientError
+        if re.match(".*Index .* already exists.*", message):
+            return IndexExistsError
+        else:
+            return TransientError
     else:
         return CouchbaseError
 
