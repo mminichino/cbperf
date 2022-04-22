@@ -358,7 +358,7 @@ class randomize(object):
 
     @property
     def phoneNumber(self):
-        return '-'.join([self._randomNumber(3), self._randomNumber(3), self._randomNumber(4)])
+        return '-'.join([self._randomNumber(3), '555', self._randomNumber(4)])
 
     @property
     def dateCode(self):
