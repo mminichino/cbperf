@@ -120,6 +120,10 @@ class CollectionCountError(cbUtilError):
     pass
 
 
+class CollectionWaitException(cbUtilException):
+    pass
+
+
 class QueryError(cbUtilException):
     pass
 

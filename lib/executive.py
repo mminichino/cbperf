@@ -417,6 +417,7 @@ class test_exec(cbPerfBase):
                             if collection.name != '_default' and not bypass:
                                 print("Creating collection {}".format(collection.name))
                                 db.create_collection(collection.name)
+                                db.collection_wait(collection.name)
                                 db_index.connect_collection(collection.name)
                             elif not bypass:
                                 db_index.connect_collection('_default')
@@ -915,6 +916,7 @@ class test_exec(cbPerfBase):
                         status_vector[2] += 1
                         logger.info(f"instance {n}: task error #{status_vector[2]}: {result}")
                 if status_vector[0] == 1:
+                    await asyncio.sleep(0)
                     return
                 end_time = time.time()
                 loop_total_time = end_time - begin_time

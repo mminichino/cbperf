@@ -48,7 +48,7 @@ class cb_connect(cb_session):
         else:
             return key
 
-    @retry(retry_count=10, allow_list=(ClusterConnectException,))
+    @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException))
     async def connect(self):
         try:
             self.db.drop_cluster()
@@ -73,7 +73,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException("cluster connect general error: {}".format(err))
 
-    @retry(retry_count=10, allow_list=(ClusterConnectException,))
+    @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException))
     def connect_s(self):
         try:
             loop = asyncio.get_event_loop()
@@ -166,6 +166,11 @@ class cb_connect(cb_session):
             return next((c for c in self.db.scope_s.collections if c.name == collection), None)
         except AttributeError:
             return None
+
+    @retry(retry_count=10, allow_list=(CollectionWaitException,))
+    def collection_wait(self, collection):
+        if not self.is_collection(collection):
+            raise CollectionWaitException(f"waiting: collection {collection} does not exist")
 
     @retry(always_raise_list=(BucketAlreadyExistsException,),
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
