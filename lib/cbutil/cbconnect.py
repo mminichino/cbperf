@@ -51,15 +51,11 @@ class cb_connect(cb_session):
     @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException))
     async def connect(self):
         try:
+            cluster_s = None
+            cluster_a = None
             self.db.drop_cluster()
-            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string,
-                                                  authenticator=self.auth,
-                                                  lockmode=LOCKMODE_NONE,
-                                                  timeout_options=self.timeouts)
-            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string,
-                                                   authenticator=self.auth,
-                                                   lockmode=LOCKMODE_NONE,
-                                                   timeout_options=self.timeouts)
+            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
+            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
             await cluster_a.on_connect()
             self.db.set_cluster(cluster_s, cluster_a)
             return True
