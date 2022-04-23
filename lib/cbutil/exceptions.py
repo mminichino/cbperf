@@ -124,6 +124,14 @@ class CollectionWaitException(cbUtilException):
     pass
 
 
+class ScopeWaitException(cbUtilException):
+    pass
+
+
+class BucketWaitException(cbUtilException):
+    pass
+
+
 class QueryError(cbUtilException):
     pass
 

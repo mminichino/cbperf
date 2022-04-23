@@ -410,6 +410,7 @@ class test_exec(cbPerfBase):
                         if scope.name != '_default' and not bypass:
                             print("Creating scope {}".format(scope.name))
                             db.create_scope(scope.name)
+                            db.scope_wait(scope.name)
                             db_index.connect_scope(scope.name)
                         elif not bypass:
                             db_index.connect_scope('_default')

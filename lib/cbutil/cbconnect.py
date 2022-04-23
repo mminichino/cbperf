@@ -172,6 +172,11 @@ class cb_connect(cb_session):
         if not self.is_collection(collection):
             raise CollectionWaitException(f"waiting: collection {collection} does not exist")
 
+    @retry(retry_count=10, allow_list=(ScopeWaitException,))
+    def scope_wait(self, scope):
+        if not self.is_scope(scope):
+            raise ScopeWaitException(f"waiting: scope {scope} does not exist")
+
     @retry(always_raise_list=(BucketAlreadyExistsException,),
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def create_bucket(self, name, quota=256):
