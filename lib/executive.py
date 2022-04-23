@@ -331,6 +331,8 @@ class test_exec(cbPerfBase):
         for index, element in enumerate(self.get_next_task()):
             step = element[0]
             step_config = element[1]
+            debugger = cb_debug(f"run_main", filename=self.log_file, level=1)
+            logger = debugger.logger
             print(f"Running test playbook {self.test_playbook} step {step}")
 
             try:
@@ -343,10 +345,13 @@ class test_exec(cbPerfBase):
             if step == "load" and not self.skip_init:
                 self.test_init()
 
-            if self.test_playbook == "ramp" and step != "load":
-                self.ramp_launch(write_p=write_p, mode=test_type)
-            else:
-                self.test_launch(write_p=write_p, mode=test_type)
+            try:
+                if self.test_playbook == "ramp" and step != "load":
+                    self.ramp_launch(write_p=write_p, mode=test_type)
+                else:
+                    self.test_launch(write_p=write_p, mode=test_type)
+            except Exception as err:
+                logger.debug(f"error from launch: {err}")
 
             if test_pause:
                 self.pause_test()
