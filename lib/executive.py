@@ -834,8 +834,10 @@ class test_exec(cbPerfBase):
     def test_run_a(self, *args, **kwargs):
         debugger = cb_debug(f"test_run_a", filename=self.log_file, level=1)
         logger = debugger.logger
+        loop = asyncio.get_event_loop()
         try:
-            asyncio.run(self.async_test_run(*args, **kwargs))
+            loop.run_until_complete(self.async_test_run(*args, **kwargs))
+            loop.close()
         except Exception as err:
             logger.debug(f"async test process error: {err}")
 
