@@ -77,6 +77,10 @@ class cb_connect(cb_session):
         except Exception:
             raise
 
+    def disconnect(self):
+        self.db.cluster_s.disconnect()
+        self.db.cluster_a.disconnect()
+
     @retry(always_raise_list=(BucketNotFoundException,),
            retry_count=10,
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
@@ -201,7 +205,7 @@ class cb_connect(cb_session):
         self.bucket_s(name)
 
     @retry(always_raise_list=(BucketNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, HTTPException))
     def drop_bucket(self, name):
         try:
             if self.capella_target:

@@ -874,10 +874,12 @@ class test_exec(cbPerfBase):
             status_vector[0] = 1
             status_vector[2] += 1
             logger.info(f"instance {n}: randomizer error: {err}")
+            db.disconnect()
             return
 
         if status_vector[0] == 1:
             logger.info(f"test instance {n} aborting run due to stop signal")
+            db.disconnect()
             return
 
         status_vector[3] += 1
@@ -920,6 +922,7 @@ class test_exec(cbPerfBase):
                         logger.info(f"instance {n}: task error #{status_vector[2]}: {result}")
                 if status_vector[0] == 1:
                     await asyncio.sleep(0)
+                    db.disconnect()
                     return
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
@@ -933,6 +936,8 @@ class test_exec(cbPerfBase):
                     logger.info(f"instance {n}: max latency exceeded")
             else:
                 break
+
+        db.disconnect()
 
     def test_run_s(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
         tasks = []
@@ -1037,3 +1042,5 @@ class test_exec(cbPerfBase):
                     return
             else:
                 break
+
+        db.disconnect()
