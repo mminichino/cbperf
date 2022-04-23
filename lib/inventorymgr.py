@@ -3,6 +3,9 @@
 
 import logging
 import traceback
+import json
+import jinja2
+from jinja2.meta import find_undeclared_variables
 from distutils.util import strtobool
 from .exceptions import *
 
@@ -46,14 +49,18 @@ class collectionElement(object):
 
 class inventoryManager(object):
 
-    def __init__(self, inventory, by_reference=False):
+    def __init__(self, inventory, args, by_reference=False):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.inventory_json = inventory
+        self.args = args
+        self.file_schema_json = None
         self.schemas = []
 
         try:
             for w, schema_object in enumerate(self.inventory_json['inventory']):
                 for key, value in schema_object.items():
+                    if self.args.schema == 'external_file':
+                        value, self.file_schema_json = self.resolve_variables(json.dumps(value))
                     self.logger.info("adding schema %s to inventory" % key)
                     node = schemaElement(key)
                     self.schemas.insert(0, node)
@@ -74,7 +81,7 @@ class inventoryManager(object):
                                         eval(collection['schema']))
                                 else:
                                     if type(collection['schema']) == str:
-                                        self.schemas[0].buckets[0].scopes[0].collections[0].schema_variable = collection['schema']
+                                        self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(self.file_schema_json)
                                     else:
                                         self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
                                 self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
@@ -99,6 +106,41 @@ class inventoryManager(object):
         except Exception as err:
             print(traceback.format_exc())
             raise InventoryConfigError("inventory syntax error: {}".format(err))
+
+    def resolve_variables(self, value):
+        schema_json = {}
+
+        env = jinja2.Environment(undefined=jinja2.DebugUndefined)
+        template = env.from_string(value)
+        rendered = template.render()
+        ast = env.parse(rendered)
+        requested_vars = find_undeclared_variables(ast)
+
+        for variable in requested_vars:
+            if variable == 'FILE_PARAMETER':
+                if not self.args.file:
+                    raise ParameterError("schema requested FILE_PARAMETER but parameter file was not supplied.")
+                try:
+                    with open(self.args.file, 'r') as input_file:
+                        schema_json = json.load(input_file)
+                    input_file.close()
+                except OSError as err:
+                    raise ParameterError(f"can not read input file {self.args.file}: {err}")
+            elif variable == 'ID_FIELD_PARAMETER':
+                if not self.args.id:
+                    raise ParameterError("schema requested ID_FIELD_PARAMETER but parameter id was not supplied.")
+            elif variable == 'BUCKET_PARAMETER':
+                if not self.args.bucket:
+                    raise ParameterError("schema requested ID_FIELD_PARAMETER but parameter id was not supplied.")
+
+        raw_template = jinja2.Template(value)
+        formatted_value = raw_template.render(
+            ID_FIELD_PARAMETER=self.args.id,
+            BUCKET_PARAMETER=self.args.bucket,
+        )
+
+        new_schema_json = json.loads(formatted_value)
+        return new_schema_json, schema_json
 
     @property
     def schemaList(self):

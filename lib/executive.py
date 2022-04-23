@@ -160,7 +160,7 @@ class cbPerfBase(object):
         try:
             with open(filepath, 'r') as schemafile:
                 inventory_data = json.load(schemafile)
-                self.inventory = inventoryManager(inventory_data)
+                self.inventory = inventoryManager(inventory_data, self.parameters)
                 schemafile.close()
         except KeyError:
             raise SchemaFileError("can not read schema file {}".format(filepath))

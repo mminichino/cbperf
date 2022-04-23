@@ -16,8 +16,7 @@
                     "primary_index": false,
                     "override_count": false,
                     "indexes": [
-                      "{{ ID_FIELD_PARAMETER }}",
-                      "{{ QUERY_FIELD_PARAMETER }}"
+                      "{{ ID_FIELD_PARAMETER }}"
                     ]
                   }
                 ]
