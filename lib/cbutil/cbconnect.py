@@ -406,7 +406,6 @@ class cb_connect(cb_session):
         try:
             contents = []
             query = self.query_sql_constructor(field, name, where, value, sql)
-            self.logger.debug(f"query: {query}")
             result = self.db.cluster_s.query(query, QueryOptions(metrics=False, adhoc=True, pipeline_batch=128,
                                                                  max_parallelism=4, pipeline_cap=1024, scan_cap=1024))
             for item in result:
@@ -416,6 +415,7 @@ class cb_connect(cb_session):
             raise
         except CouchbaseException as err:
             error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
+            self.logger.debug(f"query: {query}")
             self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
             raise error_class(err.context.first_error_message)
         except Exception as err:
@@ -428,7 +428,6 @@ class cb_connect(cb_session):
         try:
             contents = []
             query = self.query_sql_constructor(field, name, where, value, sql)
-            self.logger.debug(f"query: {query}")
             result = self.db.cluster_a.query(query, QueryOptions(metrics=False, adhoc=True, pipeline_batch=128,
                                                                  max_parallelism=4, pipeline_cap=1024, scan_cap=1024))
             async for item in result:
@@ -438,6 +437,7 @@ class cb_connect(cb_session):
             raise
         except CouchbaseException as err:
             error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
+            self.logger.debug(f"query: {query}")
             self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
             raise error_class(err.context.first_error_message)
         except Exception as err:

@@ -16,6 +16,8 @@ def decode_error_code(code, message):
             return IndexExistsError
         else:
             return TransientError
+    elif code == 12003:
+        return TransientError
     else:
         return CouchbaseError
 
