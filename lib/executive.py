@@ -331,7 +331,7 @@ class test_exec(cbPerfBase):
         for index, element in enumerate(self.get_next_task()):
             step = element[0]
             step_config = element[1]
-            debugger = cb_debug(f"run_main", filename=self.log_file, level=1)
+            debugger = cb_debug(f"run_main", filename=self.log_file)
             logger = debugger.logger
             print(f"Running test playbook {self.test_playbook} step {step}")
 
@@ -831,10 +831,17 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
+    def test_run_exception_handler(self, loop, context):
+        debugger = cb_debug(f"exception_handler", filename=self.log_file)
+        logger = debugger.logger
+        exception = context.get("exception", None)
+        logger.debug(f"test async error: {exception}")
+
     def test_run_a(self, *args, **kwargs):
-        debugger = cb_debug(f"test_run_a", filename=self.log_file, level=1)
+        debugger = cb_debug(f"test_run_a", filename=self.log_file)
         logger = debugger.logger
         loop = asyncio.get_event_loop()
+        loop.set_exception_handler(self.test_run_exception_handler)
         try:
             loop.run_until_complete(self.async_test_run(*args, **kwargs))
             loop.close()
