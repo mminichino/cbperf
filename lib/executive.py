@@ -377,7 +377,7 @@ class test_exec(cbPerfBase):
             if schema:
                 for bucket in self.inventory.nextBucket(schema):
                     print(f"Dropping bucket {bucket.name}")
-                    if not db.is_bucket(bucket.name):
+                    if db.is_bucket(bucket.name):
                         db.drop_bucket(bucket.name)
         except Exception as err:
             raise TestExecError(f"cleanup failed: {err}")
