@@ -987,10 +987,12 @@ class test_exec(cbPerfBase):
             status_vector[0] = 1
             status_vector[2] += 1
             logger.info(f"instance {n}: randomizer error: {err}")
+            db.disconnect()
             return
 
         if status_vector[0] == 1:
             logger.info(f"test instance {n} aborting run due to stop signal")
+            db.disconnect()
             return
 
         status_vector[3] += 1
@@ -1027,6 +1029,7 @@ class test_exec(cbPerfBase):
                 status_vector[0] = 1
                 status_vector[2] += 1
                 logger.info(f"instance {n}: task error #{status_vector[2]}: {err}")
+                db.disconnect()
                 return
             if len(tasks) > 0:
                 end_time = time.time()
@@ -1039,6 +1042,7 @@ class test_exec(cbPerfBase):
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
                     logger.info(f"instance {n}: max latency exceeded")
+                    db.disconnect()
                     return
             else:
                 break
