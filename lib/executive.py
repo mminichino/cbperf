@@ -405,6 +405,7 @@ class test_exec(cbPerfBase):
                     if self.create_bucket and not bypass:
                         print("Creating bucket {}".format(bucket.name))
                         db.create_bucket(bucket.name, quota=self.bucket_memory)
+                        db.bucket_wait(bucket.name)
                         db_index.connect_bucket(bucket.name)
                     for scope in self.inventory.nextScope(bucket):
                         if scope.name != '_default' and not bypass:

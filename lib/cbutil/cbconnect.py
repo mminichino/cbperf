@@ -163,7 +163,10 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def is_collection(self, collection):
         try:
-            return next((c for c in self.db.scope_s.collections if c.name == collection), None)
+            scope_spec = next((s for s in self.db.cm_s.get_all_scopes() if s.name == self.db.scope_name), None)
+            if not scope_spec:
+                raise ScopeNotFoundException(f"is_collection: no scope configured")
+            return next((c for c in scope_spec.collections if c.name == collection), None)
         except AttributeError:
             return None
 
@@ -176,6 +179,11 @@ class cb_connect(cb_session):
     def scope_wait(self, scope):
         if not self.is_scope(scope):
             raise ScopeWaitException(f"waiting: scope {scope} does not exist")
+
+    @retry(retry_count=10, allow_list=(BucketWaitException,))
+    def bucket_wait(self, bucket):
+        if not self.is_bucket(bucket):
+            raise BucketWaitException(f"waiting: bucket {bucket} does not exist")
 
     @retry(always_raise_list=(BucketAlreadyExistsException,),
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
