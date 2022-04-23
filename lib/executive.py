@@ -827,7 +827,12 @@ class test_exec(cbPerfBase):
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
     def test_run_a(self, *args, **kwargs):
-        asyncio.run(self.async_test_run(*args, **kwargs))
+        debugger = cb_debug(f"test_thread_{n:03d}", filename=self.log_file, level=1)
+        logger = debugger.logger
+        try:
+            asyncio.run(self.async_test_run(*args, **kwargs))
+        except Exception as err:
+            logger.debug(f"async test process error: {err}")
 
     async def async_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
         tasks = []
