@@ -3,11 +3,14 @@
 
 import traceback
 import json
+import re
+from json.decoder import JSONDecodeError
 import jinja2
 from jinja2.meta import find_undeclared_variables
 from distutils.util import strtobool
 from .exceptions import *
 from lib.cbutil.cbdebug import cb_debug
+from lib.cbutil.randomize import randomize
 
 
 class schemaElement(object):
@@ -43,6 +46,7 @@ class collectionElement(object):
         self.override_count = False
         self.record_count = None
         self.batch_size = None
+        self.size = None
         if name == '_default':
             self.key_prefix = bucket
         else:
@@ -67,48 +71,78 @@ class inventoryManager(object):
                 for key, value in schema_object.items():
                     if key != self.args.schema:
                         continue
+
                     self.logger.info(f"adding schema {key} to inventory")
-                    if key == 'external_file':
-                        value, self.file_schema_json = self.resolve_variables(json.dumps(value))
-                    else:
-                        self.file_schema_json = None
                     node = schemaElement(key)
                     self.schemas.insert(0, node)
+
                     for x, bucket in enumerate(value['buckets']):
-                        self.logger.info("adding bucket %s to inventory" % bucket['name'])
-                        node = bucketElement(bucket['name'])
+                        bucket_name = self.resolve_variables(bucket['name'])
+                        if len(bucket_name) == 0:
+                            raise InventoryConfigError(f"schema {key}: bucket name can not be null")
+
+                        self.logger.info(f"adding bucket {bucket_name} to inventory")
+                        node = bucketElement(bucket_name)
                         self.schemas[0].buckets.insert(0, node)
+
                         for y, scope in enumerate(value['buckets'][x]['scopes']):
                             self.logger.info("adding scope %s to inventory" % scope['name'])
                             node = scopeElement(scope['name'])
                             self.schemas[0].buckets[0].scopes.insert(0, node)
+
                             for z, collection in enumerate(value['buckets'][x]['scopes'][y]['collections']):
+                                id_key_name = self.resolve_variables(collection['idkey'])
+                                if len(id_key_name) == 0:
+                                    raise InventoryConfigError(f"schema {key}: id field can not be null")
+
                                 self.logger.info("adding collection %s to inventory" % collection['name'])
-                                node = collectionElement(collection['name'], bucket['name'], scope['name'])
+                                node = collectionElement(collection['name'], bucket_name, scope['name'])
                                 self.schemas[0].buckets[0].scopes[0].collections.insert(0, node)
+                                self.schemas[0].buckets[0].scopes[0].collections[0].id = id_key_name
+
                                 if by_reference:
-                                    self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(
-                                        eval(collection['schema']))
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(eval(collection['schema']))
                                 else:
-                                    if self.file_schema_json:
-                                        self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(self.file_schema_json)
-                                    else:
-                                        self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
-                                self.schemas[0].buckets[0].scopes[0].collections[0].id = collection['idkey']
+                                    schema_data_dict = collection['schema']
+
+                                    if len(schema_data_dict) == 0:
+                                        raise InventoryConfigError(f"schema {key}: document definition can not be null")
+                                    elif type(schema_data_dict) == str:
+                                        try:
+                                            schema_file_name = self.resolve_variables(schema_data_dict)
+                                            schema_data_dict = self.read_input_file(schema_file_name)
+                                        except Exception as err:
+                                            InventoryConfigError(f"document JSON error: {err}")
+
+                                    if type(schema_data_dict) != dict:
+                                        raise InventoryConfigError(f"schema {key}: document definition must be JSON")
+
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(schema_data_dict)
+
+                                    doc_size = self.get_document_size(schema_data_dict, id_key_name)
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].size = doc_size
+
                                 self.schemas[0].buckets[0].scopes[0].collections[0].primary_index = collection['primary_index']
                                 self.schemas[0].buckets[0].scopes[0].collections[0].override_count = collection['override_count']
+
                                 if 'record_count' in collection:
                                     self.schemas[0].buckets[0].scopes[0].collections[0].record_count = collection['record_count']
+
                                 if 'batch_size' in collection:
                                     self.schemas[0].buckets[0].scopes[0].collections[0].batch_size = collection['batch_size']
+
                                 if 'indexes' in collection:
                                     for index_field in collection['indexes']:
-                                        self.logger.info("adding index for field %s to inventory" % index_field)
+                                        index_field_name = self.resolve_variables(index_field)
+                                        if len(index_field_name) == 0:
+                                            raise InventoryConfigError(f"schema {key}: index name can not be null")
+
+                                        self.logger.info(f"adding index for field {index_field_name} to inventory")
                                         index_data = {}
-                                        index_data['field'] = index_field
-                                        index_data['name'] = self.indexName(
-                                            self.schemas[0].buckets[0].scopes[0].collections[0], index_field)
+                                        index_data['field'] = index_field_name
+                                        index_data['name'] = self.indexName(self.schemas[0].buckets[0].scopes[0].collections[0], index_field_name)
                                         self.schemas[0].buckets[0].scopes[0].collections[0].indexes.append(index_data)
+
                     if 'rules' in value:
                         for r, rule in enumerate(value['rules']):
                             self.logger.info("adding rule %s to inventory" % rule['name'])
@@ -117,40 +151,36 @@ class inventoryManager(object):
             print(traceback.format_exc())
             raise InventoryConfigError("inventory syntax error: {}".format(err))
 
+    def get_document_size(self, document, key):
+        try:
+            r = randomize()
+            r.prepareTemplate(document)
+            doc_template = r.processTemplate()
+            doc_template[key] = 1
+            size = sys.getsizeof(json.dumps(doc_template))
+            return size
+        except Exception as err:
+            raise InventoryConfigError(f"can not process document template: {err}")
+
+    def read_input_file(self, filename):
+        try:
+            with open(filename, 'r') as input_file:
+                schema_json = json.load(input_file)
+            input_file.close()
+            return schema_json
+        except OSError as err:
+            raise InventoryConfigError(f"can not read input file {filename}: {err}")
+        except JSONDecodeError as err:
+            raise InventoryConfigError(f"invalid JSON data in input file {filename}: {err}")
+
     def resolve_variables(self, value):
-        schema_json = {}
-
-        env = jinja2.Environment(undefined=jinja2.DebugUndefined)
-        template = env.from_string(value)
-        rendered = template.render()
-        ast = env.parse(rendered)
-        requested_vars = find_undeclared_variables(ast)
-
-        for variable in requested_vars:
-            if variable == 'FILE_PARAMETER':
-                if not self.args.file:
-                    raise ParameterError("schema requested FILE_PARAMETER but parameter file was not supplied.")
-                try:
-                    with open(self.args.file, 'r') as input_file:
-                        schema_json = json.load(input_file)
-                    input_file.close()
-                except OSError as err:
-                    raise ParameterError(f"can not read input file {self.args.file}: {err}")
-            elif variable == 'ID_FIELD_PARAMETER':
-                if not self.args.id:
-                    raise ParameterError("schema requested ID_FIELD_PARAMETER but parameter id was not supplied.")
-            elif variable == 'BUCKET_PARAMETER':
-                if not self.args.bucket:
-                    raise ParameterError("schema requested ID_FIELD_PARAMETER but parameter id was not supplied.")
-
         raw_template = jinja2.Template(value)
         formatted_value = raw_template.render(
-            ID_FIELD_PARAMETER=self.args.id,
-            BUCKET_PARAMETER=self.args.bucket,
+            FILE_PARAMETER=self.args.file if self.args.file else "",
+            ID_FIELD_PARAMETER=self.args.id if self.args.id else "",
+            BUCKET_PARAMETER=self.args.bucket if self.args.bucket else "",
         )
-
-        new_schema_json = json.loads(formatted_value)
-        return new_schema_json, schema_json
+        return formatted_value
 
     @property
     def schemaList(self):
@@ -203,6 +233,7 @@ class inventoryManager(object):
         else:
             collection_text = ''
         field = field.replace('.', '_')
+        field = re.sub('^_*', '', field)
         return collection.bucket + scope_text + collection_text + '_' + field + '_ix'
 
     def nextIndex(self, collection):

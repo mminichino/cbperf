@@ -428,12 +428,12 @@ class test_exec(cbPerfBase):
                             elif not bypass:
                                 db_index.connect_collection('_default')
                             if self.inventory.hasPrimaryIndex(collection) and not bypass:
+                                print(f"Creating primary index on {collection.name}")
                                 db_index.create_index(collection.name, replica=self.replica_count)
                             if self.inventory.hasIndexes(collection) and not bypass:
                                 for index_field, index_name in self.inventory.nextIndex(collection):
-                                    print("Creating index {}".format(index_name))
-                                    db_index.create_index(collection.name, field=index_field,
-                                                          replica=self.replica_count)
+                                    print(f"Creating index {index_name} on {index_field}")
+                                    db_index.create_index(collection.name, field=index_field, index_name=index_name, replica=self.replica_count)
                             collection_list.append(collection)
                 if self.inventory.hasRules(schema):
                     for rule in self.inventory.nextRule(schema):
@@ -536,8 +536,8 @@ class test_exec(cbPerfBase):
                                 print("done.")
                             if self.inventory.hasIndexes(collection):
                                 for index_field, index_name in self.inventory.nextIndex(collection):
-                                    print(f"Waiting for index on field {index_field} in keyspace {db_index.db.keyspace_s(collection.name)} ...", end=end_char)
-                                    db_index.index_wait(name=collection.name, field=index_field)
+                                    print(f"Waiting for index {index_name} on field {index_field} in keyspace {db_index.db.keyspace_s(collection.name)} ...", end=end_char)
+                                    db_index.index_wait(name=collection.name, field=index_field, index_name=index_name)
                                     print("done.")
             else:
                 raise ParameterError("Schema {} not found".format(self.schema))

@@ -16,6 +16,26 @@ class cb_index(cb_connect):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.connect_s()
 
+    def index_name(self, name, field, index_name):
+        if index_name:
+            index = index_name
+        elif name != "_default" and field:
+            index = name + '_' + field + '_ix'
+        elif field:
+            index = field + '_ix'
+        else:
+            index = '#primary'
+
+        return index
+
+    def index_lookup(self, name):
+        if name == "_default":
+            lookup = self.db.bucket_name
+        else:
+            lookup = name
+
+        return lookup
+
     def connect_bucket(self, name):
         try:
             self.bucket_s(name)
@@ -34,19 +54,14 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexCollectionError("can not connect to collection {}: {}".format(name, err))
 
-    def is_index(self, field=None, name="_default"):
-        if name != "_default" and field:
-            index = name + '_' + field + '_ix'
-        elif field:
-            index = field + '_ix'
-        else:
-            index = None
+    def is_index(self, field=None, name="_default", index_name=None):
+        index = self.index_name(name, field, index_name)
 
         try:
             keyspace = self.db.keyspace_s(name)
             indexList = self.db.qim.get_all_indexes(self.db.bucket_name)
             for i in range(len(indexList)):
-                if not index:
+                if index == '#primary':
                     if indexList[i].keyspace == keyspace and indexList[i].name == '#primary':
                         return True
                 if indexList[i].name == index:
@@ -58,19 +73,13 @@ class cb_index(cb_connect):
 
     @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound, IndexExistsError),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    def create_index(self, name="_default", field=None, replica=1):
-        if name != "_default" and field:
-            index = name + '_' + field + '_ix'
-        elif field:
-            index = field + '_ix'
-        else:
-            index = None
+    def create_index(self, name="_default", field=None, index_name=None, replica=1):
+        index = self.index_name(name, field, index_name)
 
         try:
             keyspace = self.db.keyspace_s(name)
-            if field and index:
-                queryText = 'CREATE INDEX ' + index + ' ON ' + keyspace + '(' + field + ') WITH {"num_replica": ' \
-                            + str(replica) + '};'
+            if field and index != '#primary':
+                queryText = 'CREATE INDEX ' + index + ' ON ' + keyspace + '(' + field + ') WITH {"num_replica": ' + str(replica) + '};'
             else:
                 queryText = 'CREATE PRIMARY INDEX ON ' + keyspace + ' WITH {"num_replica": ' + str(replica) + '};'
             result = self.cb_query_s(sql=queryText)
@@ -84,17 +93,12 @@ class cb_index(cb_connect):
 
     @retry(always_raise_list=(QueryException, TimeoutException, CollectionNameNotFound),
            allow_list=(CouchbaseTransientException, ProtocolException))
-    def drop_index(self, name="_default", field=None):
-        if name != "_default" and field:
-            index = name + '_' + field + '_ix'
-        elif field:
-            index = field + '_ix'
-        else:
-            index = None
+    def drop_index(self, name="_default", field=None, index_name=None):
+        index = self.index_name(name, field, index_name)
 
         try:
             keyspace = self.db.keyspace_s(name)
-            if field and index:
+            if field and index != '#primary':
                 queryText = 'DROP INDEX ' + index + ' ON ' + keyspace + ' USING GSI;'
             else:
                 queryText = 'DROP PRIMARY INDEX ON' + keyspace + ' USING GSI;'
@@ -105,29 +109,15 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexQueryError("can not drop index on {}: {}".format(name, err))
 
-    def get_index_search_terms(self, name, field):
-        if name != "_default" and field:
-            index = name + '_' + field + '_ix'
-        elif field:
-            index = field + '_ix'
-        else:
-            index = '#primary'
-
-        if name == "_default":
-            lookup = self.db.bucket_name
-        else:
-            lookup = name
-
-        return index, lookup
-
     @retry(factor=0.5, allow_list=(IndexNotReady,))
-    def index_wait(self, name="_default", field=None):
-        index, lookup = self.get_index_search_terms(name, field)
+    def index_wait(self, name="_default", field=None, index_name=None):
+        index = self.index_name(name, field, index_name)
+        lookup = self.index_lookup(name)
         record_count = self.collection_count(name)
 
         if not self.node_api_accessible:
             try:
-                self.alt_index_check(name=name, field=field, check_count=record_count)
+                self.alt_index_check(name=name, field=field, index_name=index_name, check_count=record_count)
             except Exception:
                 raise IndexNotReady(f"alt check index {index} not ready")
         else:
@@ -163,8 +153,9 @@ class cb_index(cb_connect):
 
         return index_data
 
-    def get_index_key(self, name="_default", field=None):
-        index, lookup = self.get_index_search_terms(name, field)
+    def get_index_key(self, name="_default", field=None, index_name=None):
+        index = self.index_name(name, field, index_name)
+        lookup = self.index_lookup(name)
         query_text = 'SELECT * FROM system:indexes ;'
         doc_key_field = 'meta().id'
 
@@ -180,12 +171,12 @@ class cb_index(cb_connect):
 
         raise IndexNotFoundError(f"index {index} not found")
 
-    def alt_index_check(self, name="_default", field=None, check_count=0):
-        index, lookup = self.get_index_search_terms(name, field)
+    def alt_index_check(self, name="_default", field=None, index_name=None, check_count=0):
+        index = self.index_name(name, field, index_name)
         keyspace = self.db.keyspace_s(name)
 
         try:
-            query_field = self.get_index_key(name, field)
+            query_field = self.get_index_key(name, field, index_name)
         except Exception:
             raise
 
