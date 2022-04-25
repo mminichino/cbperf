@@ -50,6 +50,10 @@ class cb_connect(cb_session):
         else:
             return key
 
+    def unhandled_exception(self, loop, context):
+        err = context.get("exception", context["message"])
+        self.logger.error(f"unhandled exception: {err}")
+
     @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException))
     async def connect(self):
         try:
@@ -72,6 +76,7 @@ class cb_connect(cb_session):
     def connect_s(self):
         try:
             loop = asyncio.get_event_loop()
+            loop.set_exception_handler(self.unhandled_exception)
             loop.run_until_complete(self.connect())
             return True
         except Exception:
@@ -95,6 +100,7 @@ class cb_connect(cb_session):
            allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
     def bucket_s(self, name):
         loop = asyncio.get_event_loop()
+        loop.set_exception_handler(self.unhandled_exception)
         loop.run_until_complete(self.bucket(name))
 
     @retry(always_raise_list=(ScopeNotFoundException,),
@@ -106,6 +112,7 @@ class cb_connect(cb_session):
 
     def scope_s(self, name="_default"):
         loop = asyncio.get_event_loop()
+        loop.set_exception_handler(self.unhandled_exception)
         loop.run_until_complete(self.scope(name))
 
     @retry(always_raise_list=(CollectionNotFoundException,),
@@ -118,6 +125,7 @@ class cb_connect(cb_session):
 
     def collection_s(self, name="_default"):
         loop = asyncio.get_event_loop()
+        loop.set_exception_handler(self.unhandled_exception)
         loop.run_until_complete(self.collection(name))
 
     @retry(retry_count=10)
@@ -346,6 +354,7 @@ class cb_connect(cb_session):
     @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def cb_subdoc_multi_upsert_s(self, key_list, field, value_list, name="_default"):
         loop = asyncio.get_event_loop()
+        loop.set_exception_handler(self.unhandled_exception)
         loop.run_until_complete(self.cb_subdoc_multi_upsert_a(key_list, field, value_list, name))
 
     @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))

@@ -226,6 +226,8 @@ class test_exec(cbPerfBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        debugger = cb_debug(self.__class__.__name__)
+        self.logger = debugger.logger
         if self.parameters.user:
             self.username = self.parameters.user
         if self.parameters.password:
@@ -248,8 +250,6 @@ class test_exec(cbPerfBase):
             self.input_file = self.parameters.file
         if self.parameters.id:
             self.id_field = self.parameters.id
-        # if self.parameters.query:
-        #     self.query_field = self.parameters.query
         if self.parameters.debug:
             self.debug = self.parameters.debug
         if self.parameters.skiprules:
@@ -331,8 +331,6 @@ class test_exec(cbPerfBase):
         for index, element in enumerate(self.get_next_task()):
             step = element[0]
             step_config = element[1]
-            debugger = cb_debug(f"run_main", filename=self.log_file)
-            logger = debugger.logger
             print(f"Running test playbook {self.test_playbook} step {step}")
 
             try:
@@ -351,7 +349,7 @@ class test_exec(cbPerfBase):
                 else:
                     self.test_launch(write_p=write_p, mode=test_type)
             except Exception as err:
-                logger.debug(f"error from launch: {err}")
+                self.logger.error(f"test launch error: {err}")
 
             if test_pause:
                 self.pause_test()
@@ -650,9 +648,6 @@ class test_exec(cbPerfBase):
         print(f"{max_time:.6f} maximum time")
 
     def test_launch(self, read_p=0, write_p=100, mode=KV_TEST):
-        debugger = cb_debug("test_launch", filename=self.log_file, level=1)
-        logger = debugger.logger
-
         if not self.collection_list:
             raise TestRunError("test not initialized")
 
@@ -705,7 +700,7 @@ class test_exec(cbPerfBase):
                 if status_vector[3] < status_vector[1]:
                     if throttle_count == 30:
                         break
-                    logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
                     throttle_count += 1
                     time.sleep(0.5)
                     continue
@@ -732,8 +727,6 @@ class test_exec(cbPerfBase):
 
     def ramp_launch(self, read_p=100, write_p=0, mode=KV_TEST):
         scale = []
-        debugger = cb_debug("ramp_launch", filename=self.log_file, level=1)
-        logger = debugger.logger
 
         if not self.collection_list:
             raise TestRunError("test not initialized")
@@ -792,7 +785,7 @@ class test_exec(cbPerfBase):
                     if throttle_count == 30:
                         status_vector[0] = 1
                         break
-                    logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
                     throttle_count += 1
                     time.sleep(0.5)
                     continue
@@ -821,7 +814,7 @@ class test_exec(cbPerfBase):
                 time.sleep(0.5)
 
             for p in scale:
-                # p.terminate()
+                p.terminate()
                 p.join()
 
             run_flag.value = 0
@@ -831,22 +824,18 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
-    def test_run_exception_handler(self, loop, context):
-        debugger = cb_debug(f"exception_handler")
-        logger = debugger.logger
+    def unhandled_exception(self, loop, context):
         err = context.get("exception", context["message"])
-        logger.debug(f"test async error: {err}")
+        self.logger.error(f"async test unhandled error: {err}")
 
     def test_run_a(self, *args, **kwargs):
-        debugger = cb_debug(f"test_run_a")
-        logger = debugger.logger
         loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.test_run_exception_handler)
+        loop.set_exception_handler(self.unhandled_exception)
         try:
             loop.run_until_complete(self.async_test_run(*args, **kwargs))
             loop.close()
         except Exception as err:
-            logger.debug(f"async test process returned: {err}")
+            self.logger.error(f"async test process error: {err}")
 
     async def async_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
         tasks = []
@@ -856,11 +845,9 @@ class test_exec(cbPerfBase):
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
         time_threshold = 5
-        debugger = cb_debug(f"test_thread_{n:03d}", filename=self.log_file, level=1)
-        logger = debugger.logger
         begin_time = time.time()
 
-        logger.info(f"beginning test instance {n}")
+        self.logger.info(f"beginning test instance {n}")
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
@@ -873,17 +860,17 @@ class test_exec(cbPerfBase):
             run_batch_size = self.default_kv_batch_size
 
         if status_vector[0] == 1:
-            logger.info(f"test instance {n} aborting startup due to stop signal")
+            self.logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
             return
 
         try:
-            logger.info(f"instance {n}: connecting to {self.host}")
+            self.logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
             db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
             await db.quick_connect(coll_obj.bucket, coll_obj.scope, coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.info(f"instance {n}: db connection error: {err}")
+            self.logger.info(f"test_thread_{n:03d}: db connection error: {err}")
             return
 
         try:
@@ -892,17 +879,17 @@ class test_exec(cbPerfBase):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.info(f"instance {n}: randomizer error: {err}")
+            self.logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
             db.disconnect()
             return
 
         if status_vector[0] == 1:
-            logger.info(f"test instance {n} aborting run due to stop signal")
+            self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
             db.disconnect()
             return
 
         status_vector[3] += 1
-        logger.info(f"instance {n}: commencing run")
+        self.logger.info(f"test_thread_{n:03d}: commencing run")
         while True:
             try:
                 tasks.clear()
@@ -930,7 +917,7 @@ class test_exec(cbPerfBase):
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
-                logger.info(f"instance {n}: execution error: {err}")
+                self.logger.info(f"test_thread_{n:03d}: execution error: {err}")
             if len(tasks) > 0:
                 await asyncio.sleep(0)
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -938,7 +925,7 @@ class test_exec(cbPerfBase):
                     if isinstance(result, Exception):
                         status_vector[0] = 1
                         status_vector[2] += 1
-                        logger.info(f"instance {n}: task error #{status_vector[2]}: {result}")
+                        self.logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
                 if status_vector[0] == 1:
                     await asyncio.sleep(0)
                     db.disconnect()
@@ -952,13 +939,21 @@ class test_exec(cbPerfBase):
                 telemetry_queue.put(telemetry_packet)
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
-                    logger.info(f"instance {n}: max latency exceeded")
+                    self.logger.info(f"test_thread_{n:03d}: max latency exceeded")
             else:
                 break
 
         db.disconnect()
 
-    def test_run_s(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
+    def test_run_s(self, *args, **kwargs):
+        debugger = cb_debug(f"test_run_s")
+        logger = debugger.logger
+        try:
+            self.sync_test_run(*args, **kwargs)
+        except Exception as err:
+            logger.debug(f"sync test process returned: {err}")
+
+    def sync_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
         tasks = []
         rand_gen = fastRandom(record_count)
         id_field = coll_obj.id
@@ -966,14 +961,8 @@ class test_exec(cbPerfBase):
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
         time_threshold = 5
-        handler = logging.handlers.WatchedFileHandler(os.environ.get("CB_PERF_LOGFILE", self.log_file))
-        formatter = logging.Formatter(logging.BASIC_FORMAT)
-        handler.setFormatter(formatter)
-        logger = logging.getLogger('test_run')
-        logger.setLevel("INFO")
-        logger.addHandler(handler)
 
-        logger.info(f"beginning test instance {n}")
+        self.logger.info(f"beginning test instance {n}")
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
@@ -986,17 +975,17 @@ class test_exec(cbPerfBase):
             run_batch_size = self.default_kv_batch_size
 
         if status_vector[0] == 1:
-            logger.info(f"test instance {n} aborting startup due to stop signal")
+            self.logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
             return
 
         try:
-            logger.info(f"instance {n}: connecting to {self.host}")
+            self.logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
             db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
             db.quick_connect_s(coll_obj.bucket, coll_obj.scope, coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.info(f"instance {n}: db connection error: {err}")
+            self.logger.info(f"test_thread_{n:03d}: db connection error: {err}")
             return
 
         try:
@@ -1005,17 +994,17 @@ class test_exec(cbPerfBase):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.info(f"instance {n}: randomizer error: {err}")
+            self.logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
             db.disconnect()
             return
 
         if status_vector[0] == 1:
-            logger.info(f"test instance {n} aborting run due to stop signal")
+            self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
             db.disconnect()
             return
 
         status_vector[3] += 1
-        logger.info(f"instance {n}: commencing run")
+        self.logger.info(f"test_thread_{n:03d}: commencing run")
         while True:
             try:
                 tasks.clear()
@@ -1047,7 +1036,7 @@ class test_exec(cbPerfBase):
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
-                logger.info(f"instance {n}: task error #{status_vector[2]}: {err}")
+                self.logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {err}")
                 db.disconnect()
                 return
             if len(tasks) > 0:
@@ -1060,7 +1049,7 @@ class test_exec(cbPerfBase):
                 telemetry_queue.put(telemetry_packet)
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
-                    logger.info(f"instance {n}: max latency exceeded")
+                    self.logger.info(f"test_thread_{n:03d}: max latency exceeded")
                     db.disconnect()
                     return
             else:

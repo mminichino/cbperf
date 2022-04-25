@@ -30,7 +30,7 @@ class cb_debug(object):
                 elif self.debug_level == 2:
                     self._logger.setLevel(logging.ERROR)
                 else:
-                    self._logger.setLevel(logging.CRITICAL)
+                    self._logger.setLevel(logging.ERROR)
                 self._logger.addHandler(self.handler)
                 self.debug = True
             except ValueError:

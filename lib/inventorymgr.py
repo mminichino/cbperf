@@ -1,13 +1,14 @@
 ##
 ##
 
-import logging
 import traceback
 import json
 import jinja2
 from jinja2.meta import find_undeclared_variables
 from distutils.util import strtobool
 from .exceptions import *
+from lib.cbutil.cbdebug import cb_debug
+
 
 class schemaElement(object):
 
@@ -16,17 +17,20 @@ class schemaElement(object):
         self.buckets = []
         self.rules = []
 
+
 class bucketElement(object):
 
     def __init__(self, name):
         self.name = name
         self.scopes = []
 
+
 class scopeElement(object):
 
     def __init__(self, name):
         self.name = name
         self.collections = []
+
 
 class collectionElement(object):
 
@@ -47,10 +51,12 @@ class collectionElement(object):
         self.schema = {}
         self.indexes = []
 
+
 class inventoryManager(object):
 
     def __init__(self, inventory, args, by_reference=False):
-        self.logger = logging.getLogger(self.__class__.__name__)
+        debugger = cb_debug(self.__class__.__name__)
+        self.logger = debugger.logger
         self.inventory_json = inventory
         self.args = args
         self.file_schema_json = None
@@ -59,9 +65,13 @@ class inventoryManager(object):
         try:
             for w, schema_object in enumerate(self.inventory_json['inventory']):
                 for key, value in schema_object.items():
-                    if self.args.schema == 'external_file':
+                    if key != self.args.schema:
+                        continue
+                    self.logger.info(f"adding schema {key} to inventory")
+                    if key == 'external_file':
                         value, self.file_schema_json = self.resolve_variables(json.dumps(value))
-                    self.logger.info("adding schema %s to inventory" % key)
+                    else:
+                        self.file_schema_json = None
                     node = schemaElement(key)
                     self.schemas.insert(0, node)
                     for x, bucket in enumerate(value['buckets']):
@@ -80,7 +90,7 @@ class inventoryManager(object):
                                     self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(
                                         eval(collection['schema']))
                                 else:
-                                    if type(collection['schema']) == str:
+                                    if self.file_schema_json:
                                         self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(self.file_schema_json)
                                     else:
                                         self.schemas[0].buckets[0].scopes[0].collections[0].schema.update(collection['schema'])
