@@ -224,17 +224,15 @@ class inventoryManager(object):
             return collection.primary_index
 
     def indexName(self, collection, field):
-        if collection.scope != '_default':
-            scope_text = '_' + collection.scope
-        else:
-            scope_text = ''
-        if collection.name != '_default':
-            collection_text = '_' + collection.name
-        else:
-            collection_text = ''
         field = field.replace('.', '_')
         field = re.sub('^_*', '', field)
-        return collection.bucket + scope_text + collection_text + '_' + field + '_ix'
+
+        if collection.name != '_default':
+            index = collection.name + '_' + field + '_ix'
+        else:
+            index = collection.bucket + '_' + field + '_ix'
+
+        return index
 
     def nextIndex(self, collection):
         for i in range(len(collection.indexes)):

@@ -6,7 +6,7 @@ from .cbconnect import cb_connect
 from .retries import retry
 from couchbase.exceptions import (CouchbaseTransientException, TimeoutException, QueryException,  ProtocolException)
 import logging
-import json
+import re
 
 
 class cb_index(cb_connect):
@@ -17,12 +17,14 @@ class cb_index(cb_connect):
         self.connect_s()
 
     def index_name(self, name, field, index_name):
+        field = field.replace('.', '_') if field else None
+        field = re.sub('^_*', '', field) if field else None
         if index_name:
             index = index_name
         elif name != "_default" and field:
             index = name + '_' + field + '_ix'
         elif field:
-            index = field + '_ix'
+            index = self.db.bucket_name + '_' + field + '_ix'
         else:
             index = '#primary'
 
