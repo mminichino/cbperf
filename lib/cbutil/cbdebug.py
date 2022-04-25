@@ -18,25 +18,32 @@ class cb_debug(object):
         self.formatter = logging.Formatter(logging.BASIC_FORMAT)
         self.handler.setFormatter(self.formatter)
         self.debug = False
-        if 'CB_PERF_DEBUG_LEVEL' in os.environ or level:
-            try:
-                if overwrite:
-                    open(self.debug_file, 'w').close()
-                self.debug_level = level if level else int(os.environ['CB_PERF_DEBUG_LEVEL'])
-                if self.debug_level == 0:
-                    self._logger.setLevel(logging.DEBUG)
-                elif self.debug_level == 1:
-                    self._logger.setLevel(logging.INFO)
-                elif self.debug_level == 2:
-                    self._logger.setLevel(logging.ERROR)
-                else:
-                    self._logger.setLevel(logging.ERROR)
-                self._logger.addHandler(self.handler)
-                self.debug = True
-            except ValueError:
-                print(f"warning: ignoring debug: environment variable CB_PERF_DEBUG_LEVEL should be a number")
-            except Exception as err:
-                print(f"warning: can not initialize logging: {err}")
+        default_level = 3
+
+        try:
+            default_level = int(os.environ['CB_PERF_DEBUG_LEVEL']) if 'CB_PERF_DEBUG_LEVEL' in os.environ else 2
+        except ValueError:
+            print(f"warning: ignoring debug: environment variable CB_PERF_DEBUG_LEVEL should be a number")
+
+        self.debug_level = level if level else default_level
+
+        try:
+            if overwrite:
+                open(self.debug_file, 'w').close()
+
+            if self.debug_level == 0:
+                self._logger.setLevel(logging.DEBUG)
+            elif self.debug_level == 1:
+                self._logger.setLevel(logging.INFO)
+            elif self.debug_level == 2:
+                self._logger.setLevel(logging.ERROR)
+            else:
+                self._logger.setLevel(logging.CRITICAL)
+
+            self._logger.addHandler(self.handler)
+            self.debug = True
+        except Exception as err:
+            print(f"warning: can not initialize logging: {err}")
 
     @property
     def do_debug(self):
