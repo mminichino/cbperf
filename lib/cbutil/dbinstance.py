@@ -69,6 +69,12 @@ class db_instance(object):
         self.collections_s = {}
         self.collections_a = {}
 
+    def drop_collection(self, name):
+        if name in self.collections_s:
+            del self.collections_s[name]
+        if name in self.collections_a:
+            del self.collections_a[name]
+
     @property
     def cluster_s(self):
         return self.cluster_obj_s

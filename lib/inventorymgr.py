@@ -157,7 +157,7 @@ class inventoryManager(object):
             r.prepareTemplate(document)
             doc_template = r.processTemplate()
             doc_template[key] = 1
-            size = sys.getsizeof(json.dumps(doc_template))
+            size = len(json.dumps(doc_template))
             return size
         except Exception as err:
             raise InventoryConfigError(f"can not process document template: {err}")

@@ -228,6 +228,7 @@ class test_exec(cbPerfBase):
 
         debugger = cb_debug(self.__class__.__name__)
         self.logger = debugger.logger
+        self.throughput = None
         if self.parameters.user:
             self.username = self.parameters.user
         if self.parameters.password:
@@ -327,6 +328,27 @@ class test_exec(cbPerfBase):
         else:
             return False
 
+    def format_bytes(self, value):
+        labels = ["Bytes", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"]
+        value = round(value)
+        last_label = labels[-1]
+        unit = None
+
+        is_negative = value < 0
+        if is_negative:
+            value = abs(value)
+
+        for unit in labels:
+            if value < 1024:
+                break
+            if unit != last_label:
+                value /= 1024
+
+        value = round(value)
+        if value == 1024:
+            value = 1
+        return f"{value} {unit}"
+
     def run(self):
         for index, element in enumerate(self.get_next_task()):
             step = element[0]
@@ -342,6 +364,7 @@ class test_exec(cbPerfBase):
 
             if step == "load" and not self.skip_init:
                 self.test_init()
+                self.test_bandwidth()
 
             try:
                 if self.test_playbook == "ramp" and step != "load":
@@ -365,6 +388,61 @@ class test_exec(cbPerfBase):
             self.session_cache = db.session_cache
         except Exception as err:
             raise TestExecError(f"can not initialize db connection: {err}")
+
+    def test_bandwidth(self):
+        key = 1
+        max_passes = 5
+        r = randomize()
+        test_a = {}
+        total_throughput = 0
+
+        collection = self.collection_list[0]
+
+        try:
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
+            db.connect_s()
+            db.bucket_s(collection.bucket)
+            db.scope_s('_default')
+            db.create_collection('bandwidth')
+        except Exception as err:
+            raise TestExecError(f"bandwidth test: can not connect to cluster: {err}")
+
+        print("Calculating network bandwidth (this may take a minute)")
+
+        for i in range(max_passes):
+            doc_size = 1024
+            last_value = 0
+            while True:
+                test_a['data1'] = r._randomHash(doc_size)
+                data_size = len(json.dumps(test_a))
+                db.cb_upsert_s(key, test_a, name='bandwidth')
+                begin_time = time.time()
+                db.cb_get_s(key, name='bandwidth')
+                end_time = time.time()
+                time_diff = end_time - begin_time
+
+                throughput = data_size / time_diff
+                doc_size = doc_size * 2
+
+                diff_factor = last_value / throughput
+
+                if diff_factor >= .9:
+                    total_throughput += throughput
+                    break
+                else:
+                    last_value = throughput
+
+        average_throughput = round(total_throughput / max_passes)
+        print(f"[i] Calculated bandwidth: {self.format_bytes(average_throughput)}/s")
+
+        try:
+            db.drop_collection('bandwidth')
+            db.disconnect()
+        except Exception as err:
+            raise TestExecError(f"bandwidth test: can not disconnect from collection: {err}")
+
+        self.throughput = average_throughput
+        self.logger.debug(f"calculated bandwidth as {self.format_bytes(average_throughput)}/s")
 
     def test_clean(self):
         if not self.session_cache:
@@ -674,6 +752,15 @@ class test_exec(cbPerfBase):
                 operation_count = coll_obj.record_count
             else:
                 operation_count = self.record_count
+
+            print(f"Collection document size: {self.format_bytes(coll_obj.size)}")
+            if coll_obj.size and self.throughput and mode == test_exec.KV_TEST:
+                total_data = coll_obj.size * self.run_threads
+                calc_batch_size = self.throughput / total_data
+                new_batch_size = round(calc_batch_size * .7)
+                if new_batch_size < self.default_kv_batch_size:
+                    coll_obj.batch_size = new_batch_size
+                    print(f"Adjusting batch size to bandwidth: new batch size = {coll_obj.batch_size}")
 
             status_thread = multiprocessing.Process(target=self.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
             status_thread.daemon = True

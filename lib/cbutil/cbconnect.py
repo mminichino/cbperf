@@ -256,6 +256,19 @@ class cb_connect(cb_session):
 
         self.collection_s(name)
 
+    @retry(always_raise_list=(CollectionNotFoundException,),
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+    def drop_collection(self, name):
+        try:
+            collection_spec = CollectionSpec(name, scope_name=self.db.scope_name)
+            collection_object = self.db.cm_s.drop_collection(collection_spec)
+        except CollectionNotFoundException:
+            pass
+        except Exception as err:
+            raise CollectionRemoveError("can not drop collection {}: {}".format(name, err))
+
+        self.db.drop_collection(name)
+
     def collection_count(self, name="_default"):
         try:
             keyspace = self.db.keyspace_s(name)
