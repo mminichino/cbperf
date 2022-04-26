@@ -406,8 +406,7 @@ class cb_connect(cb_session):
         try:
             contents = []
             query = self.query_sql_constructor(field, name, where, value, sql)
-            result = self.db.cluster_s.query(query, QueryOptions(metrics=False, adhoc=True, pipeline_batch=128,
-                                                                 max_parallelism=4, pipeline_cap=1024, scan_cap=1024))
+            result = self.db.cluster_s.query(query, QueryOptions(metrics=False, adhoc=True))
             for item in result:
                 contents.append(item)
             return contents
@@ -427,8 +426,7 @@ class cb_connect(cb_session):
         try:
             contents = []
             query = self.query_sql_constructor(field, name, where, value, sql)
-            result = self.db.cluster_a.query(query, QueryOptions(metrics=False, adhoc=True, pipeline_batch=128,
-                                                                 max_parallelism=4, pipeline_cap=1024, scan_cap=1024))
+            result = self.db.cluster_a.query(query, QueryOptions(metrics=False, adhoc=True))
             async for item in result:
                 contents.append(item)
             return contents
