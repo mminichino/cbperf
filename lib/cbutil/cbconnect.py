@@ -51,7 +51,8 @@ class cb_connect(cb_session):
     def unhandled_exception(self, loop, context):
         err = context.get("exception", None)
         if err:
-            self.logger.error(f"unhandled exception: type: {type(err)} msg: {err} cause: {err.__cause__} trace: {traceback.print_tb(err.__traceback__)}")
+            filename, lineno, func_name, line = traceback.extract_tb(err.__traceback__)[-1]
+            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__} trace: {filename}:{lineno}, in {func_name} {line}")
         else:
             self.logger.error(f"unhandled error: {context['message']}")
 
