@@ -367,10 +367,11 @@ class test_exec(cbPerfBase):
                 self.test_bandwidth()
 
             try:
+                read_p = 100 - write_p
                 if self.test_playbook == "ramp" and step != "load":
-                    self.ramp_launch(write_p=write_p, mode=test_type)
+                    self.ramp_launch(read_p=read_p, write_p=write_p, mode=test_type)
                 else:
-                    self.test_launch(write_p=write_p, mode=test_type)
+                    self.test_launch(read_p=read_p, write_p=write_p, mode=test_type)
             except Exception as err:
                 self.logger.error(f"test launch error: {err}")
 
@@ -725,7 +726,7 @@ class test_exec(cbPerfBase):
         print(f"{avg_time:.6f} average time")
         print(f"{max_time:.6f} maximum time")
 
-    def test_launch(self, read_p=0, write_p=100, mode=KV_TEST):
+    def test_launch(self, read_p=100, write_p=0, mode=KV_TEST):
         if not self.collection_list:
             raise TestRunError("test not initialized")
 
@@ -976,7 +977,7 @@ class test_exec(cbPerfBase):
             return
 
         status_vector[3] += 1
-        self.logger.info(f"test_thread_{n:03d}: commencing run")
+        self.logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size}")
         while True:
             try:
                 tasks.clear()
