@@ -49,14 +49,13 @@ class cb_connect(cb_session):
             return key
 
     def unhandled_exception(self, loop, context):
-        err = context.get("exception", None)
-        if err:
-            filename, lineno, func_name, line = traceback.extract_tb(err.__traceback__)[-1]
-            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__} trace: {filename}:{lineno}, in {func_name} {line}")
+        err = context.get("exception", context['message'])
+        if isinstance(err, Exception):
+            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
         else:
-            self.logger.error(f"unhandled error: {context['message']}")
+            self.logger.error(f"unhandled error: {err}")
 
-    @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException, InternalSDKException))
+    @retry(retry_count=10)
     async def connect(self):
         try:
             cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
@@ -74,7 +73,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException("cluster connect general error: {}".format(err))
 
-    @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException, InternalSDKException))
+    @retry(retry_count=10)
     def connect_s(self):
         try:
             loop = asyncio.get_event_loop()
@@ -88,43 +87,39 @@ class cb_connect(cb_session):
         self.db.cluster_s.disconnect()
         self.db.cluster_a.disconnect()
 
-    @retry(always_raise_list=(BucketNotFoundException,),
-           retry_count=10,
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, InternalSDKException))
+    @retry(always_raise_list=(BucketNotFoundException,), retry_count=10)
     async def bucket(self, name):
         bucket_s = self.db.cluster_s.bucket(name)
         bucket_a = self.db.cluster_a.bucket(name)
         await bucket_a.on_connect()
         self.db.set_bucket(name, bucket_s, bucket_a)
 
-    @retry(always_raise_list=(BucketNotFoundException,),
-           retry_count=10,
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, InternalSDKException))
+    @retry(always_raise_list=(BucketNotFoundException,), retry_count=10)
     def bucket_s(self, name):
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(self.unhandled_exception)
         loop.run_until_complete(self.bucket(name))
 
-    @retry(always_raise_list=(ScopeNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, InternalSDKException))
+    @retry(always_raise_list=(ScopeNotFoundException,), retry_count=10)
     async def scope(self, name="_default"):
         scope_s = self.db.bucket_s.scope(name)
         scope_a = self.db.bucket_a.scope(name)
         self.db.set_scope(name, scope_s, scope_a)
 
+    @retry(always_raise_list=(ScopeNotFoundException,), retry_count=10)
     def scope_s(self, name="_default"):
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(self.unhandled_exception)
         loop.run_until_complete(self.scope(name))
 
-    @retry(always_raise_list=(CollectionNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, InternalSDKException))
+    @retry(always_raise_list=(CollectionNotFoundException,), retry_count=10)
     async def collection(self, name="_default"):
         collection_s = self.db.scope_s.collection(name)
         collection_a = self.db.scope_a.collection(name)
         await collection_a.on_connect()
         self.db.add_collection(name, collection_s, collection_a)
 
+    @retry(always_raise_list=(CollectionNotFoundException,), retry_count=10)
     def collection_s(self, name="_default"):
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(self.unhandled_exception)
@@ -152,24 +147,21 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException(f"quick connect error: {err}")
 
-    @retry(always_raise_list=(BucketDoesNotExistException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+    @retry(always_raise_list=(BucketDoesNotExistException,), retry_count=10)
     def is_bucket(self, name):
         try:
             return self.db.bm.get_bucket(name)
         except BucketDoesNotExistException:
             return None
 
-    @retry(always_raise_list=(AttributeError,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+    @retry(always_raise_list=(AttributeError,), retry_count=10)
     def is_scope(self, scope):
         try:
             return next((s for s in self.db.cm_s.get_all_scopes() if s.name == scope), None)
         except AttributeError:
             return None
 
-    @retry(always_raise_list=(AttributeError,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+    @retry(always_raise_list=(AttributeError,), retry_count=10)
     def is_collection(self, collection):
         try:
             scope_spec = next((s for s in self.db.cm_s.get_all_scopes() if s.name == self.db.scope_name), None)
@@ -179,23 +171,22 @@ class cb_connect(cb_session):
         except AttributeError:
             return None
 
-    @retry(retry_count=10, allow_list=(CollectionWaitException,))
+    @retry(retry_count=10)
     def collection_wait(self, collection):
         if not self.is_collection(collection):
             raise CollectionWaitException(f"waiting: collection {collection} does not exist")
 
-    @retry(retry_count=10, allow_list=(ScopeWaitException,))
+    @retry(retry_count=10)
     def scope_wait(self, scope):
         if not self.is_scope(scope):
             raise ScopeWaitException(f"waiting: scope {scope} does not exist")
 
-    @retry(retry_count=10, allow_list=(BucketWaitException,))
+    @retry(retry_count=10)
     def bucket_wait(self, bucket):
         if not self.is_bucket(bucket):
             raise BucketWaitException(f"waiting: bucket {bucket} does not exist")
 
-    @retry(always_raise_list=(BucketAlreadyExistsException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+    @retry(always_raise_list=(BucketAlreadyExistsException,), retry_count=10)
     def create_bucket(self, name, quota=256):
         try:
             if self.capella_target:
@@ -214,8 +205,7 @@ class cb_connect(cb_session):
 
         self.bucket_s(name)
 
-    @retry(always_raise_list=(BucketNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, HTTPException))
+    @retry(always_raise_list=(BucketNotFoundException,), retry_count=10)
     def drop_bucket(self, name):
         try:
             if self.capella_target:
@@ -233,8 +223,7 @@ class cb_connect(cb_session):
 
         self.db.drop_bucket()
 
-    @retry(always_raise_list=(ScopeAlreadyExistsException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+    @retry(always_raise_list=(ScopeAlreadyExistsException,), retry_count=10)
     def create_scope(self, name):
         try:
             self.db.cm_s.create_scope(name)
@@ -245,8 +234,7 @@ class cb_connect(cb_session):
 
         self.scope_s(name)
 
-    @retry(always_raise_list=(CollectionAlreadyExistsException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+    @retry(always_raise_list=(CollectionAlreadyExistsException,), retry_count=10)
     def create_collection(self, name):
         try:
             collection_spec = CollectionSpec(name, scope_name=self.db.scope_name)
@@ -258,8 +246,7 @@ class cb_connect(cb_session):
 
         self.collection_s(name)
 
-    @retry(always_raise_list=(CollectionNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+    @retry(always_raise_list=(CollectionNotFoundException,), retry_count=10)
     def drop_collection(self, name):
         try:
             collection_spec = CollectionSpec(name, scope_name=self.db.scope_name)
@@ -271,6 +258,7 @@ class cb_connect(cb_session):
 
         self.db.drop_collection(name)
 
+    @retry(retry_count=10)
     def collection_count(self, name="_default"):
         try:
             keyspace = self.db.keyspace_s(name)
@@ -280,9 +268,7 @@ class cb_connect(cb_session):
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
-    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
-           retry_count=10,
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, CollectionGetError))
+    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10)
     def cb_get_s(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -295,9 +281,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
-           retry_count=10,
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, CollectionGetError))
+    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10)
     async def cb_get_a(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -310,9 +294,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound),
-           retry_count=10,
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, CollectionUpsertError))
+    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10)
     def cb_upsert_s(self, key, document, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -326,9 +308,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionUpsertError("can not upsert {} into {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound),
-           retry_count=10,
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, CollectionUpsertError))
+    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10)
     async def cb_upsert_a(self, key, document, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -382,8 +362,7 @@ class cb_connect(cb_session):
             if isinstance(result, Exception):
                 raise result
 
-    @retry(always_raise_list=(CollectionNameNotFound,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def cb_subdoc_get_s(self, key, field, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -395,8 +374,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionSubdocGetError("can not get {} from {}: {}".format(key, field, err))
 
-    @retry(always_raise_list=(CollectionNameNotFound,),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     async def cb_subdoc_get_a(self, key, field, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -422,8 +400,7 @@ class cb_connect(cb_session):
 
         return query
 
-    @retry(always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError),
-           allow_list=(CouchbaseTransientException, ProtocolException, TransientError, TimeoutException, InternalSDKException))
+    @retry(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None):
         query = ""
         try:
@@ -444,8 +421,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
-    @retry(always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError),
-           allow_list=(CouchbaseTransientException, ProtocolException, TransientError, TimeoutException, InternalSDKException))
+    @retry(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None):
         query = ""
         try:
@@ -466,8 +442,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
-    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+    @retry(retry_count=10, always_raise_list=(DocumentNotFoundException, CollectionNameNotFound))
     def cb_remove_s(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -480,8 +455,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionRemoveError("can not remove {} from {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound),
-           allow_list=(CouchbaseTransientException, ProtocolException))
+    @retry(retry_count=10, always_raise_list=(DocumentNotFoundException, CollectionNameNotFound))
     async def cb_remove_a(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
