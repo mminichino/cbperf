@@ -977,7 +977,7 @@ class test_exec(cbPerfBase):
             return
 
         status_vector[3] += 1
-        self.logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size}")
+        self.logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size} mode {mode}")
         while True:
             try:
                 tasks.clear()
