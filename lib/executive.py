@@ -554,6 +554,10 @@ class test_exec(cbPerfBase):
 
         try:
             loop.run_until_complete(db.connect_a())
+        except Exception as err:
+            raise RulesError(f"link: can not connect to database: {err}")
+
+        try:
             loop.run_until_complete(db.bucket_a(primary_bucket))
             loop.run_until_complete(db.scope_a(primary_scope))
             loop.run_until_complete(db.collection_a(foreign_collection))
