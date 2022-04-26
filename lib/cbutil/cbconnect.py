@@ -49,8 +49,11 @@ class cb_connect(cb_session):
             return key
 
     def unhandled_exception(self, loop, context):
-        err = context.get("exception", context["message"])
-        self.logger.error(f"unhandled exception: {err}")
+        err = context.get("exception", None)
+        if err:
+            self.logger.error(f"unhandled exception: {type(err)} {err} {err.__cause__} {err.__traceback__}")
+        else:
+            self.logger.error(f"unhandled error: {context['message']}")
 
     @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException))
     async def connect(self):
