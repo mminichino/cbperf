@@ -539,7 +539,7 @@ class test_exec(cbPerfBase):
         primary_key_list = []
         end_char = '\r'
 
-        self.logger.info("running link rule")
+        self.logger.info("run_link_rule: startup")
         db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
 
         if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:

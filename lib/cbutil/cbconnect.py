@@ -55,11 +55,16 @@ class cb_connect(cb_session):
 
     @retry_a(factor=0.5, retry_count=10)
     async def connect_a(self):
+        tasks = []
         try:
             cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
-            await cluster_a.on_connect()
+            tasks.append(asyncio.create_task(cluster_a.on_connect()))
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    raise result
             self.db.set_cluster_a(cluster_a)
-            return True
+            return results
         except SystemError as err:
             if isinstance(err.__cause__, HTTPException):
                 raise ClusterConnectException("cluster connect HTTP error: {}".format(err.__cause__))
