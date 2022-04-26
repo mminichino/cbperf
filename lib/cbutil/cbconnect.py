@@ -11,6 +11,7 @@ from couchbase.options import LOCKMODE_NONE
 import couchbase
 import acouchbase.cluster
 from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions
+from couchbase.collection import UpsertOptions, GetOptions
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.auth import PasswordAuthenticator
@@ -31,7 +32,7 @@ class cb_connect(cb_session):
         super().__init__(*args, **kwargs)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.auth = PasswordAuthenticator(self.username, self.password)
-        self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=240), kv_timeout=timedelta(seconds=240))
+        self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=360), kv_timeout=timedelta(seconds=360))
         self.db = db_instance()
         self.debugger = cb_debug(self.__class__.__name__)
         self.debug = self.debugger.do_debug
@@ -278,12 +279,13 @@ class cb_connect(cb_session):
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
-    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10)
+    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10, factor=0.5)
     def cb_get_s(self, key, name="_default"):
+        options = GetOptions(timeout=timedelta(seconds=15))
         try:
             document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
-            return collection.get(document_id)
+            return collection.get(document_id, options)
         except DocumentNotFoundException:
             return None
         except CollectionNameNotFound:
@@ -291,12 +293,13 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
-    @retry_a(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10)
+    @retry_a(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10, factor=0.5)
     async def cb_get_a(self, key, name="_default"):
+        options = GetOptions(timeout=timedelta(seconds=15))
         try:
             document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
-            return await collection.get(document_id)
+            return await collection.get(document_id, options)
         except DocumentNotFoundException:
             return None
         except CollectionNameNotFound:
@@ -304,12 +307,13 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10)
+    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10, factor=0.5)
     def cb_upsert_s(self, key, document, name="_default"):
+        options = UpsertOptions(timeout=timedelta(seconds=15))
         try:
             document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
-            result = collection.upsert(document_id, document)
+            result = collection.upsert(document_id, document, options)
             return result
         except DocumentExistsException:
             return None
@@ -318,12 +322,13 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionUpsertError("can not upsert {} into {}: {}".format(key, name, err))
 
-    @retry_a(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10)
+    @retry_a(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10, factor=0.5)
     async def cb_upsert_a(self, key, document, name="_default"):
+        options = UpsertOptions(timeout=timedelta(seconds=15))
         try:
             document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
-            result = await collection.upsert(document_id, document)
+            result = await collection.upsert(document_id, document, options)
             return result
         except DocumentExistsException:
             return None
