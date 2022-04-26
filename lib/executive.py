@@ -986,6 +986,8 @@ class test_exec(cbPerfBase):
 
         status_vector[3] += 1
         self.logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size} mode {mode}")
+        if mode == test_exec.QUERY_TEST:
+            self.logger.debug(f"test_thread_{n:03d}: query {query_field} where {id_field} is record number")
         while True:
             try:
                 tasks.clear()
@@ -1089,12 +1091,10 @@ class test_exec(cbPerfBase):
             status_vector[0] = 1
             status_vector[2] += 1
             self.logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
-            db.disconnect()
             return
 
         if status_vector[0] == 1:
             self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
-            db.disconnect()
             return
 
         status_vector[3] += 1
@@ -1131,8 +1131,7 @@ class test_exec(cbPerfBase):
                 status_vector[0] = 1
                 status_vector[2] += 1
                 self.logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {err}")
-                db.disconnect()
-                return
+                break
             if len(tasks) > 0:
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
@@ -1144,9 +1143,6 @@ class test_exec(cbPerfBase):
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
                     self.logger.info(f"test_thread_{n:03d}: max latency exceeded")
-                    db.disconnect()
-                    return
+                    break
             else:
                 break
-
-        db.disconnect()
