@@ -18,7 +18,7 @@ from couchbase.auth import PasswordAuthenticator
 import couchbase.subdocument as SD
 from couchbase.exceptions import (CASMismatchException, CouchbaseException, CouchbaseTransientException,
                                   DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
-                                  BucketAlreadyExistsException, QueryErrorContext, HTTPException,
+                                  BucketAlreadyExistsException, QueryErrorContext, HTTPException, InternalSDKException,
                                   BucketNotFoundException, TimeoutException, QueryException, ScopeNotFoundException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException, ProtocolException, ObjectDestroyedException)
@@ -56,7 +56,7 @@ class cb_connect(cb_session):
         else:
             self.logger.error(f"unhandled error: {context['message']}")
 
-    @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException))
+    @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException, InternalSDKException))
     async def connect(self):
         try:
             cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
@@ -74,7 +74,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException("cluster connect general error: {}".format(err))
 
-    @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException))
+    @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException, InternalSDKException))
     def connect_s(self):
         try:
             loop = asyncio.get_event_loop()
@@ -90,7 +90,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(BucketNotFoundException,),
            retry_count=10,
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, InternalSDKException))
     async def bucket(self, name):
         bucket_s = self.db.cluster_s.bucket(name)
         bucket_a = self.db.cluster_a.bucket(name)
@@ -99,14 +99,14 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(BucketNotFoundException,),
            retry_count=10,
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, InternalSDKException))
     def bucket_s(self, name):
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(self.unhandled_exception)
         loop.run_until_complete(self.bucket(name))
 
     @retry(always_raise_list=(ScopeNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, InternalSDKException))
     async def scope(self, name="_default"):
         scope_s = self.db.bucket_s.scope(name)
         scope_a = self.db.bucket_a.scope(name)
@@ -118,7 +118,7 @@ class cb_connect(cb_session):
         loop.run_until_complete(self.scope(name))
 
     @retry(always_raise_list=(CollectionNotFoundException,),
-           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TimeoutException, InternalSDKException))
     async def collection(self, name="_default"):
         collection_s = self.db.scope_s.collection(name)
         collection_a = self.db.scope_a.collection(name)
