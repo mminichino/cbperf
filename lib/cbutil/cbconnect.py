@@ -24,7 +24,7 @@ from couchbase.exceptions import (CASMismatchException, CouchbaseException, Couc
                                   CollectionNotFoundException, ProtocolException, ObjectDestroyedException)
 import logging
 import asyncio
-import json
+import traceback
 
 
 class cb_connect(cb_session):
@@ -51,7 +51,7 @@ class cb_connect(cb_session):
     def unhandled_exception(self, loop, context):
         err = context.get("exception", None)
         if err:
-            self.logger.error(f"unhandled exception: {type(err)} {err} {err.__cause__} {err.__traceback__}")
+            self.logger.error(f"unhandled exception: type: {type(err)} msg: {err} cause: {err.__cause__} trace: {traceback.print_tb(err.__traceback__)}")
         else:
             self.logger.error(f"unhandled error: {context['message']}")
 
