@@ -726,6 +726,22 @@ class test_exec(cbPerfBase):
         print(f"{avg_time:.6f} average time")
         print(f"{max_time:.6f} maximum time")
 
+    def calc_batch_size(self, collection, mode):
+        if mode == test_exec.KV_TEST:
+            if collection.size and self.throughput:
+                total_data = collection.size * self.run_threads
+                calc_batch_size = self.throughput / total_data
+                new_batch_size = round(calc_batch_size * .7)
+                if new_batch_size < self.default_kv_batch_size:
+                    print(f"Adjusting batch size due to bandwidth")
+                    return new_batch_size
+                else:
+                    return self.default_kv_batch_size
+        elif mode == test_exec.QUERY_TEST:
+            return self.default_query_batch_size
+        else:
+            return 1
+
     def test_launch(self, read_p=100, write_p=0, mode=KV_TEST):
         if not self.collection_list:
             raise TestRunError("test not initialized")
@@ -754,14 +770,9 @@ class test_exec(cbPerfBase):
             else:
                 operation_count = self.record_count
 
-            print(f"Collection document size: {self.format_bytes(coll_obj.size)}")
-            if coll_obj.size and self.throughput and mode == test_exec.KV_TEST:
-                total_data = coll_obj.size * self.run_threads
-                calc_batch_size = self.throughput / total_data
-                new_batch_size = round(calc_batch_size * .7)
-                if new_batch_size < self.default_kv_batch_size:
-                    coll_obj.batch_size = new_batch_size
-                    print(f"Adjusting batch size to bandwidth: new batch size = {coll_obj.batch_size}")
+            print(f"Collection {coll_obj.name} document size: {self.format_bytes(coll_obj.size)}")
+            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode)
+            print(f"Collection {coll_obj.name} mode {mode_text} batch size: {coll_obj.batch_size}")
 
             status_thread = multiprocessing.Process(target=self.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
             status_thread.daemon = True
