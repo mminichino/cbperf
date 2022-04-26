@@ -17,7 +17,7 @@ import os
 import numpy as np
 import asyncio
 import time
-import psutil
+import traceback
 import signal
 
 VERSION = '1.0'
@@ -923,8 +923,12 @@ class test_exec(cbPerfBase):
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
     def unhandled_exception(self, loop, context):
-        err = context.get("exception", context["message"])
-        self.logger.error(f"async test unhandled error: {err}")
+        err = context.get("exception", None)
+        if err:
+            filename, lineno, func_name, line = traceback.extract_tb(err.__traceback__)[-1]
+            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__} trace: {filename}:{lineno}, in {func_name} {line}")
+        else:
+            self.logger.error(f"unhandled error: {context['message']}")
 
     def test_run_a(self, *args, **kwargs):
         loop = asyncio.get_event_loop()
