@@ -934,7 +934,6 @@ class test_exec(cbPerfBase):
         loop.set_exception_handler(self.unhandled_exception)
         try:
             loop.run_until_complete(self.async_test_run(*args, **kwargs))
-            loop.close()
         except Exception as err:
             self.logger.error(f"async test process error: {err}")
 
