@@ -553,6 +553,7 @@ class test_exec(cbPerfBase):
             raise RulesError("cross scope linking is not supported")
 
         try:
+            self.logger.debug("run_link_rule: connecting to database")
             loop.run_until_complete(db.connect_a())
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")

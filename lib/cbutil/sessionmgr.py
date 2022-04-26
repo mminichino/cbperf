@@ -278,9 +278,9 @@ class cb_session(object):
     @property
     def cb_parameters(self):
         if self.ssl:
-            return "?ssl=no_verify&config_total_timeout=30&config_node_timeout=15&network=" + self.cb_network
+            return "?ssl=no_verify&network=" + self.cb_network
         else:
-            return "?config_total_timeout=30&config_node_timeout=15&network=" + self.cb_network
+            return "?network=" + self.cb_network
 
     @property
     def cb_connect_string(self):
