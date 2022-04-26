@@ -53,7 +53,7 @@ class cb_connect(cb_session):
         else:
             self.logger.error(f"unhandled error: {err}")
 
-    @retry_a(retry_count=10)
+    @retry_a(factor=0.5, retry_count=10)
     async def connect_a(self):
         try:
             cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
@@ -70,7 +70,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException("cluster connect general error: {}".format(err))
 
-    @retry(retry_count=10)
+    @retry(factor=0.5, retry_count=10)
     def connect_s(self):
         try:
             cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
@@ -92,13 +92,13 @@ class cb_connect(cb_session):
     def disconnect_s(self):
         self.db.cluster_s.disconnect()
 
-    @retry_a(always_raise_list=(BucketNotFoundException,), retry_count=10)
+    @retry_a(always_raise_list=(BucketNotFoundException,), retry_count=10, factor=0.5)
     async def bucket_a(self, name):
         bucket_a = self.db.cluster_a.bucket(name)
         await bucket_a.on_connect()
         self.db.set_bucket_a(name, bucket_a)
 
-    @retry(always_raise_list=(BucketNotFoundException,), retry_count=10)
+    @retry(always_raise_list=(BucketNotFoundException,), retry_count=10, factor=0.5)
     def bucket_s(self, name):
         bucket_s = self.db.cluster_s.bucket(name)
         self.db.set_bucket_s(name, bucket_s)
