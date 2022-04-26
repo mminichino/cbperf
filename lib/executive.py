@@ -535,9 +535,11 @@ class test_exec(cbPerfBase):
 
     def run_link_rule(self, foreign_keyspace, primary_keyspace):
         loop = asyncio.get_event_loop()
+        loop.set_exception_handler(self.test_unhandled_exception)
         primary_key_list = []
         end_char = '\r'
 
+        self.logger.info("running link rule")
         db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
 
         if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:
