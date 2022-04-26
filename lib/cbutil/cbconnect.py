@@ -423,7 +423,7 @@ class cb_connect(cb_session):
         return query
 
     @retry(always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError),
-           allow_list=(CouchbaseTransientException, ProtocolException, TransientError, TimeoutException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TransientError, TimeoutException, InternalSDKException))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None):
         query = ""
         try:
@@ -445,7 +445,7 @@ class cb_connect(cb_session):
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
     @retry(always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError),
-           allow_list=(CouchbaseTransientException, ProtocolException, TransientError, TimeoutException))
+           allow_list=(CouchbaseTransientException, ProtocolException, TransientError, TimeoutException, InternalSDKException))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None):
         query = ""
         try:
