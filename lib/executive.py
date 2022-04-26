@@ -922,7 +922,7 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
-    def unhandled_exception(self, loop, context):
+    def test_unhandled_exception(self, loop, context):
         err = context.get("exception", context['message'])
         if isinstance(err, Exception):
             self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
@@ -931,7 +931,7 @@ class test_exec(cbPerfBase):
 
     def test_run_a(self, *args, **kwargs):
         loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.unhandled_exception)
+        loop.set_exception_handler(self.test_unhandled_exception)
         try:
             loop.run_until_complete(self.async_test_run(*args, **kwargs))
         except Exception as err:
