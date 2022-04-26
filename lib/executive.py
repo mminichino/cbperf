@@ -973,7 +973,7 @@ class test_exec(cbPerfBase):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.info(f"test_thread_{n:03d}: db connection error: {err}")
+            logger.error(f"test_thread_{n:03d}: db connection error: {err}")
             return
 
         try:
@@ -982,7 +982,7 @@ class test_exec(cbPerfBase):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
+            logger.error(f"test_thread_{n:03d}: randomizer error: {err}")
             return
 
         if status_vector[0] == 1:
@@ -1020,7 +1020,7 @@ class test_exec(cbPerfBase):
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
-                logger.info(f"test_thread_{n:03d}: execution error: {err}")
+                logger.error(f"test_thread_{n:03d}: execution error: {err}")
             if len(tasks) > 0:
                 await asyncio.sleep(0)
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1028,7 +1028,7 @@ class test_exec(cbPerfBase):
                     if isinstance(result, Exception):
                         status_vector[0] = 1
                         status_vector[2] += 1
-                        logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
+                        logger.error(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
                 if status_vector[0] == 1:
                     await asyncio.sleep(0)
                     break
@@ -1041,7 +1041,7 @@ class test_exec(cbPerfBase):
                 telemetry_queue.put(telemetry_packet)
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
-                    logger.info(f"test_thread_{n:03d}: max latency exceeded")
+                    logger.error(f"test_thread_{n:03d}: max latency exceeded")
                     break
             else:
                 break
