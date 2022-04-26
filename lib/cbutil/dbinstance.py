@@ -31,6 +31,7 @@ class db_instance(object):
 
     def set_cluster_a(self, cluster_a):
         self.cluster_obj_a = cluster_a
+        self.qim_obj = QueryIndexManager(cluster_a)
 
     def set_cluster_s(self, cluster_s):
         self.cluster_obj_s = cluster_s

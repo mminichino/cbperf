@@ -20,6 +20,12 @@ class cb_debug(object):
         self.debug = False
         default_level = 3
 
+        if overwrite:
+            try:
+                open(self.debug_file, 'w').close()
+            except Exception as err:
+                print(f"warning: can not clear log file {self.debug_file}: {err}")
+
         try:
             default_level = int(os.environ['CB_PERF_DEBUG_LEVEL']) if 'CB_PERF_DEBUG_LEVEL' in os.environ else 2
         except ValueError:

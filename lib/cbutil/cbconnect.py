@@ -3,7 +3,7 @@
 
 from .sessionmgr import cb_session
 from .exceptions import *
-from .retries import retry
+from .retries import retry, retry_a
 from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from datetime import timedelta
@@ -53,7 +53,7 @@ class cb_connect(cb_session):
         else:
             self.logger.error(f"unhandled error: {err}")
 
-    @retry(retry_count=10)
+    @retry_a(retry_count=10)
     async def connect_a(self):
         try:
             cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
@@ -92,7 +92,7 @@ class cb_connect(cb_session):
     def disconnect_s(self):
         self.db.cluster_s.disconnect()
 
-    @retry(always_raise_list=(BucketNotFoundException,), retry_count=10)
+    @retry_a(always_raise_list=(BucketNotFoundException,), retry_count=10)
     async def bucket_a(self, name):
         bucket_a = self.db.cluster_a.bucket(name)
         await bucket_a.on_connect()
@@ -103,7 +103,7 @@ class cb_connect(cb_session):
         bucket_s = self.db.cluster_s.bucket(name)
         self.db.set_bucket_s(name, bucket_s)
 
-    @retry(always_raise_list=(ScopeNotFoundException,), retry_count=10)
+    @retry_a(always_raise_list=(ScopeNotFoundException,), retry_count=10)
     async def scope_a(self, name="_default"):
         scope_a = self.db.bucket_a.scope(name)
         self.db.set_scope_a(name, scope_a)
@@ -113,7 +113,7 @@ class cb_connect(cb_session):
         scope_s = self.db.bucket_s.scope(name)
         self.db.set_scope_s(name, scope_s)
 
-    @retry(always_raise_list=(CollectionNotFoundException,), retry_count=10)
+    @retry_a(always_raise_list=(CollectionNotFoundException,), retry_count=10)
     async def collection_a(self, name="_default"):
         collection_a = self.db.scope_a.collection(name)
         await collection_a.on_connect()
@@ -124,7 +124,7 @@ class cb_connect(cb_session):
         collection_s = self.db.scope_s.collection(name)
         self.db.add_collection_s(name, collection_s)
 
-    @retry(retry_count=10)
+    @retry_a(retry_count=10)
     async def quick_connect_a(self, bucket, scope, collection):
         try:
             await self.connect_a()
@@ -267,7 +267,7 @@ class cb_connect(cb_session):
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
-    @retry(retry_count=10)
+    @retry_a(retry_count=10)
     async def collection_count_a(self, name="_default"):
         try:
             keyspace = self.db.keyspace_a(name)
@@ -290,7 +290,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10)
+    @retry_a(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10)
     async def cb_get_a(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -317,7 +317,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionUpsertError("can not upsert {} into {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10)
+    @retry_a(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10)
     async def cb_upsert_a(self, key, document, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -343,7 +343,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionSubdocUpsertError("can not update {} in {}: {}".format(key, field, err))
 
-    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    @retry_a(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     async def cb_subdoc_upsert_a(self, key, field, value, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -363,7 +363,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionSubdocUpsertError(f"multi upsert error: {err}")
 
-    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    @retry_a(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     async def cb_subdoc_multi_upsert_a(self, key_list, field, value_list, name="_default"):
         tasks = []
         for n in range(len(key_list)):
@@ -385,7 +385,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionSubdocGetError("can not get {} from {}: {}".format(key, field, err))
 
-    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    @retry_a(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     async def cb_subdoc_get_a(self, key, field, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -425,7 +425,7 @@ class cb_connect(cb_session):
 
         return query
 
-    @retry(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError))
+    @retry(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None):
         query = ""
         try:
@@ -445,7 +445,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
-    @retry(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError))
+    @retry_a(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None):
         query = ""
         try:
@@ -478,7 +478,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionRemoveError("can not remove {} from {}: {}".format(key, name, err))
 
-    @retry(retry_count=10, always_raise_list=(DocumentNotFoundException, CollectionNameNotFound))
+    @retry_a(retry_count=10, always_raise_list=(DocumentNotFoundException, CollectionNameNotFound))
     async def cb_remove_a(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)

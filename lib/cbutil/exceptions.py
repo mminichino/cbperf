@@ -146,6 +146,10 @@ class IndexStatError(cbUtilError):
     pass
 
 
+class IndexConnectError(cbUtilError):
+    pass
+
+
 class IndexBucketError(cbUtilError):
     pass
 
