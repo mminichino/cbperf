@@ -281,7 +281,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10, factor=0.5)
     def cb_get_s(self, key, name="_default"):
-        options = GetOptions(timeout=timedelta(seconds=15))
+        options = GetOptions(timeout=timedelta(seconds=5))
         try:
             document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
@@ -295,7 +295,7 @@ class cb_connect(cb_session):
 
     @retry_a(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10, factor=0.5)
     async def cb_get_a(self, key, name="_default"):
-        options = GetOptions(timeout=timedelta(seconds=15))
+        options = GetOptions(timeout=timedelta(seconds=5))
         try:
             document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
@@ -309,7 +309,7 @@ class cb_connect(cb_session):
 
     @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10, factor=0.5)
     def cb_upsert_s(self, key, document, name="_default"):
-        options = UpsertOptions(timeout=timedelta(seconds=15))
+        options = UpsertOptions(timeout=timedelta(seconds=5))
         try:
             document_id = self.construct_key(key, name)
             collection = self.db.collection_s(name)
@@ -324,7 +324,7 @@ class cb_connect(cb_session):
 
     @retry_a(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10, factor=0.5)
     async def cb_upsert_a(self, key, document, name="_default"):
-        options = UpsertOptions(timeout=timedelta(seconds=15))
+        options = UpsertOptions(timeout=timedelta(seconds=5))
         try:
             document_id = self.construct_key(key, name)
             collection = self.db.collection_a(name)
