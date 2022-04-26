@@ -465,6 +465,7 @@ class test_exec(cbPerfBase):
 
     def test_init(self, bypass=False):
         loop = asyncio.get_event_loop()
+        loop.set_exception_handler(self.test_unhandled_exception)
         collection_list = []
         rule_list = []
         tasks = []
@@ -557,15 +558,17 @@ class test_exec(cbPerfBase):
         try:
             self.logger.debug("run_link_rule: connecting to database")
             loop.run_until_complete(db.connect_a())
+            self.logger.debug("run_link_rule: database connected")
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")
 
         try:
-            self.logger.debug("run_link_rule: connecting to collections")
+            self.logger.debug(f"run_link_rule: connecting to bucket and collections {foreign_collection} {primary_collection}")
             loop.run_until_complete(db.bucket_a(primary_bucket))
             loop.run_until_complete(db.scope_a(primary_scope))
             loop.run_until_complete(db.collection_a(foreign_collection))
             loop.run_until_complete(db.collection_a(primary_collection))
+            self.logger.debug(f"run_link_rule: bucket and collections connected")
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")
 

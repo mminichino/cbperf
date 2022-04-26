@@ -55,22 +55,12 @@ class cb_connect(cb_session):
 
     @retry_a(factor=0.5, retry_count=10)
     async def connect_a(self):
-        def callback(fut):
-            try:
-                result = fut.result()
-            except Exception as err:
-                raise ClusterConnectException(f"cluster connect error: {err}")
         try:
             cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
             result = await cluster_a.on_connect()
-            if type(result) == bool and result is True:
-                self.db.set_cluster_a(cluster_a)
-                return result
-            else:
-                if isinstance(result, Exception):
-                    raise result
-                else:
-                    raise ClusterConnectException("can not connect to cluster")
+            self.db.set_cluster_a(cluster_a)
+            self.logger.debug(f"connect_a: connected to db as {self.cb_connect_string}")
+            return result
         except SystemError as err:
             if isinstance(err.__cause__, HTTPException):
                 raise ClusterConnectException("cluster connect HTTP error: {}".format(err.__cause__))
