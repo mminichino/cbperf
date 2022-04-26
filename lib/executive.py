@@ -946,9 +946,11 @@ class test_exec(cbPerfBase):
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
         time_threshold = 5
+        debugger = cb_debug('async_test_run')
+        logger = debugger.logger
         begin_time = time.time()
 
-        self.logger.info(f"beginning test instance {n}")
+        logger.info(f"beginning test instance {n}")
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
@@ -961,17 +963,17 @@ class test_exec(cbPerfBase):
             run_batch_size = self.default_kv_batch_size
 
         if status_vector[0] == 1:
-            self.logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
+            logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
             return
 
         try:
-            self.logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
+            logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
             db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
             await db.quick_connect(coll_obj.bucket, coll_obj.scope, coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            self.logger.info(f"test_thread_{n:03d}: db connection error: {err}")
+            logger.info(f"test_thread_{n:03d}: db connection error: {err}")
             return
 
         try:
@@ -980,17 +982,17 @@ class test_exec(cbPerfBase):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            self.logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
+            logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
             return
 
         if status_vector[0] == 1:
-            self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
+            logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
             return
 
         status_vector[3] += 1
-        self.logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size} mode {mode}")
+        logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size} mode {mode}")
         if mode == test_exec.QUERY_TEST:
-            self.logger.debug(f"test_thread_{n:03d}: query {query_field} where {id_field} is record number")
+            logger.debug(f"test_thread_{n:03d}: query {query_field} where {id_field} is record number")
         while True:
             try:
                 tasks.clear()
@@ -1018,7 +1020,7 @@ class test_exec(cbPerfBase):
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
-                self.logger.info(f"test_thread_{n:03d}: execution error: {err}")
+                logger.info(f"test_thread_{n:03d}: execution error: {err}")
             if len(tasks) > 0:
                 await asyncio.sleep(0)
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1026,7 +1028,7 @@ class test_exec(cbPerfBase):
                     if isinstance(result, Exception):
                         status_vector[0] = 1
                         status_vector[2] += 1
-                        self.logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
+                        logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
                 if status_vector[0] == 1:
                     await asyncio.sleep(0)
                     break
@@ -1039,7 +1041,7 @@ class test_exec(cbPerfBase):
                 telemetry_queue.put(telemetry_packet)
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
-                    self.logger.info(f"test_thread_{n:03d}: max latency exceeded")
+                    logger.info(f"test_thread_{n:03d}: max latency exceeded")
                     break
             else:
                 break
