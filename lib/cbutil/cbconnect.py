@@ -38,8 +38,6 @@ class cb_connect(cb_session):
         self.debugger = cb_debug(self.__class__.__name__)
         self.debug = self.debugger.do_debug
         self.logger = self.debugger.logger
-        self.cluster_s = None
-        self.cluster_a = None
 
     def construct_key(self, key, collection):
         if type(key) == int or str(key).isdigit():
@@ -57,10 +55,10 @@ class cb_connect(cb_session):
     @retry(retry_count=10, allow_list=(ClusterConnectException, ObjectDestroyedException))
     async def connect(self):
         try:
-            self.cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
-            self.cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
-            await self.cluster_a.on_connect()
-            self.db.set_cluster(self.cluster_s, self.cluster_a)
+            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
+            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
+            await cluster_a.on_connect()
+            self.db.set_cluster(cluster_s, cluster_a)
             return True
         except SystemError as err:
             if isinstance(err.__cause__, HTTPException):

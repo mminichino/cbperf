@@ -438,9 +438,8 @@ class test_exec(cbPerfBase):
 
         try:
             db.drop_collection('bandwidth')
-            db.disconnect()
         except Exception as err:
-            raise TestExecError(f"bandwidth test: can not disconnect from collection: {err}")
+            raise TestExecError(f"bandwidth test: can not drop collection: {err}")
 
         self.throughput = average_throughput
         self.logger.debug(f"calculated bandwidth as {self.format_bytes(average_throughput)}/s")
@@ -979,12 +978,10 @@ class test_exec(cbPerfBase):
             status_vector[0] = 1
             status_vector[2] += 1
             self.logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
-            db.disconnect()
             return
 
         if status_vector[0] == 1:
             self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
-            db.disconnect()
             return
 
         status_vector[3] += 1
@@ -1027,8 +1024,7 @@ class test_exec(cbPerfBase):
                         self.logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
                 if status_vector[0] == 1:
                     await asyncio.sleep(0)
-                    db.disconnect()
-                    return
+                    break
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
                 telemetry[0] = n
@@ -1039,10 +1035,9 @@ class test_exec(cbPerfBase):
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
                     self.logger.info(f"test_thread_{n:03d}: max latency exceeded")
+                    break
             else:
                 break
-
-        db.disconnect()
 
     def test_run_s(self, *args, **kwargs):
         debugger = cb_debug(f"test_run_s")
