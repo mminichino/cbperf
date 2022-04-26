@@ -115,7 +115,7 @@ class cb_index(cb_connect):
     def index_wait(self, name="_default", field=None, index_name=None):
         index = self.index_name(name, field, index_name)
         lookup = self.index_lookup(name)
-        record_count = self.collection_count(name)
+        record_count = self.collection_count_s(name)
 
         if not self.node_api_accessible:
             try:

@@ -8,23 +8,21 @@ from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from datetime import timedelta
 from couchbase.options import LOCKMODE_NONE
-from couchbase.diagnostics import PingState
 import couchbase
 import acouchbase.cluster
-from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions, QueryIndexManager
+from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.auth import PasswordAuthenticator
 import couchbase.subdocument as SD
-from couchbase.exceptions import (CASMismatchException, CouchbaseException, CouchbaseTransientException,
+from couchbase.exceptions import (CouchbaseException,
                                   DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
-                                  BucketAlreadyExistsException, QueryErrorContext, HTTPException, InternalSDKException,
-                                  BucketNotFoundException, TimeoutException, QueryException, ScopeNotFoundException,
+                                  BucketAlreadyExistsException, HTTPException,
+                                  BucketNotFoundException, QueryException, ScopeNotFoundException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
-                                  CollectionNotFoundException, ProtocolException, ObjectDestroyedException)
+                                  CollectionNotFoundException)
 import logging
 import asyncio
-import traceback
 
 
 class cb_connect(cb_session):
@@ -56,12 +54,11 @@ class cb_connect(cb_session):
             self.logger.error(f"unhandled error: {err}")
 
     @retry(retry_count=10)
-    async def connect(self):
+    async def connect_a(self):
         try:
-            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
             cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
             await cluster_a.on_connect()
-            self.db.set_cluster(cluster_s, cluster_a)
+            self.db.set_cluster_a(cluster_a)
             return True
         except SystemError as err:
             if isinstance(err.__cause__, HTTPException):
@@ -76,62 +73,64 @@ class cb_connect(cb_session):
     @retry(retry_count=10)
     def connect_s(self):
         try:
-            loop = asyncio.get_event_loop()
-            loop.set_exception_handler(self.unhandled_exception)
-            loop.run_until_complete(self.connect())
+            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
+            self.db.set_cluster_s(cluster_s)
             return True
-        except Exception:
-            raise
+        except SystemError as err:
+            if isinstance(err.__cause__, HTTPException):
+                raise ClusterConnectException("cluster connect HTTP error: {}".format(err.__cause__))
+            else:
+                raise ClusterConnectException("cluster connect network error: {}".format(err))
+        except HTTPException as err:
+            raise ClusterConnectException("cluster connect HTTP error: {}".format(err))
+        except Exception as err:
+            raise ClusterConnectException("cluster connect general error: {}".format(err))
 
-    def disconnect(self):
-        self.db.cluster_s.disconnect()
+    async def disconnect_a(self):
         self.db.cluster_a.disconnect()
 
+    def disconnect_s(self):
+        self.db.cluster_s.disconnect()
+
     @retry(always_raise_list=(BucketNotFoundException,), retry_count=10)
-    async def bucket(self, name):
-        bucket_s = self.db.cluster_s.bucket(name)
+    async def bucket_a(self, name):
         bucket_a = self.db.cluster_a.bucket(name)
         await bucket_a.on_connect()
-        self.db.set_bucket(name, bucket_s, bucket_a)
+        self.db.set_bucket_a(name, bucket_a)
 
     @retry(always_raise_list=(BucketNotFoundException,), retry_count=10)
     def bucket_s(self, name):
-        loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.unhandled_exception)
-        loop.run_until_complete(self.bucket(name))
+        bucket_s = self.db.cluster_s.bucket(name)
+        self.db.set_bucket_s(name, bucket_s)
 
     @retry(always_raise_list=(ScopeNotFoundException,), retry_count=10)
-    async def scope(self, name="_default"):
-        scope_s = self.db.bucket_s.scope(name)
+    async def scope_a(self, name="_default"):
         scope_a = self.db.bucket_a.scope(name)
-        self.db.set_scope(name, scope_s, scope_a)
+        self.db.set_scope_a(name, scope_a)
 
     @retry(always_raise_list=(ScopeNotFoundException,), retry_count=10)
     def scope_s(self, name="_default"):
-        loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.unhandled_exception)
-        loop.run_until_complete(self.scope(name))
+        scope_s = self.db.bucket_s.scope(name)
+        self.db.set_scope_s(name, scope_s)
 
     @retry(always_raise_list=(CollectionNotFoundException,), retry_count=10)
-    async def collection(self, name="_default"):
-        collection_s = self.db.scope_s.collection(name)
+    async def collection_a(self, name="_default"):
         collection_a = self.db.scope_a.collection(name)
         await collection_a.on_connect()
-        self.db.add_collection(name, collection_s, collection_a)
+        self.db.add_collection_a(name, collection_a)
 
     @retry(always_raise_list=(CollectionNotFoundException,), retry_count=10)
     def collection_s(self, name="_default"):
-        loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.unhandled_exception)
-        loop.run_until_complete(self.collection(name))
+        collection_s = self.db.scope_s.collection(name)
+        self.db.add_collection_s(name, collection_s)
 
     @retry(retry_count=10)
-    async def quick_connect(self, bucket, scope, collection):
+    async def quick_connect_a(self, bucket, scope, collection):
         try:
-            await self.connect()
-            await self.bucket(bucket)
-            await self.scope(scope)
-            await self.collection(collection)
+            await self.connect_a()
+            await self.bucket_a(bucket)
+            await self.scope_a(scope)
+            await self.collection_a(collection)
             return True
         except Exception as err:
             raise ClusterConnectException(f"quick connect error: {err}")
@@ -259,11 +258,21 @@ class cb_connect(cb_session):
         self.db.drop_collection(name)
 
     @retry(retry_count=10)
-    def collection_count(self, name="_default"):
+    def collection_count_s(self, name="_default"):
         try:
             keyspace = self.db.keyspace_s(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = self.cb_query_s(sql=queryText)
+            return result[0]['count']
+        except Exception as err:
+            CollectionCountError("can not get item count for {}: {}".format(name, err))
+
+    @retry(retry_count=10)
+    async def collection_count_a(self, name="_default"):
+        try:
+            keyspace = self.db.keyspace_a(name)
+            queryText = 'select count(*) as count from ' + keyspace + ';'
+            result = await self.cb_query_a(sql=queryText)
             return result[0]['count']
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
@@ -348,9 +357,11 @@ class cb_connect(cb_session):
 
     @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def cb_subdoc_multi_upsert_s(self, key_list, field, value_list, name="_default"):
-        loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.unhandled_exception)
-        loop.run_until_complete(self.cb_subdoc_multi_upsert_a(key_list, field, value_list, name))
+        try:
+            for n in range(len(key_list)):
+                self.cb_subdoc_upsert_s(key_list[n], field, value_list[n], name=name)
+        except Exception as err:
+            raise CollectionSubdocUpsertError(f"multi upsert error: {err}")
 
     @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     async def cb_subdoc_multi_upsert_a(self, key_list, field, value_list, name="_default"):
@@ -386,7 +397,21 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionSubdocGetError("can not get {} from {}: {}".format(key, field, err))
 
-    def query_sql_constructor(self, field=None, name="_default", where=None, value=None, sql=None):
+    def query_sql_constructor_s(self, field=None, name="_default", where=None, value=None, sql=None):
+        if not where and not sql and field:
+            keyspace = self.db.keyspace_s(name)
+            query = "SELECT " + field + " FROM " + keyspace + ";"
+        elif not sql and field:
+            keyspace = self.db.keyspace_s(name)
+            query = "SELECT " + field + " FROM " + keyspace + " WHERE " + where + " = \"" + str(value) + "\";"
+        elif sql:
+            query = sql
+        else:
+            raise QueryArgumentsError("query: either field or sql argument is required")
+
+        return query
+
+    def query_sql_constructor_a(self, field=None, name="_default", where=None, value=None, sql=None):
         if not where and not sql and field:
             keyspace = self.db.keyspace_a(name)
             query = "SELECT " + field + " FROM " + keyspace + ";"
@@ -405,7 +430,7 @@ class cb_connect(cb_session):
         query = ""
         try:
             contents = []
-            query = self.query_sql_constructor(field, name, where, value, sql)
+            query = self.query_sql_constructor_s(field, name, where, value, sql)
             result = self.db.cluster_s.query(query, QueryOptions(metrics=False, adhoc=True))
             for item in result:
                 contents.append(item)
@@ -425,7 +450,7 @@ class cb_connect(cb_session):
         query = ""
         try:
             contents = []
-            query = self.query_sql_constructor(field, name, where, value, sql)
+            query = self.query_sql_constructor_a(field, name, where, value, sql)
             result = self.db.cluster_a.query(query, QueryOptions(metrics=False, adhoc=True))
             async for item in result:
                 contents.append(item)

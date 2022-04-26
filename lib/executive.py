@@ -533,7 +533,6 @@ class test_exec(cbPerfBase):
         end_char = '\r'
 
         db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-        db.connect_s()
 
         if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:
             raise RulesError("runLinkRule: link rule key syntax incorrect")
@@ -547,21 +546,24 @@ class test_exec(cbPerfBase):
         if foreign_scope != primary_scope:
             raise RulesError("cross scope linking is not supported")
 
-        db.bucket_s(primary_bucket)
-        db.scope_s(primary_scope)
-        db.collection_s(foreign_collection)
-        db.collection_s(primary_collection)
+        try:
+            loop.run_until_complete(db.connect_a())
+            loop.run_until_complete(db.bucket_a(primary_bucket))
+            loop.run_until_complete(db.scope_a(primary_scope))
+            loop.run_until_complete(db.collection_a(foreign_collection))
+            loop.run_until_complete(db.collection_a(primary_collection))
+            db.db.print_config()
+        except Exception as err:
+            raise RulesError(f"link: can not connect to database: {err}")
 
         print(f" [1] Building primary key list")
-        if self.aio:
-            result = loop.run_until_complete(db.cb_query_a(field=primary_field, name=primary_collection))
-        else:
-            result = db.cb_query_s(field=primary_field, name=primary_collection)
+
+        result = loop.run_until_complete(db.cb_query_a(field=primary_field, name=primary_collection))
 
         for row in result:
             primary_key_list.append(row[primary_field])
 
-        foreign_record_count = db.collection_count(foreign_collection)
+        foreign_record_count = loop.run_until_complete(db.collection_count_a(foreign_collection))
 
         if foreign_record_count != len(primary_key_list):
             raise RulesError("runLinkRule: primary and foreign record counts are unequal")
@@ -572,10 +574,7 @@ class test_exec(cbPerfBase):
             total_inserted += len(sub_list)
             progress = round((total_inserted / foreign_record_count) * 100)
             print(f"     {progress}%", end=end_char)
-            if self.aio:
-                loop.run_until_complete(db.cb_subdoc_multi_upsert_a(sub_list, foreign_field, sub_list, name=foreign_collection))
-            else:
-                db.cb_subdoc_multi_upsert_s(sub_list, foreign_field, sub_list, name=foreign_collection)
+            loop.run_until_complete(db.cb_subdoc_multi_upsert_a(sub_list, foreign_field, sub_list, name=foreign_collection))
         sys.stdout.write("\033[K")
         print("Done.")
 
@@ -968,7 +967,7 @@ class test_exec(cbPerfBase):
         try:
             logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
             db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            await db.quick_connect(coll_obj.bucket, coll_obj.scope, coll_obj.name)
+            await db.quick_connect_a(coll_obj.bucket, coll_obj.scope, coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
