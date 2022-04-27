@@ -14,8 +14,10 @@ class sys_info(object):
         path_suffix = parameter.replace('.','/')
         search_path = path_prefix + path_suffix
         with open(search_path, 'r') as proc_file:
-            lines = proc_file.read().splitlines()
-            print(lines)
+            line = proc_file.read()
+            data = line.split()
+        proc_file.close()
+        return data
 
     def get_net_buffer(self):
         if self.os_type == 'Linux':
