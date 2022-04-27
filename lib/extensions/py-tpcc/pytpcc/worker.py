@@ -26,22 +26,13 @@
 # -----------------------------------------------------------------------
 
 import sys
-import os
-import string
-import datetime
 import logging
-import re
-import argparse
-import glob
-import time 
 import message
 import pickle
 import traceback
-from pprint import pprint,pformat
 
-from util import *
 from runtime import *
-import drivers
+
 
 ## ==============================================
 ## createDriverClass
@@ -109,7 +100,7 @@ if __name__=='__channelexec__':
     driverClass=None
     for item in channel:
        command=pickle.loads(item)
-       if command.header==message.CMD_LOAD:
+       if command.header== message.CMD_LOAD:
 	   scaleParameters=command.data[0]
 	   args=command.data[1]
 	   config=command.data[2]
@@ -122,9 +113,9 @@ if __name__=='__channelexec__':
            assert driver != None, "Failed to create '%s' driver" % args['system']
         
            loaderFunc(driverClass,scaleParameters,args,config,w_ids,True)
-	   m=message.Message(header=message.LOAD_COMPLETED)
+	   m= message.Message(header=message.LOAD_COMPLETED)
            channel.send(pickle.dumps(m,-1))          
-       elif command.header==message.CMD_EXECUTE:
+       elif command.header== message.CMD_EXECUTE:
 	   scaleParameters=command.data[0]
 	   args=command.data[1]
 	   config=command.data[2]
@@ -137,10 +128,10 @@ if __name__=='__channelexec__':
                assert driver != None, "Failed to create '%s' driver" % args['system']
            
            results=executorFunc(driverClass,scaleParameters,args,config,True)
-           m=message.Message(header=message.EXECUTE_COMPLETED,data=results)
+           m= message.Message(header=message.EXECUTE_COMPLETED, data=results)
            channel.send(pickle.dumps(m,-1))
            
-       elif command.header==message.CMD_STOP:
+       elif command.header== message.CMD_STOP:
 	   pass
        else:
 	   pass
