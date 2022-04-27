@@ -744,15 +744,18 @@ class test_exec(cbPerfBase):
 
     def calc_batch_size(self, collection, mode):
         if mode == test_exec.KV_TEST:
+            if collection.default_batch_size:
+                default_value = min(self.default_kv_batch_size, collection.default_batch_size)
+            else:
+                default_value = self.default_kv_batch_size
             if collection.size and self.throughput:
                 total_data = collection.size * self.run_threads
                 calc_batch_size = self.throughput / total_data
                 new_batch_size = round(calc_batch_size * .7)
-                if new_batch_size < self.default_kv_batch_size:
-                    print(f"Adjusting batch size due to bandwidth")
+                if new_batch_size < default_value:
                     return new_batch_size
                 else:
-                    return self.default_kv_batch_size
+                    return default_value
         elif mode == test_exec.QUERY_TEST:
             return self.default_query_batch_size
         else:

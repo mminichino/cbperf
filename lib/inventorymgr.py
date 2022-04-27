@@ -46,6 +46,7 @@ class collectionElement(object):
         self.override_count = False
         self.record_count = None
         self.batch_size = None
+        self.default_batch_size = None
         self.size = None
         if name == '_default':
             self.key_prefix = bucket
@@ -130,6 +131,7 @@ class inventoryManager(object):
 
                                 if 'batch_size' in collection:
                                     self.schemas[0].buckets[0].scopes[0].collections[0].batch_size = collection['batch_size']
+                                    self.schemas[0].buckets[0].scopes[0].collections[0].default_batch_size = collection['batch_size']
 
                                 if 'indexes' in collection:
                                     for index_field in collection['indexes']:
