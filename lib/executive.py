@@ -12,6 +12,7 @@ from lib.inventorymgr import inventoryManager
 from lib.cbutil.exceptions import *
 from lib.exceptions import *
 from lib.cbutil.cbdebug import cb_debug
+from lib.system import sys_info
 import json
 import os
 import numpy as np
@@ -743,21 +744,34 @@ class test_exec(cbPerfBase):
         print(f"{max_time:.6f} maximum time")
 
     def calc_batch_size(self, collection, mode):
+        candidate_size = None
+
         if mode == test_exec.KV_TEST:
-            if collection.default_batch_size:
-                default_value = min(self.default_kv_batch_size, collection.default_batch_size)
-            else:
-                default_value = self.default_kv_batch_size
-            if collection.size and self.throughput:
+            try:
+                buf_size = sys_info().get_net_buffer()
+            except Exception:
+                buf_size = None
+
+            if buf_size:
+                slice_size = buf_size * 1.25
+                per_thread = slice_size / (collection.size * self.run_threads)
+                candidate_size = round(per_thread)
+
+            if collection.default_batch_size and candidate_size:
+                candidate_size = min(candidate_size, collection.default_batch_size)
+
+            if self.throughput:
                 total_data = collection.size * self.run_threads
                 calc_batch_size = self.throughput / total_data
                 new_batch_size = round(calc_batch_size * .7)
-                if new_batch_size < default_value:
-                    return new_batch_size
-                else:
-                    return default_value
+                candidate_size = min(candidate_size, new_batch_size)
+
+            batch_size = min(candidate_size, self.default_kv_batch_size) if candidate_size else self.default_kv_batch_size
+            return batch_size
+
         elif mode == test_exec.QUERY_TEST:
             return self.default_query_batch_size
+
         else:
             return 1
 
