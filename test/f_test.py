@@ -12,7 +12,8 @@ from lib import system
 
 def main():
     sy = system.sys_info()
-    sy.get_net_buffer()
+    value = sy.get_net_buffer()
+    print(f"get_net_buffer = {value}")
 
 
 if __name__ == '__main__':
