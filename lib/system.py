@@ -21,4 +21,5 @@ class sys_info(object):
 
     def get_net_buffer(self):
         if self.os_type == 'Linux':
-            self.get_proc_fs('net.ipv4.tcp_wmem')
+            value = self.get_proc_fs('net.ipv4.tcp_wmem')[-1]
+            print(value)
