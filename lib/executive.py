@@ -753,7 +753,7 @@ class test_exec(cbPerfBase):
                 buf_size = None
 
             if buf_size:
-                slice_size = buf_size * 1.25
+                slice_size = buf_size
                 per_thread = slice_size / (collection.size * self.run_threads)
                 candidate_size = round(per_thread)
 
