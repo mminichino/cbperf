@@ -2,6 +2,8 @@
 ##
 
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
+import concurrent.futures
 import logging
 import logging.handlers
 from queue import Empty
@@ -645,6 +647,8 @@ class test_exec(cbPerfBase):
             # status_vector[1] = self.run_threads
             input_json = coll_obj.schema
 
+            executor = ProcessPoolExecutor(max_workers=self.run_threads)
+
             if coll_obj.record_count:
                 operation_count = coll_obj.record_count
             else:
@@ -672,33 +676,42 @@ class test_exec(cbPerfBase):
             instances = []
             throttle_count = 0
             n = 0
-            while True:
-                if n == self.run_threads:
-                    break
+            for n in range(self.run_threads):
+            # while True:
+            #     if n == self.run_threads:
+            #         break
 
-                if not any(p.is_alive() for p in instances) and n > 0:
-                    break
+                # if not any(p.is_alive() for p in instances) and n > 0:
+                #     break
 
-                if status_vector[3] < status_vector[1]:
-                    if throttle_count == 30:
-                        break
-                    self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
-                    throttle_count += 1
-                    time.sleep(0.5)
-                    continue
-
-                throttle_count = 0
-                instances.append(multiprocessing.Process(
-                    target=test_run_func,
-                    args=(mode, input_json, count, coll_obj, operation_count,
-                          telemetry_queue, write_p, n, status_vector)))
-                instances[n].daemon = True
-                instances[n].start()
+                # if status_vector[3] < status_vector[1]:
+                #     if throttle_count == 30:
+                #         break
+                #     self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                #     throttle_count += 1
+                #     time.sleep(0.5)
+                #     continue
+                #
+                # throttle_count = 0
+                instances.append(self.loop.create_task(tm.async_test_run(mode, input_json, count, coll_obj, operation_count, telemetry_queue, write_p, n, status_vector)))
+                # instances.append(multiprocessing.Process(
+                #     target=test_run_func,
+                #     args=(mode, input_json, count, coll_obj, operation_count,
+                #           telemetry_queue, write_p, n, status_vector)))
+                # instances[n].daemon = True
+                # instances[n].start()
                 status_vector[1] += 1
-                n += 1
+                # n += 1
 
-            for p in instances:
-                p.join()
+            self.loop.run_until_complete(asyncio.gather(*instances))
+            # while instances:
+            #     done, instances = concurrent.futures.wait(*instances, return_when=concurrent.futures.FIRST_COMPLETED)
+
+                # if len(done) == len(instances):
+                #     break
+
+            # for p in instances:
+            #     p.join()
 
             run_flag.value = 0
             status_thread.join()

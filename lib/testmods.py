@@ -229,8 +229,6 @@ class test_mods(object):
 
         status_vector[3] += 1
         logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size} mode {mode}")
-        if mode == QUERY_TEST:
-            logger.debug(f"test_thread_{n:03d}: query {query_field} where {id_field} is record number")
         while True:
             try:
                 tasks.clear()
