@@ -368,7 +368,7 @@ class cb_connect(cb_session):
         executor = concurrent.futures.ThreadPoolExecutor()
         try:
             for n in range(len(key_list)):
-                tasks.add(executor.submit(self.cb_subdoc_upsert_s(key_list[n], field, value_list[n], name=name)))
+                tasks.add(executor.submit(self.cb_subdoc_upsert_s, key_list[n], field, value_list[n], name=name))
             while tasks:
                 done, tasks = concurrent.futures.wait(tasks, return_when=concurrent.futures.FIRST_COMPLETED)
                 for task in done:

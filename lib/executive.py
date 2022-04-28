@@ -431,7 +431,7 @@ class test_exec(cbPerfBase):
         collection_list = []
         rule_list = []
         tasks = set()
-        end_char = ''
+        end_char = '\r'
         executor = concurrent.futures.ThreadPoolExecutor()
         db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
         db_index.connect()
@@ -476,14 +476,19 @@ class test_exec(cbPerfBase):
                                     print(f"Creating index {index_name} on {index_field}")
                                     tasks.add(executor.submit(db_index.create_index, collection.name, field=index_field, index_name=index_name, replica=self.replica_count))
                             collection_list.append(collection)
-                print("Waiting for index tasks to complete ... ", end=end_char)
+                print("Waiting for index tasks to complete ... ")
+                task_count = len(tasks)
                 while tasks:
                     done, tasks = concurrent.futures.wait(tasks, return_when=concurrent.futures.FIRST_COMPLETED)
+                    current_count = len(done)
+                    progress = round((current_count / task_count) * 100)
+                    print(f"     {progress}%", end=end_char)
                     for task in done:
                         try:
                             result = task.result()
                         except Exception as err:
                             raise TestExecError(f"Schema {self.schema} init error: {err}")
+                sys.stdout.write("\033[K")
                 print("done.")
                 if self.inventory.hasRules(schema):
                     for rule in self.inventory.nextRule(schema):
