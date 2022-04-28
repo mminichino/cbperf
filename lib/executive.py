@@ -254,8 +254,7 @@ class test_exec(cbPerfBase):
             self.db = self.write_cache()
             self.db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
             self.db.connect_s()
-            self.loop.run_until_complete(self.db.connect_a())
-            self.loop.run_until_complete(self.db_index.connect())
+            self.db_index.connect()
         except Exception as err:
             raise TestExecError(f"test_exec init: {err}")
 
@@ -431,8 +430,11 @@ class test_exec(cbPerfBase):
     def test_init(self, bypass=False):
         collection_list = []
         rule_list = []
-        tasks = []
+        tasks = set()
         end_char = ''
+        executor = concurrent.futures.ThreadPoolExecutor()
+        db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
+        db_index.connect()
 
         cluster_memory = self.db.get_memory_quota
         if cluster_memory < self.bucket_memory:
@@ -449,34 +451,39 @@ class test_exec(cbPerfBase):
                         print("Creating bucket {}".format(bucket.name))
                         self.db.create_bucket(bucket.name, quota=self.bucket_memory)
                         self.db.bucket_wait(bucket.name)
-                        self.loop.run_until_complete(self.db_index.connect_bucket(bucket.name))
+                        db_index.connect_bucket(bucket.name)
                     for scope in self.inventory.nextScope(bucket):
                         if scope.name != '_default' and not bypass:
                             print("Creating scope {}".format(scope.name))
                             self.db.create_scope(scope.name)
                             self.db.scope_wait(scope.name)
-                            self.loop.run_until_complete(self.db_index.connect_scope(scope.name))
+                            db_index.connect_scope(scope.name)
                         elif not bypass:
-                            self.loop.run_until_complete(self.db_index.connect_scope('_default'))
+                            db_index.connect_scope('_default')
                         for collection in self.inventory.nextCollection(scope):
                             if collection.name != '_default' and not bypass:
                                 print("Creating collection {}".format(collection.name))
                                 self.db.create_collection(collection.name)
                                 self.db.collection_wait(collection.name)
-                                self.loop.run_until_complete(self.db_index.connect_collection(collection.name))
+                                db_index.connect_collection(collection.name)
                             elif not bypass:
-                                self.loop.run_until_complete(self.db_index.connect_collection('_default'))
+                                db_index.connect_collection('_default')
                             if self.inventory.hasPrimaryIndex(collection) and not bypass:
                                 print(f"Creating primary index on {collection.name}")
-                                tasks.append(self.loop.create_task(self.db_index.create_index(collection.name, replica=self.replica_count)))
+                                tasks.add(executor.submit(db_index.create_index, collection.name, replica=self.replica_count))
                             if self.inventory.hasIndexes(collection) and not bypass:
                                 for index_field, index_name in self.inventory.nextIndex(collection):
                                     print(f"Creating index {index_name} on {index_field}")
-                                    tasks.append(self.loop.create_task(
-                                        self.db_index.create_index(collection.name, field=index_field, index_name=index_name, replica=self.replica_count)))
+                                    tasks.add(executor.submit(db_index.create_index, collection.name, field=index_field, index_name=index_name, replica=self.replica_count))
                             collection_list.append(collection)
                 print("Waiting for index tasks to complete ... ", end=end_char)
-                self.loop.run_until_complete(asyncio.gather(*tasks))
+                while tasks:
+                    done, tasks = concurrent.futures.wait(tasks, return_when=concurrent.futures.FIRST_COMPLETED)
+                    for task in done:
+                        try:
+                            result = task.result()
+                        except Exception as err:
+                            raise TestExecError(f"Schema {self.schema} init error: {err}")
                 print("done.")
                 if self.inventory.hasRules(schema):
                     for rule in self.inventory.nextRule(schema):
@@ -513,22 +520,22 @@ class test_exec(cbPerfBase):
 
         try:
             self.logger.debug(f"run_link_rule: connecting to bucket and collections {foreign_collection} {primary_collection}")
-            self.loop.run_until_complete(self.db.bucket_a(primary_bucket))
-            self.loop.run_until_complete(self.db.scope_a(primary_scope))
-            self.loop.run_until_complete(self.db.collection_a(foreign_collection))
-            self.loop.run_until_complete(self.db.collection_a(primary_collection))
+            self.db.bucket_s(primary_bucket)
+            self.db.scope_s(primary_scope)
+            self.db.collection_s(foreign_collection)
+            self.db.collection_s(primary_collection)
             self.logger.debug(f"run_link_rule: bucket and collections connected")
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")
 
         print(f" [1] Building primary key list")
 
-        result = self.loop.run_until_complete(self.db.cb_query_a(field=primary_field, name=primary_collection))
+        result = self.db.cb_query_s(field=primary_field, name=primary_collection)
 
         for row in result:
             primary_key_list.append(row[primary_field])
 
-        foreign_record_count = self.loop.run_until_complete(self.db.collection_count_a(foreign_collection))
+        foreign_record_count = self.db.collection_count_s(foreign_collection)
 
         if foreign_record_count != len(primary_key_list):
             raise RulesError("runLinkRule: primary and foreign record counts are unequal")
@@ -539,7 +546,7 @@ class test_exec(cbPerfBase):
             total_inserted += len(sub_list)
             progress = round((total_inserted / foreign_record_count) * 100)
             print(f"     {progress}%", end=end_char)
-            self.loop.run_until_complete(self.db.cb_subdoc_multi_upsert_a(sub_list, foreign_field, sub_list, name=foreign_collection))
+            self.db.cb_subdoc_multi_upsert_s(sub_list, foreign_field, sub_list, name=foreign_collection)
         sys.stdout.write("\033[K")
         print("Done.")
 
@@ -566,19 +573,19 @@ class test_exec(cbPerfBase):
             schema = self.inventory.getSchema(self.schema)
             if schema:
                 for bucket in self.inventory.nextBucket(schema):
-                    self.loop.run_until_complete(self.db_index.connect_bucket(bucket.name))
+                    self.db_index.connect_bucket(bucket.name)
                     for scope in self.inventory.nextScope(bucket):
-                        self.loop.run_until_complete(self.db_index.connect_scope(scope.name))
+                        self.db_index.connect_scope(scope.name)
                         for collection in self.inventory.nextCollection(scope):
-                            self.loop.run_until_complete(self.db_index.connect_collection(collection.name))
+                            self.db_index.connect_collection(collection.name)
                             if self.inventory.hasPrimaryIndex(collection):
                                 print(f"Waiting for primary index on {collection.name} ...", end=end_char)
-                                self.loop.run_until_complete(self.db_index.index_wait(name=collection.name))
+                                self.db_index.index_wait(name=collection.name)
                                 print("done.")
                             if self.inventory.hasIndexes(collection):
                                 for index_field, index_name in self.inventory.nextIndex(collection):
-                                    print(f"Waiting for index {index_name} on field {index_field} in keyspace {self.db_index.db.keyspace_a(collection.name)} ...", end=end_char)
-                                    self.loop.run_until_complete(self.db_index.index_wait(name=collection.name, field=index_field, index_name=index_name))
+                                    print(f"Waiting for index {index_name} on field {index_field} in keyspace {self.db_index.db.keyspace_s(collection.name)} ...", end=end_char)
+                                    self.db_index.index_wait(name=collection.name, field=index_field, index_name=index_name)
                                     print("done.")
             else:
                 raise ParameterError("Schema {} not found".format(self.schema))

@@ -7,6 +7,7 @@ from .retries import retry, retry_a
 from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from datetime import timedelta
+import concurrent.futures
 from couchbase.options import LOCKMODE_NONE, LOCKMODE_WAIT
 import couchbase
 import acouchbase.cluster
@@ -363,9 +364,18 @@ class cb_connect(cb_session):
 
     @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def cb_subdoc_multi_upsert_s(self, key_list, field, value_list, name="_default"):
+        tasks = set()
+        executor = concurrent.futures.ThreadPoolExecutor()
         try:
             for n in range(len(key_list)):
-                self.cb_subdoc_upsert_s(key_list[n], field, value_list[n], name=name)
+                tasks.add(executor.submit(self.cb_subdoc_upsert_s(key_list[n], field, value_list[n], name=name)))
+            while tasks:
+                done, tasks = concurrent.futures.wait(tasks, return_when=concurrent.futures.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        result = task.result()
+                    except Exception as err:
+                        raise CollectionSubdocUpsertError(f"multi upsert error: {err}")
         except Exception as err:
             raise CollectionSubdocUpsertError(f"multi upsert error: {err}")
 

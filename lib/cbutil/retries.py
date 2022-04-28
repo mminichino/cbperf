@@ -31,7 +31,7 @@ def retry(retry_count=5,
                     if retry_number == retry_count:
                         raise
 
-                    retry_logger.debug(f"retry {func.__name__}")
+                    retry_logger.debug(f"retry {func.__name__}: {err}")
                     wait = factor
                     wait *= (2**(retry_number+1))
                     time.sleep(wait)
@@ -60,7 +60,7 @@ def retry_a(retry_count=5,
                     if retry_number == retry_count:
                         raise
 
-                    retry_logger.debug(f"retry_a {func.__name__}")
+                    retry_logger.debug(f"retry_a {func.__name__}: {err}")
                     wait = factor
                     wait *= (2**(retry_number+1))
                     time.sleep(wait)

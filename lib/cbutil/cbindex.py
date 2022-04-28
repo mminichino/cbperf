@@ -38,39 +38,39 @@ class cb_index(cb_connect):
 
         return lookup
 
-    @retry_a(retry_count=10)
-    async def connect(self):
+    @retry(retry_count=10)
+    def connect(self):
         try:
-            await self.connect_a()
+            self.connect_s()
         except Exception as err:
             raise IndexConnectError(f"can not connect to cluster: {err}")
 
-    @retry_a(retry_count=10)
-    async def connect_bucket(self, name):
+    @retry(retry_count=10)
+    def connect_bucket(self, name):
         try:
-            await self.bucket_a(name)
+            self.bucket_s(name)
         except Exception as err:
             raise IndexBucketError("can not connect to bucket {}: {}".format(name, err))
 
-    @retry_a(retry_count=10)
-    async def connect_scope(self, name="_default"):
+    @retry(retry_count=10)
+    def connect_scope(self, name="_default"):
         try:
-            await self.scope_a(name)
+            self.scope_s(name)
         except Exception as err:
             raise IndexScopeError("can not connect to scope {}: {}".format(name, err))
 
-    @retry_a(retry_count=10)
-    async def connect_collection(self, name="_default"):
+    @retry(retry_count=10)
+    def connect_collection(self, name="_default"):
         try:
-            await self.collection_a(name)
+            self.collection_s(name)
         except Exception as err:
             raise IndexCollectionError("can not connect to collection {}: {}".format(name, err))
 
-    async def is_index(self, field=None, name="_default", index_name=None):
+    def is_index(self, field=None, name="_default", index_name=None):
         index = self.index_name(name, field, index_name)
 
         try:
-            keyspace = self.db.keyspace_a(name)
+            keyspace = self.db.keyspace_s(name)
             indexList = self.db.qim.get_all_indexes(self.db.bucket_name)
             for i in range(len(indexList)):
                 if index == '#primary':
@@ -83,17 +83,17 @@ class cb_index(cb_connect):
 
         return False
 
-    @retry_a(retry_count=10, always_raise_list=(CollectionNameNotFound, IndexExistsError))
-    async def create_index(self, name="_default", field=None, index_name=None, replica=1):
+    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound, IndexExistsError))
+    def create_index(self, name="_default", field=None, index_name=None, replica=1):
         index = self.index_name(name, field, index_name)
 
         try:
-            keyspace = self.db.keyspace_a(name)
+            keyspace = self.db.keyspace_s(name)
             if field and index != '#primary':
                 queryText = 'CREATE INDEX ' + index + ' ON ' + keyspace + '(' + field + ') WITH {"num_replica": ' + str(replica) + '};'
             else:
                 queryText = 'CREATE PRIMARY INDEX ON ' + keyspace + ' WITH {"num_replica": ' + str(replica) + '};'
-            result = await self.cb_query_a(sql=queryText)
+            result = self.cb_query_s(sql=queryText)
             return result
         except CollectionNameNotFound:
             raise
@@ -102,32 +102,32 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexQueryError("can not create index on {}: {}".format(name, err))
 
-    @retry_a(retry_count=10, always_raise_list=(CollectionNameNotFound,))
-    async def drop_index(self, name="_default", field=None, index_name=None):
+    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    def drop_index(self, name="_default", field=None, index_name=None):
         index = self.index_name(name, field, index_name)
 
         try:
-            keyspace = self.db.keyspace_a(name)
+            keyspace = self.db.keyspace_s(name)
             if field and index != '#primary':
                 queryText = 'DROP INDEX ' + index + ' ON ' + keyspace + ' USING GSI;'
             else:
                 queryText = 'DROP PRIMARY INDEX ON' + keyspace + ' USING GSI;'
-            result = await self.cb_query_a(sql=queryText)
+            result = self.cb_query_s(sql=queryText)
             return result
         except CollectionNameNotFound:
             raise
         except Exception as err:
             raise IndexQueryError("can not drop index on {}: {}".format(name, err))
 
-    @retry_a(factor=0.5, allow_list=(IndexNotReady,))
-    async def index_wait(self, name="_default", field=None, index_name=None):
+    @retry(factor=0.5, allow_list=(IndexNotReady,))
+    def index_wait(self, name="_default", field=None, index_name=None):
         index = self.index_name(name, field, index_name)
         lookup = self.index_lookup(name)
-        record_count = await self.collection_count_a(name)
+        record_count = self.collection_count_s(name)
 
         if not self.node_api_accessible:
             try:
-                await self.alt_index_check(name=name, field=field, index_name=index_name, check_count=record_count)
+                self.alt_index_check(name=name, field=field, index_name=index_name, check_count=record_count)
             except Exception:
                 raise IndexNotReady(f"alt check index {index} not ready")
         else:
@@ -163,13 +163,13 @@ class cb_index(cb_connect):
 
         return index_data
 
-    async def get_index_key(self, name="_default", field=None, index_name=None):
+    def get_index_key(self, name="_default", field=None, index_name=None):
         index = self.index_name(name, field, index_name)
         lookup = self.index_lookup(name)
         query_text = 'SELECT * FROM system:indexes ;'
         doc_key_field = 'meta().id'
 
-        result_index = await self.cb_query_a(sql=query_text)
+        result_index = self.cb_query_s(sql=query_text)
 
         for row in result_index:
             for key, value in row.items():
@@ -181,17 +181,17 @@ class cb_index(cb_connect):
 
         raise IndexNotFoundError(f"index {index} not found")
 
-    async def alt_index_check(self, name="_default", field=None, index_name=None, check_count=0):
+    def alt_index_check(self, name="_default", field=None, index_name=None, check_count=0):
         index = self.index_name(name, field, index_name)
-        keyspace = self.db.keyspace_a(name)
+        keyspace = self.db.keyspace_s(name)
 
         try:
-            query_field = await self.get_index_key(name, field, index_name)
+            query_field = self.get_index_key(name, field, index_name)
         except Exception:
             raise
 
         query_text = f"SELECT {query_field} FROM {keyspace} WHERE {query_field} LIKE \"%\" ;"
-        result = await self.cb_query_a(sql=query_text)
+        result = self.cb_query_s(sql=query_text)
 
         if len(result) == check_count and len(result) > 0:
             return True
