@@ -13,6 +13,8 @@ from lib.cbutil.exceptions import *
 from lib.exceptions import *
 from lib.cbutil.cbdebug import cb_debug
 from lib.system import sys_info
+from lib.testmods import test_mods
+from lib.constants import *
 import json
 import os
 import numpy as np
@@ -22,36 +24,6 @@ import traceback
 import signal
 
 VERSION = '1.0'
-
-
-class rwMixer(object):
-
-    def __init__(self, x=100):
-        percentage = x / 100
-        if percentage > 0:
-            self.factor = 1 / percentage
-        else:
-            self.factor = 0
-
-    def write(self, n=1):
-        if self.factor > 0:
-            remainder = n % self.factor
-        else:
-            remainder = 1
-        if remainder == 0:
-            return True
-        else:
-            return False
-
-    def read(self, n=1):
-        if self.factor > 0:
-            remainder = n % self.factor
-        else:
-            remainder = 1
-        if remainder != 0:
-            return True
-        else:
-            return False
 
 
 class cbPerfBase(object):
@@ -219,10 +191,6 @@ class print_host_map(cbPerfBase):
 
 
 class test_exec(cbPerfBase):
-    KV_TEST = 0x01
-    QUERY_TEST = 0x02
-    REMOVE_DATA = 0x04
-    RANDOM_KEYS = 0x08
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -276,6 +244,19 @@ class test_exec(cbPerfBase):
         elif self.parameters.command == 'run' and self.parameters.ramp:
             self.test_playbook = "ramp"
 
+        self.bandwidth_test_flag = False
+
+        try:
+            self.loop = asyncio.get_event_loop()
+            self.loop.set_exception_handler(self.test_unhandled_exception)
+            self.db = self.write_cache()
+            self.db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
+            self.db.connect_s()
+            self.loop.run_until_complete(self.db.connect_a())
+            self.loop.run_until_complete(self.db_index.connect())
+        except Exception as err:
+            raise TestExecError(f"test_exec init: {err}")
+
         if not self.bucket_memory:
             one_mb = 1024 * 1024
             if self.input_file:
@@ -293,41 +274,25 @@ class test_exec(cbPerfBase):
 
             self.bucket_memory = total_data_mb
 
-    def test_mask(self, bits):
-        if bits & test_exec.KV_TEST:
-            return test_exec.KV_TEST
-        elif bits & test_exec.QUERY_TEST:
-            return test_exec.QUERY_TEST
-        elif bits & test_exec.REMOVE_DATA:
-            return test_exec.REMOVE_DATA
-        else:
-            return 0x0
-
     def test_lookup(self, name):
         if name == "KV_TEST":
-            return test_exec.KV_TEST
+            return KV_TEST
         elif name == "QUERY_TEST":
-            return test_exec.QUERY_TEST
+            return QUERY_TEST
         elif name == "REMOVE_DATA":
-            return test_exec.REMOVE_DATA
+            return REMOVE_DATA
         else:
             raise TestConfigError("unknown test type {}".format(name))
 
     def test_print_name(self, code):
-        if code == test_exec.KV_TEST:
+        if code == KV_TEST:
             return "key-value"
-        elif code == test_exec.QUERY_TEST:
+        elif code == QUERY_TEST:
             return "query"
-        elif code == test_exec.REMOVE_DATA:
+        elif code == REMOVE_DATA:
             return "remove"
         else:
             raise TestConfigError("unknown test code {}".format(code))
-
-    def is_random_mask(self, bits):
-        if bits & test_exec.RANDOM_KEYS:
-            return True
-        else:
-            return False
 
     def format_bytes(self, value):
         labels = ["Bytes", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"]
@@ -365,7 +330,8 @@ class test_exec(cbPerfBase):
 
             if step == "load" and not self.skip_init:
                 self.test_init()
-                self.test_bandwidth()
+                if self.bandwidth_test_flag:
+                    self.test_bandwidth()
 
             try:
                 read_p = 100 - write_p
@@ -388,6 +354,7 @@ class test_exec(cbPerfBase):
         try:
             db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
             self.session_cache = db.session_cache
+            return db
         except Exception as err:
             raise TestExecError(f"can not initialize db connection: {err}")
 
@@ -401,11 +368,9 @@ class test_exec(cbPerfBase):
         collection = self.collection_list[0]
 
         try:
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            db.connect_s()
-            db.bucket_s(collection.bucket)
-            db.scope_s('_default')
-            db.create_collection('bandwidth')
+            self.db.bucket_s(collection.bucket)
+            self.db.scope_s('_default')
+            self.db.create_collection('bandwidth')
         except Exception as err:
             raise TestExecError(f"bandwidth test: can not connect to cluster: {err}")
 
@@ -417,9 +382,9 @@ class test_exec(cbPerfBase):
             while True:
                 test_a['data1'] = r._randomHash(doc_size)
                 data_size = len(json.dumps(test_a))
-                db.cb_upsert_s(key, test_a, name='bandwidth')
+                self.db.cb_upsert_s(key, test_a, name='bandwidth')
                 begin_time = time.time()
-                db.cb_get_s(key, name='bandwidth')
+                self.db.cb_get_s(key, name='bandwidth')
                 end_time = time.time()
                 time_diff = end_time - begin_time
 
@@ -438,7 +403,7 @@ class test_exec(cbPerfBase):
         print(f"[i] Calculated bandwidth: {self.format_bytes(average_throughput)}/s")
 
         try:
-            db.drop_collection('bandwidth')
+            self.db.drop_collection('bandwidth')
         except Exception as err:
             raise TestExecError(f"bandwidth test: can not drop collection: {err}")
 
@@ -446,12 +411,6 @@ class test_exec(cbPerfBase):
         self.logger.debug(f"calculated bandwidth as {self.format_bytes(average_throughput)}/s")
 
     def test_clean(self):
-        if not self.session_cache:
-            self.write_cache()
-
-        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-        db.connect_s()
-
         print(f"Running cleanup for schema {self.schema}")
 
         try:
@@ -459,26 +418,18 @@ class test_exec(cbPerfBase):
             if schema:
                 for bucket in self.inventory.nextBucket(schema):
                     print(f"Dropping bucket {bucket.name}")
-                    if db.is_bucket(bucket.name):
-                        db.drop_bucket(bucket.name)
+                    if self.db.is_bucket(bucket.name):
+                        self.db.drop_bucket(bucket.name)
         except Exception as err:
             raise TestExecError(f"cleanup failed: {err}")
 
     def test_init(self, bypass=False):
-        loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.test_unhandled_exception)
         collection_list = []
         rule_list = []
         tasks = []
+        end_char = ''
 
-        if not self.session_cache:
-            self.write_cache()
-
-        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-        db.connect_s()
-        db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-        loop.run_until_complete(db_index.connect())
-        cluster_memory = db.get_memory_quota
+        cluster_memory = self.db.get_memory_quota
         if cluster_memory < self.bucket_memory:
             print("Warning: requested memory %s MiB less than available memory" % self.bucket_memory)
             print("Adjusting bucket memory to %s MiB" % cluster_memory)
@@ -491,35 +442,37 @@ class test_exec(cbPerfBase):
                 for bucket in self.inventory.nextBucket(schema):
                     if self.create_bucket and not bypass:
                         print("Creating bucket {}".format(bucket.name))
-                        db.create_bucket(bucket.name, quota=self.bucket_memory)
-                        db.bucket_wait(bucket.name)
-                        loop.run_until_complete(db_index.connect_bucket(bucket.name))
+                        self.db.create_bucket(bucket.name, quota=self.bucket_memory)
+                        self.db.bucket_wait(bucket.name)
+                        self.loop.run_until_complete(self.db_index.connect_bucket(bucket.name))
                     for scope in self.inventory.nextScope(bucket):
                         if scope.name != '_default' and not bypass:
                             print("Creating scope {}".format(scope.name))
-                            db.create_scope(scope.name)
-                            db.scope_wait(scope.name)
-                            loop.run_until_complete(db_index.connect_scope(scope.name))
+                            self.db.create_scope(scope.name)
+                            self.db.scope_wait(scope.name)
+                            self.loop.run_until_complete(self.db_index.connect_scope(scope.name))
                         elif not bypass:
-                            loop.run_until_complete(db_index.connect_scope('_default'))
+                            self.loop.run_until_complete(self.db_index.connect_scope('_default'))
                         for collection in self.inventory.nextCollection(scope):
                             if collection.name != '_default' and not bypass:
                                 print("Creating collection {}".format(collection.name))
-                                db.create_collection(collection.name)
-                                db.collection_wait(collection.name)
-                                loop.run_until_complete(db_index.connect_collection(collection.name))
+                                self.db.create_collection(collection.name)
+                                self.db.collection_wait(collection.name)
+                                self.loop.run_until_complete(self.db_index.connect_collection(collection.name))
                             elif not bypass:
-                                loop.run_until_complete(db_index.connect_collection('_default'))
+                                self.loop.run_until_complete(self.db_index.connect_collection('_default'))
                             if self.inventory.hasPrimaryIndex(collection) and not bypass:
                                 print(f"Creating primary index on {collection.name}")
-                                tasks.append(loop.create_task(db_index.create_index(collection.name, replica=self.replica_count)))
+                                tasks.append(self.loop.create_task(self.db_index.create_index(collection.name, replica=self.replica_count)))
                             if self.inventory.hasIndexes(collection) and not bypass:
                                 for index_field, index_name in self.inventory.nextIndex(collection):
                                     print(f"Creating index {index_name} on {index_field}")
-                                    tasks.append(loop.create_task(
-                                        db_index.create_index(collection.name, field=index_field, index_name=index_name, replica=self.replica_count)))
+                                    tasks.append(self.loop.create_task(
+                                        self.db_index.create_index(collection.name, field=index_field, index_name=index_name, replica=self.replica_count)))
                             collection_list.append(collection)
-                loop.run_until_complete(asyncio.gather(*tasks))
+                print("Waiting for index tasks to complete ... ", end=end_char)
+                self.loop.run_until_complete(asyncio.gather(*tasks))
+                print("done.")
                 if self.inventory.hasRules(schema):
                     for rule in self.inventory.nextRule(schema):
                         rule_list.append(rule)
@@ -536,13 +489,10 @@ class test_exec(cbPerfBase):
             yield list_data[i:i + count]
 
     def run_link_rule(self, foreign_keyspace, primary_keyspace):
-        loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.test_unhandled_exception)
         primary_key_list = []
         end_char = '\r'
 
         self.logger.info("run_link_rule: startup")
-        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
 
         if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:
             raise RulesError("runLinkRule: link rule key syntax incorrect")
@@ -557,30 +507,23 @@ class test_exec(cbPerfBase):
             raise RulesError("cross scope linking is not supported")
 
         try:
-            self.logger.debug("run_link_rule: connecting to database")
-            loop.run_until_complete(db.connect_a())
-            self.logger.debug("run_link_rule: database connected")
-        except Exception as err:
-            raise RulesError(f"link: can not connect to database: {err}")
-
-        try:
             self.logger.debug(f"run_link_rule: connecting to bucket and collections {foreign_collection} {primary_collection}")
-            loop.run_until_complete(db.bucket_a(primary_bucket))
-            loop.run_until_complete(db.scope_a(primary_scope))
-            loop.run_until_complete(db.collection_a(foreign_collection))
-            loop.run_until_complete(db.collection_a(primary_collection))
+            self.loop.run_until_complete(self.db.bucket_a(primary_bucket))
+            self.loop.run_until_complete(self.db.scope_a(primary_scope))
+            self.loop.run_until_complete(self.db.collection_a(foreign_collection))
+            self.loop.run_until_complete(self.db.collection_a(primary_collection))
             self.logger.debug(f"run_link_rule: bucket and collections connected")
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")
 
         print(f" [1] Building primary key list")
 
-        result = loop.run_until_complete(db.cb_query_a(field=primary_field, name=primary_collection))
+        result = self.loop.run_until_complete(self.db.cb_query_a(field=primary_field, name=primary_collection))
 
         for row in result:
             primary_key_list.append(row[primary_field])
 
-        foreign_record_count = loop.run_until_complete(db.collection_count_a(foreign_collection))
+        foreign_record_count = self.loop.run_until_complete(self.db.collection_count_a(foreign_collection))
 
         if foreign_record_count != len(primary_key_list):
             raise RulesError("runLinkRule: primary and foreign record counts are unequal")
@@ -591,7 +534,7 @@ class test_exec(cbPerfBase):
             total_inserted += len(sub_list)
             progress = round((total_inserted / foreign_record_count) * 100)
             print(f"     {progress}%", end=end_char)
-            loop.run_until_complete(db.cb_subdoc_multi_upsert_a(sub_list, foreign_field, sub_list, name=foreign_collection))
+            self.loop.run_until_complete(self.db.cb_subdoc_multi_upsert_a(sub_list, foreign_field, sub_list, name=foreign_collection))
         sys.stdout.write("\033[K")
         print("Done.")
 
@@ -612,28 +555,25 @@ class test_exec(cbPerfBase):
         self.rules_run = True
 
     def check_indexes(self):
-        loop = asyncio.get_event_loop()
         end_char = ''
         print("Waiting for indexes to settle")
         try:
-            db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            loop.run_until_complete(db_index.connect())
             schema = self.inventory.getSchema(self.schema)
             if schema:
                 for bucket in self.inventory.nextBucket(schema):
-                    loop.run_until_complete(db_index.connect_bucket(bucket.name))
+                    self.loop.run_until_complete(self.db_index.connect_bucket(bucket.name))
                     for scope in self.inventory.nextScope(bucket):
-                        loop.run_until_complete(db_index.connect_scope(scope.name))
+                        self.loop.run_until_complete(self.db_index.connect_scope(scope.name))
                         for collection in self.inventory.nextCollection(scope):
-                            loop.run_until_complete(db_index.connect_collection(collection.name))
+                            self.loop.run_until_complete(self.db_index.connect_collection(collection.name))
                             if self.inventory.hasPrimaryIndex(collection):
                                 print(f"Waiting for primary index on {collection.name} ...", end=end_char)
-                                loop.run_until_complete(db_index.index_wait(name=collection.name))
+                                self.loop.run_until_complete(self.db_index.index_wait(name=collection.name))
                                 print("done.")
                             if self.inventory.hasIndexes(collection):
                                 for index_field, index_name in self.inventory.nextIndex(collection):
-                                    print(f"Waiting for index {index_name} on field {index_field} in keyspace {db_index.db.keyspace_a(collection.name)} ...", end=end_char)
-                                    loop.run_until_complete(db_index.index_wait(name=collection.name, field=index_field, index_name=index_name))
+                                    print(f"Waiting for index {index_name} on field {index_field} in keyspace {self.db_index.db.keyspace_a(collection.name)} ...", end=end_char)
+                                    self.loop.run_until_complete(self.db_index.index_wait(name=collection.name, field=index_field, index_name=index_name))
                                     print("done.")
             else:
                 raise ParameterError("Schema {} not found".format(self.schema))
@@ -645,108 +585,15 @@ class test_exec(cbPerfBase):
         try:
             print("Pausing to check cluster health ...", end=end_char)
             time.sleep(0.5)
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            db.cluster_health_check()
+            self.db.cluster_health_check()
             print("done.")
         except Exception as err:
             raise TestPauseError(f"cluster health not ok: {err}")
 
-    def status_output(self, total_count, run_flag, telemetry_queue, status_vector):
-        max_threads = self.thread_max if total_count == 0 else self.run_threads
-        tps_vector = [0 for n in range(max_threads)]
-        tps_history = []
-        sample_count = 1
-        total_tps = 0
-        total_time = 0
-        max_tps = 0
-        max_time = 0
-        avg_tps = 0
-        avg_time = 0
-        percentage = 0
-        total_ops = 0
-        slope_window = 100
-        slope_count = 0
-        slope_total = 0
-        slope_avg = 0
-        end_char = '\r'
-
-        def calc_slope(idx, data, segment):
-            _idx = np.concatenate(([0], idx))
-            _data = np.concatenate(([0], data))
-            sum_idx = np.cumsum(_idx)
-            sum_data = np.cumsum(_data)
-            exp_idx = np.cumsum(_idx * _idx)
-            exp_data = np.cumsum(_idx * _data)
-
-            sum_idx = sum_idx[segment:] - sum_idx[:-segment]
-            sum_data = sum_data[segment:] - sum_data[:-segment]
-            exp_idx = exp_idx[segment:] - exp_idx[:-segment]
-            exp_data = exp_data[segment:] - exp_data[:-segment]
-
-            return (segment * exp_data - sum_idx * sum_data) / (segment * exp_idx - sum_idx * sum_idx)
-
-        while run_flag.value == 1:
-            try:
-                entry = telemetry_queue.get(block=False)
-            except Empty:
-                continue
-
-            telemetry = entry.split(":")
-            n = int(telemetry[0])
-            n_ops = int(telemetry[1])
-            time_delta = float(telemetry[2])
-
-            tps_vector[n] = round(n_ops / time_delta)
-            trans_per_sec = sum(tps_vector)
-            total_ops += n_ops
-            op_time_delta = time_delta / n_ops
-            total_tps = total_tps + trans_per_sec
-            total_time = total_time + op_time_delta
-            avg_tps = total_tps / sample_count
-            avg_time = total_time / sample_count
-            sample_count += 1
-
-            tps_history.append(trans_per_sec)
-            if len(tps_history) >= slope_window:
-                tps_history = tps_history[len(tps_history) - slope_window:len(tps_history)]
-                index = list(range(1, len(tps_history)+1))
-                np_slope = calc_slope(index, tps_history, slope_window)
-                slope = np_slope.tolist()[0]
-                slope_total += slope
-                slope_count += 1
-                slope_avg = slope_total / slope_count
-
-            if trans_per_sec > max_tps:
-                max_tps = trans_per_sec
-            if time_delta > max_time:
-                max_time = time_delta
-
-            if total_count > 0:
-                percentage = round((total_ops / total_count) * 100)
-                print(f"=> {total_ops} of {total_count}, {status_vector[1]} threads, {time_delta:.6f} time, {trans_per_sec} TPS, {percentage}%",
-                      end=end_char)
-            else:
-                print(f"=> {total_ops} ops, {status_vector[1]} threads, {time_delta:.6f} time, {trans_per_sec} TPS, {status_vector[2]} errors, TPS trend {slope_avg:+.2f}",
-                      end=end_char)
-
-        sys.stdout.write("\033[K")
-        if total_count > 0:
-            print(f"=> {total_count} of {total_count}, {percentage}%")
-        print("Test Done.")
-        if total_count == 0:
-            print(f"{total_ops:,} completed operations")
-        print(f"{status_vector[1]} threads")
-        print(f"{status_vector[2]} errors")
-        print(f"{slope_avg:+.2f} TPS trend")
-        print(f"{round(avg_tps):,} average TPS")
-        print(f"{round(max_tps):,} maximum TPS")
-        print(f"{avg_time:.6f} average time")
-        print(f"{max_time:.6f} maximum time")
-
     def calc_batch_size(self, collection, mode):
         candidate_size = None
 
-        if mode == test_exec.KV_TEST:
+        if mode == KV_TEST:
             try:
                 buf_size = sys_info().get_net_buffer()
             except Exception:
@@ -769,7 +616,7 @@ class test_exec(cbPerfBase):
             batch_size = min(candidate_size, self.default_kv_batch_size) if candidate_size else self.default_kv_batch_size
             return batch_size
 
-        elif mode == test_exec.QUERY_TEST:
+        elif mode == QUERY_TEST:
             return self.default_query_batch_size
 
         else:
@@ -807,7 +654,10 @@ class test_exec(cbPerfBase):
             coll_obj.batch_size = self.calc_batch_size(coll_obj, mode)
             print(f"Collection {coll_obj.name} mode {mode_text} batch size: {coll_obj.batch_size}")
 
-            status_thread = multiprocessing.Process(target=self.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
+            tm = test_mods(self.host, self.username, self.password, self.tls, self.external_network,
+                           self.session_cache, coll_obj.batch_size, self.id_field, self.run_threads, self.thread_max)
+
+            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
             status_thread.daemon = True
             status_thread.start()
 
@@ -815,9 +665,9 @@ class test_exec(cbPerfBase):
             start_time = time.perf_counter()
 
             if self.aio:
-                test_run_func = self.test_run_a
+                test_run_func = tm.test_run_a
             else:
-                test_run_func = self.test_run_s
+                test_run_func = tm.test_run_s
 
             instances = []
             throttle_count = 0
@@ -864,7 +714,7 @@ class test_exec(cbPerfBase):
             raise TestRunError("test not initialized")
 
         run_mode = 'async' if self.aio else 'sync'
-        mask = mode | test_exec.RANDOM_KEYS
+        mask = mode | RANDOM_KEYS
 
         print("Beginning {} test ramp with max {} instances.".format(run_mode, self.thread_max))
 
@@ -962,225 +812,3 @@ class test_exec(cbPerfBase):
             self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
         else:
             self.logger.error(f"unhandled error: {err}")
-
-    def test_run_a(self, *args, **kwargs):
-        loop = asyncio.get_event_loop()
-        loop.set_exception_handler(self.test_unhandled_exception)
-        try:
-            loop.run_until_complete(self.async_test_run(*args, **kwargs))
-        except Exception as err:
-            self.logger.error(f"async test process error: {err}")
-
-    async def async_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
-        tasks = []
-        rand_gen = fastRandom(record_count)
-        id_field = coll_obj.id
-        query_field = next((i['field'] for i in coll_obj.indexes if i['field'] != id_field), id_field)
-        op_select = rwMixer(write_p)
-        telemetry = [0 for n in range(3)]
-        time_threshold = 5
-        debugger = cb_debug('async_test_run')
-        logger = debugger.logger
-        begin_time = time.time()
-
-        logger.info(f"beginning test instance {n}")
-
-        mode = self.test_mask(mask)
-        is_random = self.is_random_mask(mask)
-
-        if coll_obj.batch_size:
-            run_batch_size = coll_obj.batch_size
-        elif mode == test_exec.QUERY_TEST:
-            run_batch_size = self.default_query_batch_size
-        else:
-            run_batch_size = self.default_kv_batch_size
-
-        if status_vector[0] == 1:
-            logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
-            return
-
-        try:
-            logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            await db.quick_connect_a(coll_obj.bucket, coll_obj.scope, coll_obj.name)
-        except Exception as err:
-            status_vector[0] = 1
-            status_vector[2] += 1
-            logger.error(f"test_thread_{n:03d}: db connection error: {err}")
-            return
-
-        try:
-            r = randomize()
-            r.prepareTemplate(input_json)
-        except Exception as err:
-            status_vector[0] = 1
-            status_vector[2] += 1
-            logger.error(f"test_thread_{n:03d}: randomizer error: {err}")
-            return
-
-        if status_vector[0] == 1:
-            logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
-            return
-
-        status_vector[3] += 1
-        logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size} mode {mode}")
-        if mode == test_exec.QUERY_TEST:
-            logger.debug(f"test_thread_{n:03d}: query {query_field} where {id_field} is record number")
-        while True:
-            try:
-                tasks.clear()
-                begin_time = time.time()
-                for y in range(int(run_batch_size)):
-                    if is_random:
-                        record_number = rand_gen.value
-                    else:
-                        with count.get_lock():
-                            count.value += 1
-                            record_number = count.value
-                        if record_number > record_count:
-                            break
-                    if op_select.write(record_number):
-                        document = r.processTemplate()
-                        document[self.id_field] = record_number
-                        tasks.append(asyncio.create_task(db.cb_upsert_a(record_number, document, name=coll_obj.name)))
-                    else:
-                        if mode == test_exec.REMOVE_DATA:
-                            tasks.append(asyncio.create_task(db.cb_remove_a(record_number, name=coll_obj.name)))
-                        elif mode == test_exec.QUERY_TEST:
-                            tasks.append(asyncio.create_task(db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field, value=record_number)))
-                        else:
-                            tasks.append(asyncio.create_task(db.cb_get_a(record_number, name=coll_obj.name)))
-            except Exception as err:
-                status_vector[0] = 1
-                status_vector[2] += 1
-                logger.error(f"test_thread_{n:03d}: execution error: {err}")
-            if len(tasks) > 0:
-                await asyncio.sleep(0)
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for result in results:
-                    if isinstance(result, Exception):
-                        status_vector[0] = 1
-                        status_vector[2] += 1
-                        logger.error(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
-                if status_vector[0] == 1:
-                    await asyncio.sleep(0)
-                    break
-                end_time = time.time()
-                loop_total_time = end_time - begin_time
-                telemetry[0] = n
-                telemetry[1] = len(tasks)
-                telemetry[2] = loop_total_time
-                telemetry_packet = ':'.join(str(i) for i in telemetry)
-                telemetry_queue.put(telemetry_packet)
-                if loop_total_time >= time_threshold:
-                    status_vector[0] = 1
-                    logger.error(f"test_thread_{n:03d}: max latency exceeded")
-                    break
-            else:
-                break
-
-    def test_run_s(self, *args, **kwargs):
-        debugger = cb_debug(f"test_run_s")
-        logger = debugger.logger
-        try:
-            self.sync_test_run(*args, **kwargs)
-        except Exception as err:
-            logger.debug(f"sync test process returned: {err}")
-
-    def sync_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
-        tasks = []
-        rand_gen = fastRandom(record_count)
-        id_field = coll_obj.id
-        query_field = next((i['field'] for i in coll_obj.indexes if i['field'] != id_field), id_field)
-        op_select = rwMixer(write_p)
-        telemetry = [0 for n in range(3)]
-        time_threshold = 5
-
-        self.logger.info(f"beginning test instance {n}")
-
-        mode = self.test_mask(mask)
-        is_random = self.is_random_mask(mask)
-
-        if coll_obj.batch_size:
-            run_batch_size = coll_obj.batch_size
-        elif mode == test_exec.QUERY_TEST:
-            run_batch_size = self.default_query_batch_size
-        else:
-            run_batch_size = self.default_kv_batch_size
-
-        if status_vector[0] == 1:
-            self.logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
-            return
-
-        try:
-            self.logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            db.quick_connect_s(coll_obj.bucket, coll_obj.scope, coll_obj.name)
-        except Exception as err:
-            status_vector[0] = 1
-            status_vector[2] += 1
-            self.logger.info(f"test_thread_{n:03d}: db connection error: {err}")
-            return
-
-        try:
-            r = randomize()
-            r.prepareTemplate(input_json)
-        except Exception as err:
-            status_vector[0] = 1
-            status_vector[2] += 1
-            self.logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
-            return
-
-        if status_vector[0] == 1:
-            self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
-            return
-
-        status_vector[3] += 1
-        self.logger.info(f"test_thread_{n:03d}: commencing run")
-        while True:
-            try:
-                tasks.clear()
-                begin_time = time.time()
-                for y in range(int(run_batch_size)):
-                    if is_random:
-                        record_number = rand_gen.value
-                    else:
-                        with count.get_lock():
-                            count.value += 1
-                            record_number = count.value
-                        if record_number > record_count:
-                            break
-                    if op_select.write(record_number):
-                        document = r.processTemplate()
-                        document[self.id_field] = record_number
-                        result = db.cb_upsert_s(record_number, document, name=coll_obj.name)
-                        tasks.append(result)
-                    else:
-                        if mode == test_exec.REMOVE_DATA:
-                            result = db.cb_remove_s(record_number, name=coll_obj.name)
-                            tasks.append(result)
-                        elif mode == test_exec.QUERY_TEST:
-                            result = db.cb_query_s(field=query_field, name=coll_obj.name, where=id_field, value=record_number)
-                            tasks.append(result)
-                        else:
-                            result = db.cb_get_s(record_number, name=coll_obj.name)
-                            tasks.append(result)
-            except Exception as err:
-                status_vector[0] = 1
-                status_vector[2] += 1
-                self.logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {err}")
-                break
-            if len(tasks) > 0:
-                end_time = time.time()
-                loop_total_time = end_time - begin_time
-                telemetry[0] = n
-                telemetry[1] = len(tasks)
-                telemetry[2] = loop_total_time
-                telemetry_packet = ':'.join(str(i) for i in telemetry)
-                telemetry_queue.put(telemetry_packet)
-                if loop_total_time >= time_threshold:
-                    status_vector[0] = 1
-                    self.logger.info(f"test_thread_{n:03d}: max latency exceeded")
-                    break
-            else:
-                break

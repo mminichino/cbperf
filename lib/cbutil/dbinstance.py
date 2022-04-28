@@ -1,9 +1,134 @@
 ##
 ##
 
+import asyncio
 from .exceptions import *
 from .retries import retry
 from couchbase.cluster import QueryIndexManager
+from acouchbase.cluster import ACluster
+
+
+class cb_collection(object):
+
+    def __init__(self, name, collection):
+        self._collection = collection
+        self._name = name
+
+    def __get__(self, instance, owner):
+        return self._collection
+
+
+class cb_scope(object):
+
+    def __init__(self, name, scope):
+        self._scope = scope
+        self._name = name
+        self._collections = {}
+
+    def add_collection(self, name, collection):
+        self._collections[name] = cb_collection(name, collection)
+
+    def collection(self, name):
+        return self._collections[name] if name in self._collections else None
+
+    def is_collection(self, name):
+        return True if name in self._collections else False
+
+
+class cb_bucket(object):
+
+    def __init__(self, name, bucket):
+        self._bucket = bucket
+        self._name = name
+        self._scopes = {}
+
+    def add_scope(self, name, scope):
+        self._scopes[name] = cb_scope(name, scope)
+
+    def scope(self, name):
+        return self._scopes[name] if name in self._scopes else None
+
+    def is_scope(self, name):
+        return True if name in self._scopes else False
+
+
+class cb_cluster_a(object):
+
+    def __init__(self, cluster):
+        self.loop = asyncio.get_event_loop()
+        self._cluster = cluster
+        try:
+            self._bm = self.loop.run_until_complete(cluster.buckets())
+            self._qim = QueryIndexManager(cluster)
+        except Exception as err:
+            raise ClusterConnectException(f"cb_cluster_a: can not connect: {err}")
+        self._buckets = {}
+
+    def add_bucket(self, name, bucket):
+        self._buckets[name] = cb_bucket(name, bucket)
+
+    @property
+    def cluster(self):
+        return self._cluster
+
+    @property
+    def bm(self):
+        return self._bm
+
+    @property
+    def qim(self):
+        return self._qim
+
+
+class cb_cluster_s(object):
+
+    def __init__(self, cluster):
+        self._cluster = cluster
+        try:
+            self._bm = cluster.buckets()
+            self._qim = QueryIndexManager(cluster)
+        except Exception as err:
+            raise ClusterConnectException(f"cb_cluster_s: can not connect: {err}")
+        self._buckets = {}
+
+    def add_bucket(self, name, bucket):
+        self._buckets[name] = cb_bucket(name, bucket)
+
+    @property
+    def cluster(self):
+        return self._cluster
+
+    @property
+    def bm(self):
+        return self._bm
+
+    @property
+    def qim(self):
+        return self._qim
+
+
+class cbdb(object):
+
+    def __init__(self):
+        self._cluster_a = None
+        self._cluster_s = None
+
+    def add(self, cluster):
+        try:
+            if isinstance(cluster, ACluster):
+                self._cluster_a = cb_cluster_a(cluster)
+            else:
+                self._cluster_s = cb_cluster_s(cluster)
+        except Exception as err:
+            raise ClusterConnectException(f"multi_mgr: error: {err}")
+
+    @property
+    def cluster_a(self, ):
+        return self._cluster_a
+
+    @property
+    def cluster_s(self):
+        return self._cluster_s
 
 
 class db_instance(object):
@@ -13,6 +138,7 @@ class db_instance(object):
         self.cluster_obj_a = None
         self.bm_obj = None
         self.qim_obj = None
+        self.bucket = {}
         self.bucket_obj_s = None
         self.bucket_obj_a = None
         self.bucket_name = None
@@ -21,13 +147,6 @@ class db_instance(object):
         self.scope_name = None
         self.collections_s = {}
         self.collections_a = {}
-
-    @retry(retry_count=10)
-    def set_cluster(self, cluster_s, cluster_a):
-        self.cluster_obj_s = cluster_s
-        self.bm_obj = cluster_s.buckets()
-        self.qim_obj = QueryIndexManager(cluster_s)
-        self.cluster_obj_a = cluster_a
 
     def set_cluster_a(self, cluster_a):
         self.cluster_obj_a = cluster_a
