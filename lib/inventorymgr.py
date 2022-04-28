@@ -67,6 +67,9 @@ class inventoryManager(object):
         self.file_schema_json = None
         self.schemas = []
 
+        if not hasattr(args, 'schema'):
+            return
+
         try:
             for w, schema_object in enumerate(self.inventory_json['inventory']):
                 for key, value in schema_object.items():
@@ -186,8 +189,9 @@ class inventoryManager(object):
 
     @property
     def schemaList(self):
-        for s in self.schemas:
-            yield s.name
+        for w, schema_object in enumerate(self.inventory_json['inventory']):
+            for key, value in schema_object.items():
+                yield key
 
     def getSchema(self, schema):
         return next((s for s in self.schemas if s.name == schema), None)
