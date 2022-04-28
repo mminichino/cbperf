@@ -7,7 +7,7 @@ from .retries import retry, retry_a
 from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from datetime import timedelta
-from couchbase.options import LOCKMODE_NONE
+from couchbase.options import LOCKMODE_NONE, LOCKMODE_WAIT
 import couchbase
 import acouchbase.cluster
 from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions
@@ -57,7 +57,7 @@ class cb_connect(cb_session):
     @retry_a(factor=0.5, retry_count=10)
     async def connect_a(self):
         try:
-            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
+            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_WAIT, timeout_options=self.timeouts)
             result = await cluster_a.on_connect()
             self.db.set_cluster_a(cluster_a)
             self.logger.debug(f"connect_a: connected to db as {self.cb_connect_string}")
@@ -75,7 +75,7 @@ class cb_connect(cb_session):
     @retry(factor=0.5, retry_count=10)
     def connect_s(self):
         try:
-            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_NONE, timeout_options=self.timeouts)
+            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_WAIT, timeout_options=self.timeouts)
             self.db.set_cluster_s(cluster_s)
             return True
         except SystemError as err:

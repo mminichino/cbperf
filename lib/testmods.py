@@ -10,6 +10,8 @@ import asyncio
 import time
 import numpy as np
 import sys
+import threading
+import concurrent.futures
 
 
 class rwMixer(object):
@@ -193,7 +195,7 @@ class test_mods(object):
         logger = debugger.logger
         begin_time = time.time()
 
-        logger.info(f"beginning test instance {n}")
+        logger.info(f"beginning async test instance {n}")
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
@@ -298,26 +300,30 @@ class test_mods(object):
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
         time_threshold = 5
+        debugger = cb_debug('sync_test_run')
+        logger = debugger.logger
+        begin_time = time.time()
 
-        self.logger.info(f"beginning test instance {n}")
+        logger.info(f"beginning test instance {n}")
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
 
         run_batch_size = self.batch_size
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=run_batch_size)
 
         if status_vector[0] == 1:
-            self.logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
+            logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
             return
 
         try:
-            self.logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
+            logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
             db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
             db.quick_connect_s(coll_obj.bucket, coll_obj.scope, coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            self.logger.info(f"test_thread_{n:03d}: db connection error: {err}")
+            logger.info(f"test_thread_{n:03d}: db connection error: {err}")
             return
 
         try:
@@ -326,18 +332,18 @@ class test_mods(object):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            self.logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
+            logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
             return
 
         if status_vector[0] == 1:
-            self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
+            logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
             return
 
         status_vector[3] += 1
-        self.logger.info(f"test_thread_{n:03d}: commencing run")
+        logger.info(f"test_thread_{n:03d}: commencing run")
         while True:
             try:
-                tasks.clear()
+                tasks = set()
                 begin_time = time.time()
                 for y in range(int(run_batch_size)):
                     if is_random:
@@ -351,34 +357,36 @@ class test_mods(object):
                     if op_select.write(record_number):
                         document = r.processTemplate()
                         document[self.id_field] = record_number
-                        result = db.cb_upsert_s(record_number, document, name=coll_obj.name)
-                        tasks.append(result)
+                        tasks.add(executor.submit(db.cb_upsert_s, record_number, document, name=coll_obj.name))
                     else:
                         if mode == REMOVE_DATA:
-                            result = db.cb_remove_s(record_number, name=coll_obj.name)
-                            tasks.append(result)
+                            tasks.add(executor.submit(db.cb_remove_s, record_number, name=coll_obj.name))
                         elif mode == QUERY_TEST:
-                            result = db.cb_query_s(field=query_field, name=coll_obj.name, where=id_field, value=record_number)
-                            tasks.append(result)
+                            tasks.add(executor.submit(db.cb_query_s, field=query_field, name=coll_obj.name, where=id_field, value=record_number))
                         else:
-                            result = db.cb_get_s(record_number, name=coll_obj.name)
-                            tasks.append(result)
+                            tasks.add(executor.submit(db.cb_get_s, record_number, name=coll_obj.name))
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
-                self.logger.info(f"test_thread_{n:03d}: task error #{status_vector[2]}: {err}")
-                break
+                logger.error(f"test_thread_{n:03d}: task error #{status_vector[2]}: {err}")
             if len(tasks) > 0:
+                task_count = len(tasks)
+                while tasks:
+                    done, tasks = concurrent.futures.wait(tasks, return_when=concurrent.futures.FIRST_COMPLETED)
+                    for task in done:
+                        try:
+                            result = task.result()
+                        except Exception as err:
+                            logger.error(f"test_thread_{n:03d}: task error: {err}")
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
                 telemetry[0] = n
-                telemetry[1] = len(tasks)
+                telemetry[1] = task_count
                 telemetry[2] = loop_total_time
                 telemetry_packet = ':'.join(str(i) for i in telemetry)
                 telemetry_queue.put(telemetry_packet)
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
-                    self.logger.info(f"test_thread_{n:03d}: max latency exceeded")
-                    break
+                    logger.error(f"test_thread_{n:03d}: max latency exceeded")
             else:
                 break

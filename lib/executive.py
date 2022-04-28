@@ -197,7 +197,7 @@ class test_exec(cbPerfBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        debugger = cb_debug(self.__class__.__name__, overwrite=True)
+        debugger = cb_debug(self.__class__.__name__)
         self.logger = debugger.logger
         self.throughput = None
         if self.parameters.user:
@@ -340,7 +340,10 @@ class test_exec(cbPerfBase):
                 if self.test_playbook == "ramp" and step != "load":
                     self.ramp_launch(read_p=read_p, write_p=write_p, mode=test_type)
                 else:
-                    self.test_launch(read_p=read_p, write_p=write_p, mode=test_type)
+                    if self.aio:
+                        self.test_launch_a(read_p=read_p, write_p=write_p, mode=test_type)
+                    else:
+                        self.test_launch_s(read_p=read_p, write_p=write_p, mode=test_type)
             except Exception as err:
                 self.logger.error(f"test launch error: {err}")
 
@@ -624,7 +627,7 @@ class test_exec(cbPerfBase):
         else:
             return 1
 
-    def test_launch(self, read_p=100, write_p=0, mode=KV_TEST):
+    def test_launch_a(self, read_p=100, write_p=0, mode=KV_TEST):
         if not self.collection_list:
             raise TestRunError("test not initialized")
 
@@ -637,17 +640,10 @@ class test_exec(cbPerfBase):
             telemetry_queue = multiprocessing.Queue()
             count = multiprocessing.Value('i')
             run_flag = multiprocessing.Value('i')
-            status_flag = multiprocessing.Value('i')
-            thread_count = multiprocessing.Value('i')
             status_vector = multiprocessing.Array('i', [0]*10)
             count.value = 0
             run_flag.value = 1
-            status_flag.value = 0
-            thread_count.value = self.run_threads
-            # status_vector[1] = self.run_threads
             input_json = coll_obj.schema
-
-            executor = ProcessPoolExecutor(max_workers=self.run_threads)
 
             if coll_obj.record_count:
                 operation_count = coll_obj.record_count
@@ -668,50 +664,84 @@ class test_exec(cbPerfBase):
             print(f"Starting test on {coll_obj.name} with {operation_count:,} records - {read_p}% get, {write_p}% update")
             start_time = time.perf_counter()
 
-            if self.aio:
-                test_run_func = tm.test_run_a
+            instances = []
+            for n in range(self.run_threads):
+                instances.append(self.loop.create_task(tm.async_test_run(mode, input_json, count, coll_obj, operation_count, telemetry_queue, write_p, n, status_vector)))
+                status_vector[1] += 1
+
+            self.loop.run_until_complete(asyncio.gather(*instances))
+
+            run_flag.value = 0
+            status_thread.join()
+            end_time = time.perf_counter()
+
+            print("Test completed in {}".format(
+                time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
+
+    def test_launch_s(self, read_p=100, write_p=0, mode=KV_TEST):
+        if not self.collection_list:
+            raise TestRunError("test not initialized")
+
+        run_mode = 'async' if self.aio else 'sync'
+        mode_text = self.test_print_name(mode)
+
+        print("Beginning {} {} test with {} instances.".format(run_mode, mode_text, self.run_threads))
+
+        for coll_obj in self.collection_list:
+            telemetry_queue = multiprocessing.Queue()
+            count = multiprocessing.Value('i')
+            run_flag = multiprocessing.Value('i')
+            status_vector = multiprocessing.Array('i', [0]*10)
+            count.value = 0
+            run_flag.value = 1
+            input_json = coll_obj.schema
+
+            if coll_obj.record_count:
+                operation_count = coll_obj.record_count
             else:
-                test_run_func = tm.test_run_s
+                operation_count = self.record_count
+
+            print(f"Collection {coll_obj.name} document size: {self.format_bytes(coll_obj.size)}")
+            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode)
+            print(f"Collection {coll_obj.name} mode {mode_text} batch size: {coll_obj.batch_size}")
+
+            tm = test_mods(self.host, self.username, self.password, self.tls, self.external_network,
+                           self.session_cache, coll_obj.batch_size, self.id_field, self.run_threads, self.thread_max)
+
+            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
+            status_thread.daemon = True
+            status_thread.start()
+
+            print(f"Starting test on {coll_obj.name} with {operation_count:,} records - {read_p}% get, {write_p}% update")
+            start_time = time.perf_counter()
 
             instances = []
             throttle_count = 0
             n = 0
-            for n in range(self.run_threads):
-            # while True:
-            #     if n == self.run_threads:
-            #         break
+            while True:
+                if n == self.run_threads:
+                    break
 
-                # if not any(p.is_alive() for p in instances) and n > 0:
-                #     break
+                if not any(p.is_alive() for p in instances) and n > 0:
+                    break
 
-                # if status_vector[3] < status_vector[1]:
-                #     if throttle_count == 30:
-                #         break
-                #     self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
-                #     throttle_count += 1
-                #     time.sleep(0.5)
-                #     continue
-                #
-                # throttle_count = 0
-                instances.append(self.loop.create_task(tm.async_test_run(mode, input_json, count, coll_obj, operation_count, telemetry_queue, write_p, n, status_vector)))
-                # instances.append(multiprocessing.Process(
-                #     target=test_run_func,
-                #     args=(mode, input_json, count, coll_obj, operation_count,
-                #           telemetry_queue, write_p, n, status_vector)))
-                # instances[n].daemon = True
-                # instances[n].start()
+                if status_vector[3] < status_vector[1]:
+                    if throttle_count == 30:
+                        break
+                    self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    throttle_count += 1
+                    time.sleep(0.5)
+                    continue
+
+                throttle_count = 0
+                instances.append(multiprocessing.Process(
+                    target=tm.sync_test_run,
+                    args=(mode, input_json, count, coll_obj, operation_count,
+                          telemetry_queue, write_p, n, status_vector)))
+                instances[n].daemon = True
+                instances[n].start()
                 status_vector[1] += 1
-                # n += 1
-
-            self.loop.run_until_complete(asyncio.gather(*instances))
-            # while instances:
-            #     done, instances = concurrent.futures.wait(*instances, return_when=concurrent.futures.FIRST_COMPLETED)
-
-                # if len(done) == len(instances):
-                #     break
-
-            # for p in instances:
-            #     p.join()
+                n += 1
 
             run_flag.value = 0
             status_thread.join()
@@ -728,6 +758,7 @@ class test_exec(cbPerfBase):
 
         run_mode = 'async' if self.aio else 'sync'
         mask = mode | RANDOM_KEYS
+        mode_text = self.test_print_name(mode)
 
         print("Beginning {} test ramp with max {} instances.".format(run_mode, self.thread_max))
 
@@ -753,17 +784,18 @@ class test_exec(cbPerfBase):
             else:
                 record_count = self.record_count
 
-            status_thread = multiprocessing.Process(
-                target=self.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
+            print(f"Collection {coll_obj.name} document size: {self.format_bytes(coll_obj.size)}")
+            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode)
+            print(f"Collection {coll_obj.name} mode {mode_text} batch size: {coll_obj.batch_size}")
+
+            tm = test_mods(self.host, self.username, self.password, self.tls, self.external_network,
+                           self.session_cache, coll_obj.batch_size, self.id_field, self.run_threads, self.thread_max)
+
+            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
             status_thread.daemon = True
             status_thread.start()
 
             print(f"Starting ramp test - {read_p}% get, {write_p}% update")
-
-            if self.aio:
-                test_run_func = self.test_run_a
-            else:
-                test_run_func = self.test_run_s
 
             time_snap = time.perf_counter()
             start_time = time_snap
@@ -789,7 +821,7 @@ class test_exec(cbPerfBase):
                 status_vector[1] += accelerator
                 for i in range(accelerator):
                     scale.append(multiprocessing.Process(
-                        target=test_run_func,
+                        target=tm.sync_test_run,
                         args=(mask, input_json, count, coll_obj, record_count,
                               telemetry_queue, write_p, n, status_vector)))
                     scale[n].daemon = True
