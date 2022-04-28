@@ -34,6 +34,8 @@ List available schemas:
 $ ./cb_perf schema --list
 ````
 ## Randomizer tokens
+Note: Except for the US States the random data generated may not be valid. For example the first four digits of the random credit card may not represent a valid financial institution. The intent is to simulate real data. Any similarities to real data is purely coincidental.  
+
 | Token            | Description                                                   |
 |------------------|---------------------------------------------------------------|
 | date_time        | Data/time string in form %Y-%m-%d %H:%M:%S                    |
@@ -66,6 +68,15 @@ $ ./cb_perf schema --list
 |rand_dob_3|Date of Birth with spaces|
 |rand_image|Random 128x128 pixel JPEG image|
 ## Options
+Usage: cb_perf command options
+
+|Command|Description|
+|-------|-----------|
+|load|Load data|
+|run|Run full test pass|
+|list|List cluster information|
+|schema|Schema management options|
+
 | Option                           | Description                                                |
 |----------------------------------|------------------------------------------------------------|
 | -u USER, --user USER             | User Name                                                  |
