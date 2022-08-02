@@ -238,13 +238,15 @@ class test_exec(cbPerfBase):
         if self.parameters.noinit:
             self.skip_init = True
 
-        if self.operation_count > self.record_count:
-            raise ParameterError("Error: Operation count must be equal or less than record count.")
-
         if self.parameters.command == 'load':
             self.test_playbook = "load"
+            self.operation_count = self.record_count
+
         elif self.parameters.command == 'run' and self.parameters.ramp:
             self.test_playbook = "ramp"
+
+        if self.operation_count > self.record_count:
+            raise ParameterError("Error: Operation count must be equal or less than record count.")
 
         self.bandwidth_test_flag = False
 

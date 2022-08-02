@@ -153,6 +153,51 @@
           }
         ]
       }
+    },
+    {
+      "employee_demo": {
+        "buckets": [
+          {
+            "name": "employees",
+            "scopes": [
+              {
+                "name": "_default",
+                "collections": [
+                  {
+                    "name": "_default",
+                    "schema": {
+                      "record_id": "record_id",
+                      "store_id": "{{ incr_block }}",
+                      "employee_id": "{{ incr_value }}",
+                      "name": "{{ rand_first }} {{ rand_last }}",
+                      "user_id": "{{ rand_username }}",
+                      "email": "{{ rand_email }}",
+                      "email_verified": "{{ rand_bool }}",
+                      "first_name": "{{ rand_first }}",
+                      "last_name": "{{ rand_last }}",
+                      "address": "{{ rand_address }}",
+                      "city": "{{ rand_city }}",
+                      "state": "{{ rand_state }}",
+                      "zip_code": "{{ rand_zip_code }}",
+                      "phone": "{{ rand_phone }}",
+                      "date_of_birth": "{{ rand_dob_1 }}",
+                      "timecards": []
+                    },
+                    "idkey": "record_id",
+                    "primary_index": false,
+                    "override_count": false,
+                    "indexes": [
+                      "record_id",
+                      "store_id",
+                      "employee_id"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

@@ -12,6 +12,7 @@ from jinja2 import Template
 from jinja2.environment import Environment
 from jinja2.runtime import DebugUndefined
 from jinja2.meta import find_undeclared_variables
+import multiprocessing
 
 
 class fastRandom(object):
@@ -31,11 +32,50 @@ class fastRandom(object):
         return rand_number
 
 
+class mpAtomicIncrement(object):
+
+    def __init__(self, i=1, s=1):
+        self.count = multiprocessing.Value('i', i)
+        self._set_size = s
+        self.set_count = multiprocessing.Value('i', s)
+
+    def reset(self, i=1):
+        with self.count.get_lock():
+            self.count.value = i
+
+    def set_size(self, n):
+        self._set_size = n
+        with self.set_count.get_lock():
+            self.set_count.value = self._set_size
+
+    @property
+    def do_increment(self):
+        with self.set_count.get_lock():
+            if self.set_count.value == 1:
+                self.set_count.value = self._set_size
+                return True
+            else:
+                self.set_count.value -= 1
+                return False
+
+    @property
+    def next(self):
+        if self.do_increment:
+            with self.count.get_lock():
+                current = self.count.value
+                self.count.value += 1
+            return current
+        else:
+            return self.count.value
+
+
 class randomize(object):
 
     def __init__(self):
         self.nowTime = datetime.now()
         self.datetimestr = self.nowTime.strftime("%Y-%m-%d %H:%M:%S")
+        self.incrementor = mpAtomicIncrement()
+        self.incrementor_block = mpAtomicIncrement(s=10)
 
     def _randomNumber(self, n):
         min_lc = ord(b'0')
@@ -438,6 +478,8 @@ class randomize(object):
             random_image = self.randImage()
 
         formattedBlock = self.compiled.render(date_time=self.dateCode,
+                                              incr_value=self.incrementor.next,
+                                              incr_block=self.incrementor_block.next,
                                               rand_credit_card=self.creditCard,
                                               rand_ssn=self.socialSecurityNumber,
                                               rand_four=self.fourDigits,

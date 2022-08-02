@@ -190,7 +190,7 @@ class cb_index(cb_connect):
         except Exception:
             raise
 
-        query_text = f"SELECT {query_field} FROM {keyspace} WHERE {query_field} LIKE \"%\" ;"
+        query_text = f"SELECT {query_field} FROM {keyspace} WHERE TOSTRING({query_field}) LIKE \"%\" ;"
         result = self.cb_query_s(sql=query_text)
 
         if len(result) == check_count and len(result) > 0:
