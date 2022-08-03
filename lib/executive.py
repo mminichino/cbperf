@@ -183,9 +183,13 @@ class print_host_map(cbPerfBase):
             self.cluster_ping = self.parameters.ping
         else:
             self.cluster_ping = False
+        if self.parameters.noapi:
+            self.cloud_api = False
+        else:
+            self.cloud_api = True
 
     def run(self):
-        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
+        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, cloud=self.cloud_api)
         db.print_host_map()
         if self.cluster_ping:
             print("Cluster Status:")
@@ -237,6 +241,10 @@ class test_exec(cbPerfBase):
             self.schema = self.parameters.schema
         if self.parameters.noinit:
             self.skip_init = True
+        if self.parameters.noapi:
+            self.cloud_api = False
+        else:
+            self.cloud_api = True
 
         if self.parameters.command == 'load':
             self.test_playbook = "load"
@@ -254,7 +262,7 @@ class test_exec(cbPerfBase):
             self.loop = asyncio.get_event_loop()
             self.loop.set_exception_handler(self.test_unhandled_exception)
             self.db = self.write_cache()
-            self.db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
+            self.db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache, cloud=self.cloud_api)
             self.db.connect_s()
             self.db_index.connect()
         except Exception as err:
@@ -358,7 +366,7 @@ class test_exec(cbPerfBase):
 
     def write_cache(self):
         try:
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network)
+            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, cloud=self.cloud_api)
             self.session_cache = db.session_cache
             return db
         except Exception as err:
@@ -435,7 +443,7 @@ class test_exec(cbPerfBase):
         tasks = set()
         end_char = '\r'
         executor = concurrent.futures.ThreadPoolExecutor()
-        db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
+        db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache, cloud=self.cloud_api)
         db_index.connect()
 
         cluster_memory = self.db.get_memory_quota

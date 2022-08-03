@@ -145,7 +145,7 @@ class cb_session_cache(object):
 
 class cb_session(object):
 
-    def __init__(self, hostname: str, username: str, password: str, ssl=True, external=False, restore=None):
+    def __init__(self, hostname: str, username: str, password: str, ssl=True, external=False, restore=None, cloud=True):
         self.rally_host_name = hostname
         self.rally_cluster_node = self.rally_host_name
         self.node_list = []
@@ -163,6 +163,7 @@ class cb_session(object):
         self.external_network_present = False
         self.node_api_accessible = True
         self.restore_session = restore
+        self.cloud_api = cloud
         self._session_cache = cb_session_cache()
         self.capella_target = False
         self.capella_session = None
@@ -381,7 +382,7 @@ class cb_session(object):
             raise ClusterInitError("cluster not reachable at {}: {}".format(self.rally_host_name, err))
 
         domain_name_check = '.'.join(self.rally_host_name.split('.')[-3:])
-        if domain_name_check == 'cloud.couchbase.com':
+        if domain_name_check == 'cloud.couchbase.com' and self.cloud_api:
             self.capella_target = True
             try:
                 self.capella_session = capella_api()
