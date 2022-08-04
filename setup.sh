@@ -82,9 +82,11 @@ check_linux_by_type () {
   export LINUXTYPE=$ID
   case $ID in
   centos|rhel)
+    PKGMGR="yum"
     check_yum
     ;;
   ubuntu)
+    PKGMGR="apt"
     check_apt
     ;;
   *)
