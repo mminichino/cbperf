@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
-YUM_PKGS="python39 gcc gcc-c++ git python3-devel python3-pip cmake make openssl-devel"
+YUM_PKGS="python39 gcc gcc-c++ git python39-devel python3-pip cmake make openssl-devel"
 APT_PKGS=""
 MAC_PKGS=""
 MAJOR_REV=3
