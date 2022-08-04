@@ -1,20 +1,44 @@
 #!/bin/sh
 #
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
-YUM_PKGS=""
+YUM_PKGS="python39 gcc gcc-c++ git python3-devel python3-pip cmake make openssl-devel"
 APT_PKGS=""
 MAC_PKGS=""
 MAJOR_REV=3
 MINOR_REV=9
 VENV_NAME=venv
 
+install_pkg () {
+  case $PKGMGR in
+  yum)
+    sudo yum install -q -y "$@"
+    ;;
+  apt)
+    sudo apt-get update
+    sudo apt-get install -q -y "$@"
+    ;;
+  brew)
+    brew install "$@"
+    ;;
+  *)
+    err_exit "Unknown package manager $PKGMGR"
+    ;;
+  esac
+}
+
 check_yum () {
   for package in $YUM_PKGS
   do
     yum list installed $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
-      echo "Please install $package"
-      exit 1
+      echo -n "Install dependency ${package}? (y/n) [y]:"
+      read INPUT
+      if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
+        install_pkg $package
+      else
+        echo "Please install $package"
+        exit 1
+      fi
     fi
   done
 }
@@ -74,7 +98,7 @@ case "$SYSTEM_UNAME" in
       machine=MacOS
       check_macos
       BREW_PREFIX=$(brew --prefix)
-      PYTHON_BIN=python3
+      PYTHON_BIN=python3.9
       ;;
     CYGWIN*)
       machine=Cygwin
