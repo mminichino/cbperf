@@ -8,6 +8,13 @@ MAJOR_REV=3
 MINOR_REV=9
 VENV_NAME=venv
 
+err_exit () {
+   if [ -n "$1" ]; then
+      echo "[!] Error: $1"
+   fi
+   exit 1
+}
+
 install_pkg () {
   case $PKGMGR in
   yum)
