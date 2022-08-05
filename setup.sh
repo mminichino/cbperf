@@ -7,6 +7,7 @@ MAC_PKGS="python@3.9 openssl"
 MAJOR_REV=3
 MINOR_REV=9
 VENV_NAME=venv
+YES=0
 
 err_exit () {
    if [ -n "$1" ]; then
@@ -39,7 +40,7 @@ check_yum () {
     yum list installed $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
       echo -n "Install dependency ${package}? (y/n) [y]:"
-      read INPUT
+      [ $YES -eq 1 ] || read INPUT
       if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
         install_pkg $package
       else
@@ -56,7 +57,7 @@ check_apt () {
     dpkg -l $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
       echo -n "Install dependency ${package}? (y/n) [y]:"
-      read INPUT
+      [ $YES -eq 1 ] || read INPUT
       if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
         install_pkg $package
       else
@@ -79,7 +80,7 @@ check_macos () {
     brew list $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
       echo -n "Install dependency ${package}? (y/n/s) [y]:"
-      read INPUT
+      [ $YES -eq 1 ] || read INPUT
       if [ "$INPUT" == "s" ]; then
         continue
       fi
@@ -136,11 +137,14 @@ case "$SYSTEM_UNAME" in
       ;;
 esac
 
-while getopts "p:" opt
+while getopts "p:y" opt
 do
   case $opt in
     p)
       PYTHON_BIN=$OPTARG
+      ;;
+    y)
+      YES=1
       ;;
     \?)
       echo "Invalid Argument"
