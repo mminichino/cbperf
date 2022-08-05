@@ -2,8 +2,8 @@
 #
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 YUM_PKGS="python39 gcc gcc-c++ git python39-devel python3-pip cmake make openssl-devel"
-APT_PKGS=""
-MAC_PKGS=""
+APT_PKGS="python3.9 python3.9-dev git-all python3-pip python3-setuptools cmake build-essential"
+MAC_PKGS="python@3.9 openssl"
 MAJOR_REV=3
 MINOR_REV=9
 VENV_NAME=venv
@@ -55,24 +55,40 @@ check_apt () {
   do
     dpkg -l $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
-      echo "Please install $package"
-      exit 1
+      echo -n "Install dependency ${package}? (y/n) [y]:"
+      read INPUT
+      if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
+        install_pkg $package
+      else
+        echo "Please install $package"
+        exit 1
+      fi
     fi
   done
 }
 
 check_macos () {
+  PKGMGR="brew"
   which brew >/dev/null 2>&1
   if [ $? -ne 0 ]; then
-    echo "Please install brew, then install openssl."
+    echo "Please install Homebrew."
     exit 1
   fi
   for package in $MAC_PKGS
   do
     brew list $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
-      echo "Please install brew package $package"
-      exit 1
+      echo -n "Install dependency ${package}? (y/n/s) [y]:"
+      read INPUT
+      if [ "$INPUT" == "s" ]; then
+        continue
+      fi
+      if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
+        install_pkg $package
+      else
+        echo "Please install $package"
+        exit 1
+      fi
     fi
   done
 }
