@@ -59,7 +59,7 @@ check_yum () {
 check_apt () {
   for package in $APT_PKGS
   do
-    dpkg -l $package >/dev/null 2>&1
+    dpkg -s $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
       if [ $YES -eq 1 ]; then
         INPUT="y"
