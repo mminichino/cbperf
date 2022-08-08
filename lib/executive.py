@@ -218,8 +218,7 @@ class test_exec(cbPerfBase):
             self.record_count = self.parameters.count
         if self.parameters.ops:
             self.operation_count = self.parameters.ops
-        if self.parameters.replica:
-            self.replica_count = self.parameters.replica
+        self.replica_count = self.parameters.replica
         if self.parameters.threads:
             self.run_threads = self.parameters.threads
         if self.parameters.memquota:

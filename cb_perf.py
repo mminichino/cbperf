@@ -52,7 +52,7 @@ class params(object):
         run_parser.add_argument('--count', action='store', help="Record Count", type=int)
         run_parser.add_argument('--ops', action='store', help="Operation Count", type=int)
         run_parser.add_argument('--threads', action='store', help="Threads for run", type=int)
-        run_parser.add_argument('--replica', action='store', help="Replica Count", type=int)
+        run_parser.add_argument('--replica', action='store', help="Replica Count", type=int, default=1)
         run_parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int)
         run_parser.add_argument('--file', action='store', help="File based collection schema JSON")
         run_parser.add_argument('--inventory', action='store', help="Location of inventory JSON")
