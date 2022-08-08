@@ -113,30 +113,6 @@ check_linux_by_type () {
   esac
 }
 
-SYSTEM_UNAME=$(uname -s)
-case "$SYSTEM_UNAME" in
-    Linux*)
-      machine=Linux
-      check_linux_by_type
-      PYTHON_BIN=python3.9
-      ;;
-    Darwin*)
-      machine=MacOS
-      check_macos
-      BREW_PREFIX=$(brew --prefix)
-      PYTHON_BIN=python3.9
-      ;;
-    CYGWIN*)
-      machine=Cygwin
-      echo "Windows is not currently supported."
-      exit 1
-      ;;
-    *)
-      echo "Unsupported system type: $SYSTEM_UNAME"
-      exit 1
-      ;;
-esac
-
 while getopts "p:y" opt
 do
   case $opt in
@@ -152,6 +128,30 @@ do
       ;;
   esac
 done
+
+SYSTEM_UNAME=$(uname -s)
+case "$SYSTEM_UNAME" in
+    Linux*)
+      machine=Linux
+      check_linux_by_type
+      PYTHON_BIN=${PYTHON_BIN:-python3.9}
+      ;;
+    Darwin*)
+      machine=MacOS
+      check_macos
+      BREW_PREFIX=$(brew --prefix)
+      PYTHON_BIN=${PYTHON_BIN:-python3.9}
+      ;;
+    CYGWIN*)
+      machine=Cygwin
+      echo "Windows is not currently supported."
+      exit 1
+      ;;
+    *)
+      echo "Unsupported system type: $SYSTEM_UNAME"
+      exit 1
+      ;;
+esac
 
 which $PYTHON_BIN >/dev/null 2>&1
 if [ $? -ne 0 ]; then
