@@ -129,7 +129,7 @@
         "hostname": "localhost",
         "username": "Administrator",
         "password": "password",
-        "ssl": true,
+        "ssl": false,
         "external_network": false,
         "async": true
     }

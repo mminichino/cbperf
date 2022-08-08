@@ -145,7 +145,7 @@ class cb_session_cache(object):
 
 class cb_session(object):
 
-    def __init__(self, hostname: str, username: str, password: str, ssl=True, external=False, restore=None, cloud=True):
+    def __init__(self, hostname: str, username: str, password: str, ssl=False, external=False, restore=None, cloud=True):
         self.rally_host_name = hostname
         self.rally_cluster_node = self.rally_host_name
         self.node_list = []

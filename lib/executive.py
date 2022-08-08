@@ -40,7 +40,7 @@ class cbPerfBase(object):
         self.username = None
         self.password = None
         self.host = None
-        self.tls = True
+        self.tls = False
         self.external_network = False
         self.aio = True
         self.input_file = None
