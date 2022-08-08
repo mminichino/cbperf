@@ -8,6 +8,7 @@ MAJOR_REV=3
 MINOR_REV=9
 VENV_NAME=venv
 YES=0
+FORCE=0
 
 err_exit () {
    if [ -n "$1" ]; then
@@ -125,7 +126,7 @@ check_linux_by_type () {
   esac
 }
 
-while getopts "p:y" opt
+while getopts "p:yf" opt
 do
   case $opt in
     p)
@@ -133,6 +134,9 @@ do
       ;;
     y)
       YES=1
+      ;;
+    f)
+      FORCE=1
       ;;
     \?)
       echo "Invalid Argument"
@@ -184,9 +188,11 @@ if [ "$PY_MAJOR" -lt "$MAJOR_REV" ] || [ "$PY_MINOR" -lt "$MINOR_REV" ]; then
   exit 1
 fi
 
-if [ -d $SCRIPTDIR/$VENV_NAME ]; then
+if [ -d $SCRIPTDIR/$VENV_NAME -a $FORCE -eq 0 ]; then
   echo "Virtual environment $SCRIPTDIR/$VENV_NAME already exists."
   exit 1
+else
+  rm -rf ${SCRIPTDIR:?}/${VENV_NAME:?}
 fi
 
 printf "Creating virtual environment... "
