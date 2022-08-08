@@ -481,11 +481,11 @@ class test_exec(cbPerfBase):
                             elif not bypass:
                                 db_index.connect_collection('_default')
                             if self.inventory.hasPrimaryIndex(collection) and not bypass:
-                                print(f"Creating primary index on {collection.name}")
+                                print(f"Creating primary index on {collection.name} with {self.replica_count} replica(s)")
                                 tasks.add(executor.submit(db_index.create_index, collection.name, replica=self.replica_count))
                             if self.inventory.hasIndexes(collection) and not bypass:
                                 for index_field, index_name in self.inventory.nextIndex(collection):
-                                    print(f"Creating index {index_name} on {index_field}")
+                                    print(f"Creating index {index_name} on {index_field} with {self.replica_count} replica(s)")
                                     tasks.add(executor.submit(db_index.create_index, collection.name, field=index_field, index_name=index_name, replica=self.replica_count))
                             collection_list.append(collection)
                 print("Waiting for index tasks to complete ... ")
