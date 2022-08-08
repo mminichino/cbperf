@@ -62,7 +62,7 @@ check_apt () {
         echo -n "Install dependency ${package}? (y/n) [y]:"
         read INPUT
       fi
-      if [ "$INPUT" == "y" ] || [ -z "$INPUT" ]; then
+      if [ "$INPUT" = "y" ] || [ -z "$INPUT" ]; then
         install_pkg $package
       else
         echo "Please install $package"
