@@ -2,7 +2,7 @@
 #
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 YUM_PKGS="python39 gcc gcc-c++ git python39-devel python3-pip cmake make openssl-devel"
-APT_PKGS="python3.9 python3.9-dev git-all python3-pip python3-setuptools cmake build-essential"
+APT_PKGS="python3.9 python3.9-dev python3.9-venv git-all python3-pip python3-setuptools cmake build-essential"
 MAC_PKGS="python@3.9 openssl"
 MAJOR_REV=3
 MINOR_REV=9
@@ -39,9 +39,13 @@ check_yum () {
   do
     yum list installed $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
-      echo -n "Install dependency ${package}? (y/n) [y]:"
-      [ $YES -eq 1 ] || read INPUT
-      if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
+      if [ $YES -eq 1 ]; then
+        INPUT="y"
+      else
+        echo -n "Install dependency ${package}? (y/n) [y]:"
+        read INPUT
+      fi
+      if [ "$INPUT" = "y" ] || [ -z "$INPUT" ]; then
         install_pkg $package
       else
         echo "Please install $package"
@@ -83,12 +87,16 @@ check_macos () {
   do
     brew list $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
-      echo -n "Install dependency ${package}? (y/n/s) [y]:"
-      [ $YES -eq 1 ] || read INPUT
-      if [ "$INPUT" == "s" ]; then
+      if [ $YES -eq 1 ]; then
+        INPUT="y"
+      else
+        echo -n "Install dependency ${package}? (y/n) [y]:"
+        read INPUT
+      fi
+      if [ "$INPUT" = "s" ]; then
         continue
       fi
-      if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
+      if [ "$INPUT" = "y" ] || [ -z "$INPUT" ]; then
         install_pkg $package
       else
         echo "Please install $package"
