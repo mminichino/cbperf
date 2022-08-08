@@ -57,7 +57,11 @@ check_apt () {
     dpkg -l $package >/dev/null 2>&1
     if [ $? -ne 0 ]; then
       echo -n "Install dependency ${package}? (y/n) [y]:"
-      [ $YES -eq 1 ] || read INPUT
+      if [ $YES -eq 1 ]; then
+        INPUT="y"
+      else
+        read INPUT
+      fi
       if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
         install_pkg $package
       else
