@@ -197,7 +197,7 @@ class print_host_map(cbPerfBase):
         db.print_host_map()
         if self.cluster_ping:
             if self.test_mode:
-                db.cluster_health_check(output=False, restrict=False, noraise=True)
+                db.cluster_health_check(output=False, restrict=False, noraise=True, extended=True)
             else:
                 print("Cluster Status:")
                 db.cluster_health_check(output=True, restrict=False)

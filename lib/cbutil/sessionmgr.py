@@ -484,7 +484,7 @@ class cb_session(object):
             print("[Services] %s [version] %s [platform] %s" % (services, version, ostype))
 
     @retry(retry_count=10, allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError, TimeoutException, ClusterKVServiceError))
-    def cluster_health_check(self, output=False, restrict=True, noraise=False):
+    def cluster_health_check(self, output=False, restrict=True, noraise=False, extended=False):
         cb_auth = PasswordAuthenticator(self.username, self.password)
         cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
 
@@ -537,5 +537,16 @@ class cb_session(object):
                         report.last_activity,
                         report.state)
                     print(report_string)
+
+        if extended:
+            try:
+                query = "select * from system:datastores ;"
+                result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
+            except Exception as err:
+                if noraise:
+                    print(f"query service not ready: {err}")
+                    sys.exit(3)
+                else:
+                    raise ClusterQueryServiceError(f"query service test error: {err}")
 
         cluster.disconnect()
