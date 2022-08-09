@@ -546,6 +546,9 @@ class cb_session(object):
                 query = "select * from system:datastores ;"
                 result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
                 print(f"Datastore query ok: returned {sum(1 for i in result.rows())} records")
+                query = "select * from system:indexes ;"
+                result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
+                print(f"Index query ok: returned {sum(1 for i in result.rows())} records")
             except Exception as err:
                 if noraise:
                     print(f"query service not ready: {err}")
