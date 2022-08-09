@@ -454,10 +454,13 @@ class cb_connect(cb_session):
         except CollectionNameNotFound:
             raise
         except CouchbaseException as err:
-            error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
-            self.logger.debug(f"query: {query}")
-            self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
-            raise error_class(err.context.first_error_message)
+            try:
+                error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
+                self.logger.debug(f"query: {query}")
+                self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
+                raise error_class(err.context.first_error_message)
+            except AttributeError:
+                raise QueryError(err.message)
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
@@ -474,10 +477,13 @@ class cb_connect(cb_session):
         except CollectionNameNotFound:
             raise
         except CouchbaseException as err:
-            error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
-            self.logger.debug(f"query: {query}")
-            self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
-            raise error_class(err.context.first_error_message)
+            try:
+                error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
+                self.logger.debug(f"query: {query}")
+                self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
+                raise error_class(err.context.first_error_message)
+            except AttributeError:
+                raise QueryError(err.message)
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 

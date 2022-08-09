@@ -187,13 +187,20 @@ class print_host_map(cbPerfBase):
             self.cloud_api = False
         else:
             self.cloud_api = True
+        if self.parameters.test:
+            self.test_mode = True
+        else:
+            self.test_mode = False
 
     def run(self):
         db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, cloud=self.cloud_api)
         db.print_host_map()
         if self.cluster_ping:
-            print("Cluster Status:")
-            db.cluster_health_check(output=True, restrict=False)
+            if self.test_mode:
+                db.cluster_health_check(output=False, restrict=False, noraise=True)
+            else:
+                print("Cluster Status:")
+                db.cluster_health_check(output=True, restrict=False)
 
 
 class test_exec(cbPerfBase):

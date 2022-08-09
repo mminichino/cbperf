@@ -43,6 +43,7 @@ class params(object):
         parent_parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')
         list_parser = argparse.ArgumentParser(add_help=False)
         list_parser.add_argument('--ping', action='store_true', help='Show cluster ping output')
+        list_parser.add_argument('--test', action='store_true', help='Just check status and error if not ready')
         schema_parser = argparse.ArgumentParser(add_help=False)
         schema_parser.add_argument('--list', action='store_true', help='Show schema list')
         schema_parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')

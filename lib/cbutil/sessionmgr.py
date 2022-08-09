@@ -484,7 +484,7 @@ class cb_session(object):
             print("[Services] %s [version] %s [platform] %s" % (services, version, ostype))
 
     @retry(retry_count=10, allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError, TimeoutException, ClusterKVServiceError))
-    def cluster_health_check(self, output=False, restrict=True):
+    def cluster_health_check(self, output=False, restrict=True, noraise=False):
         cb_auth = PasswordAuthenticator(self.username, self.password)
         cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
 
@@ -513,14 +513,18 @@ class cb_session(object):
                     print(report_string)
                     continue
                 if not report.state == PingState.OK:
-                    if endpoint.value == 'kv':
-                        raise ClusterKVServiceError("{} KV service not ok".format(self.cb_connect_string))
-                    elif endpoint.value == 'n1ql':
-                        raise ClusterQueryServiceError("{} query service not ok".format(self.cb_connect_string))
-                    elif endpoint.value == 'views':
-                        raise ClusterViewServiceError("{} view service not ok".format(self.cb_connect_string))
+                    if noraise:
+                        print(f"{endpoint.value} service not ok: {report.state}")
+                        sys.exit(2)
                     else:
-                        raise ClusterHealthCheckError("{} service {} not ok".format(self.cb_connect_string, endpoint.value))
+                        if endpoint.value == 'kv':
+                            raise ClusterKVServiceError("{} KV service not ok".format(self.cb_connect_string))
+                        elif endpoint.value == 'n1ql':
+                            raise ClusterQueryServiceError("{} query service not ok".format(self.cb_connect_string))
+                        elif endpoint.value == 'views':
+                            raise ClusterViewServiceError("{} view service not ok".format(self.cb_connect_string))
+                        else:
+                            raise ClusterHealthCheckError("{} service {} not ok".format(self.cb_connect_string, endpoint.value))
 
         if output:
             print("Cluster Diagnostics:")
