@@ -151,6 +151,7 @@ class cb_session(object):
         self.node_list = []
         self.srv_host_list = []
         self.all_hosts = []
+        self.cluster_services = []
         self.rally_dns_domain = False
         self.node_cycle = None
         self.cluster_info = None
@@ -413,6 +414,7 @@ class cb_session(object):
             record['version'] = results['nodes'][i]['version']
             record['ostype'] = results['nodes'][i]['os']
             record['services'] = ','.join(results['nodes'][i]['services'])
+            self.cluster_services = list(results['nodes'][i]['services'])
 
             self.node_list.append(record)
             self.logger.info("Added node {}".format(host_name))
@@ -485,7 +487,6 @@ class cb_session(object):
 
     @retry(retry_count=10, allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError, TimeoutException, ClusterKVServiceError))
     def cluster_health_check(self, output=False, restrict=True, noraise=False, extended=False):
-        query_service = False
         cb_auth = PasswordAuthenticator(self.username, self.password)
         cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
 
@@ -503,8 +504,6 @@ class cb_session(object):
 
         for endpoint, reports in result.endpoints.items():
             for report in reports:
-                if endpoint.value == 'n1ql':
-                    query_service = True
                 if restrict and endpoint.value != 'kv':
                     continue
                 report_string = " {0}: {1} took {2} {3}".format(
@@ -541,14 +540,16 @@ class cb_session(object):
                         report.state)
                     print(report_string)
 
-        if extended and query_service:
+        if extended:
             try:
-                query = "select * from system:datastores ;"
-                result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
-                print(f"Datastore query ok: returned {sum(1 for i in result.rows())} records")
-                query = "select * from system:indexes ;"
-                result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
-                print(f"Index query ok: returned {sum(1 for i in result.rows())} records")
+                if 'n1ql' in self.cluster_services:
+                    query = "select * from system:datastores ;"
+                    result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
+                    print(f"Datastore query ok: returned {sum(1 for i in result.rows())} records")
+                if 'index' in self.cluster_services:
+                    query = "select * from system:indexes ;"
+                    result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
+                    print(f"Index query ok: returned {sum(1 for i in result.rows())} records")
             except Exception as err:
                 if noraise:
                     print(f"query service not ready: {err}")
