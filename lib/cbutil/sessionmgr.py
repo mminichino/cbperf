@@ -485,6 +485,7 @@ class cb_session(object):
 
     @retry(retry_count=10, allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError, TimeoutException, ClusterKVServiceError))
     def cluster_health_check(self, output=False, restrict=True, noraise=False, extended=False):
+        query_service = False
         cb_auth = PasswordAuthenticator(self.username, self.password)
         cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
 
@@ -502,6 +503,8 @@ class cb_session(object):
 
         for endpoint, reports in result.endpoints.items():
             for report in reports:
+                if endpoint.value == 'n1ql':
+                    query_service = True
                 if restrict and endpoint.value != 'kv':
                     continue
                 report_string = " {0}: {1} took {2} {3}".format(
@@ -538,10 +541,11 @@ class cb_session(object):
                         report.state)
                     print(report_string)
 
-        if extended:
+        if extended and query_service:
             try:
                 query = "select * from system:datastores ;"
                 result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
+                print(f"Datastore query ok, returned {len(result)} records")
             except Exception as err:
                 if noraise:
                     print(f"query service not ready: {err}")
