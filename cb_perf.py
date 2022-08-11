@@ -39,6 +39,7 @@ class params(object):
         parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int, default=3)
         parent_parser.add_argument('--limit', action='store_true', help="Limited Network Connectivity")
         parent_parser.add_argument('--noapi', action='store_true', help="Disable Capella API functionality")
+        parent_parser.add_argument('--safe', action='store_true', help="Do not overwrite data")
         parent_parser.add_argument('-e', '--external', action='store_true', help='Use external network')
         parent_parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')
         list_parser = argparse.ArgumentParser(add_help=False)

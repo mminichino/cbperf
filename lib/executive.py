@@ -46,6 +46,7 @@ class cbPerfBase(object):
         self.input_file = None
         self.query_field = None
         self.create_bucket = True
+        self.safe_mode = False
         self.default_operation_count = None
         self.default_record_count = None
         self.default_kv_batch_size = None
@@ -253,6 +254,8 @@ class test_exec(cbPerfBase):
             self.cloud_api = False
         else:
             self.cloud_api = True
+        if self.parameters.safe:
+            self.safe_mode = True
 
         if self.parameters.command == 'load':
             self.test_playbook = "load"
@@ -466,6 +469,10 @@ class test_exec(cbPerfBase):
             if schema:
                 for bucket in self.inventory.nextBucket(schema):
                     if self.create_bucket and not bypass:
+                        if self.safe_mode:
+                            if self.db.is_bucket(bucket.name):
+                                print(f"Bucket {bucket.name} already exists, exiting.")
+                                sys.exit(0)
                         print("Creating bucket {}".format(bucket.name))
                         self.db.create_bucket(bucket.name, quota=self.bucket_memory)
                         self.db.bucket_wait(bucket.name)
