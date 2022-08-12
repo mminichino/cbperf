@@ -12,8 +12,12 @@ sys.path.append(parent)
 from lib import system
 from lib.cbutil import cbconnect
 from lib.cbutil import cbindex
+from lib.cbutil.randomize import randomize
 import argparse
 import asyncio
+import re
+import types
+import datetime
 
 document = {
     "id": 1,
@@ -32,6 +36,71 @@ tests_run = 0
 replica_count = 1
 
 
+class CheckCompare(object):
+
+    def __init__(self):
+        self.num = False
+        self.chr = False
+        self.bln = False
+        self.tim = False
+        self.low = 0
+        self.high = 0
+        self.chars = 0
+        self.p = None
+        self.bv = False
+
+    def num_range(self, l: int, h: int):
+        self.num = True
+        self.chr = False
+        self.bln = False
+        self.tim = False
+        self.low = l
+        self.high = h
+
+    def pattern(self, s):
+        self.num = False
+        self.chr = True
+        self.bln = False
+        self.tim = False
+        self.p = re.compile(s)
+
+    def boolean(self):
+        self.num = False
+        self.chr = False
+        self.bln = True
+        self.tim = False
+
+    def time(self):
+        self.num = False
+        self.chr = False
+        self.bln = False
+        self.tim = True
+
+    def check(self, v):
+        if isinstance(v, types.GeneratorType):
+            v = next(v)
+        if self.num:
+            if self.low <= int(v) <= self.high:
+                return True
+            else:
+                return False
+        elif self.chr:
+            if self.p.match(v):
+                return True
+            else:
+                return False
+        elif self.bln:
+            if type(v) == bool:
+                return True
+            else:
+                return False
+        elif self.tim:
+            if isinstance(v, datetime.datetime):
+                return True
+            else:
+                return False
+
+
 def check_list(a, b):
     for item in a:
         if item not in b:
@@ -47,14 +116,22 @@ def test_unhandled_exception(loop, context):
         print(f"unhandled error: {err}")
 
 
-def test_step(check, fun, *args, **kwargs):
+def test_step(check, fun, *args, __name=None, **kwargs):
     global failed, tests_run
+    fun_name = None
     try:
         tests_run += 1
         # args_str = ','.join(map(str, args))
         # kwargs_str = ','.join('{}={}'.format(k, v) for k, v in kwargs.items())
-        print(f" {tests_run}) Test {fun.__name__}() ... ", end='')
-        result = fun(*args, **kwargs)
+        if __name:
+            fun_name = __name
+        else:
+            fun_name = fun.__name__
+        print(f" {tests_run}) Test {fun_name}() ... ", end='')
+        if __name:
+            result = fun
+        else:
+            result = fun(*args, **kwargs)
         if check:
             if type(check) == list:
                 assert check_list(check, result) is True
@@ -62,11 +139,13 @@ def test_step(check, fun, *args, **kwargs):
                 assert result is not None
             elif type(result) == couchbase.result.GetResult:
                 assert check == result.content_as[dict]
+            elif type(check) == CheckCompare:
+                assert check.check(result)
             else:
                 assert check == result
         print("Ok")
     except Exception as err:
-        print(f"Step failed: function {fun.__name__}: {err}")
+        print(f"Step failed: function {fun_name}: {err}")
         failed += 1
 
 
@@ -85,6 +164,8 @@ async def async_test_step(check, fun, *args, **kwargs):
                 assert result is not None
             elif type(result) == couchbase.result.GetResult:
                 assert check == result.content_as[dict]
+            elif type(check) == CheckCompare:
+                assert check.check(result)
             else:
                 assert check == result
         print("Ok")
@@ -182,6 +263,105 @@ def cb_connect_test(host, username, password, bucket, tls, external_network, clo
     cb_async_test_set(host, username, password, bucket, 'testscope', 'testcollection', tls, external_network, cloud_api)
 
 
+def randomize_test():
+    r = randomize()
+    c = CheckCompare()
+    c.num_range(0, 9)
+    test_step(c, r._randomNumber, 1)
+    c.pattern('^[a-z]+$')
+    test_step(c, r._randomStringLower, 8)
+    c.pattern('^[A-Z]+$')
+    test_step(c, r._randomStringUpper, 8)
+    c.pattern('^[a-zA-Z0-9]+$')
+    test_step(c, r._randomHash, 8)
+    c.num_range(0, 255)
+    test_step(c, r._randomBits, 8)
+    c.num_range(1, 12)
+    test_step(c, r._monthNumber)
+    c.num_range(1, 31)
+    test_step(c, r._monthDay)
+    c.num_range(1920, 2022)
+    test_step(c, r._yearNumber)
+    c.pattern('^[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]$')
+    test_step(c, r.creditCard, __name='creditCard')
+    c.pattern('^[0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9]$')
+    test_step(c, r.socialSecurityNumber, __name='socialSecurityNumber')
+    c.pattern('^[0-9][0-9][0-9]$')
+    test_step(c, r.threeDigits, __name='threeDigits')
+    c.pattern('^[0-9][0-9][0-9][0-9]$')
+    test_step(c, r.fourDigits, __name='fourDigits')
+    c.pattern('^[0-9][0-9][0-9][0-9][0-9]$')
+    test_step(c, r.zipCode, __name='zipCode')
+    c.pattern('^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]$')
+    test_step(c, r.accountNumner, __name='accountNumner')
+    c.pattern('^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]$')
+    test_step(c, r.numericSequence, __name='numericSequence')
+    c.pattern('^[0-9]+\.[0-9]+$')
+    test_step(c, r.dollarAmount, __name='dollarAmount')
+    c.boolean()
+    test_step(c, r.booleanValue, __name='booleanValue')
+    c.num_range(1920, 2022)
+    test_step(c, r.yearValue, __name='yearValue')
+    c.num_range(1, 12)
+    test_step(c, r.monthValue, __name='monthValue')
+    c.num_range(1, 31)
+    test_step(c, r.dayValue, __name='dayValue')
+    c.time()
+    test_step(c, r.pastDate, __name='pastDate')
+    c.time()
+    test_step(c, r.dobDate, __name='dobDate')
+    c.pattern('^[0-9]+/[0-9]+/[0-9]+$')
+    past_date = r.pastDate
+    test_step(c, r.pastDateSlash, past_date)
+    c.pattern('^[0-9]+-[0-9]+-[0-9]+$')
+    past_date = r.pastDate
+    test_step(c, r.pastDateHyphen, past_date)
+    c.pattern('^[a-zA-Z]+ [0-9]+ [0-9]+$')
+    past_date = r.pastDate
+    test_step(c, r.pastDateText, past_date)
+    c.pattern('^[0-9]+/[0-9]+/[0-9]+$')
+    past_date = r.dobDate
+    test_step(c, r.dobSlash, past_date)
+    c.pattern('^[0-9]+-[0-9]+-[0-9]+$')
+    past_date = r.dobDate
+    test_step(c, r.dobHyphen, past_date)
+    c.pattern('^[a-zA-Z]+ [0-9]+ [0-9]+$')
+    past_date = r.dobDate
+    test_step(c, r.dobText, past_date)
+    c.pattern('^[a-zA-Z0-9]+$')
+    test_step(c, r.hashCode, __name='hashCode')
+    c.pattern('^[a-zA-Z]+$')
+    test_step(c, r.firstName, __name='firstName')
+    c.pattern('^[a-zA-Z]+$')
+    test_step(c, r.lastName, __name='lastName')
+    c.pattern('^[a-zA-Z]+$')
+    test_step(c, r.streetType, __name='streetType')
+    c.pattern('^[a-zA-Z0-9]+$')
+    test_step(c, r.streetName, __name='streetName')
+    c.pattern('^[0-9]+ [a-zA-Z0-9]+ [a-zA-Z]+$')
+    test_step(c, r.addressLine, __name='addressLine')
+    c.pattern('^[a-zA-Z ]+$')
+    test_step(c, r.cityName, __name='cityName')
+    c.pattern('^[A-Z]+$')
+    test_step(c, r.stateName, __name='stateName')
+    c.pattern('^[0-9][0-9][0-9]-555-[0-9][0-9][0-9][0-9]$')
+    test_step(c, r.phoneNumber, __name='phoneNumber')
+    c.pattern('^[0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+:[0-9]+$')
+    test_step(c, r.dateCode, __name='dateCode')
+    c.pattern('^[a-z]+$')
+    first = r.firstName
+    last = r.lastName
+    test_step(c, r.nickName, first, last)
+    c.pattern('^[a-z]+\.[a-z]+@[a-z]+\.[a-z]+$')
+    first = r.firstName
+    last = r.lastName
+    test_step(c, r.emailAddress, first, last)
+    c.pattern('^[a-z]+[0-9]+$')
+    first = r.firstName
+    last = r.lastName
+    test_step(c, r.userName, first, last)
+
+
 def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('-u', '--user', action='store', help="User Name", default="Administrator")
@@ -211,6 +391,9 @@ def main():
 
     print("SSL Tests")
     cb_connect_test(hostname, username, password, bucket, True, external, cloud_api)
+
+    print("Randomize Tests")
+    randomize_test()
 
     print(f"{tests_run} test(s) run")
     if failed > 0:
