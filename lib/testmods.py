@@ -57,8 +57,6 @@ class test_mods(object):
         self.id_field = id_field
         self.run_threads = run_t
         self.thread_max = max_t
-        debugger = cb_debug(self.__class__.__name__, overwrite=True)
-        self.logger = debugger.logger
 
     def test_mask(self, bits):
         if bits & KV_TEST:
@@ -77,13 +75,16 @@ class test_mods(object):
             return False
 
     def mod_unhandled_exception(self, loop, context):
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
         err = context.get("exception", context['message'])
         if isinstance(err, Exception):
-            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
+            logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
         else:
-            self.logger.error(f"unhandled error: {err}")
+            logger.error(f"unhandled error: {err}")
+        debugger.close()
 
-    def status_output(self, total_count, run_flag, telemetry_queue, status_vector):
+    def status_output(self, total_count, run_flag, telemetry_queue, status_vector, out_file=None):
         max_threads = self.thread_max if total_count == 0 else self.run_threads
         tps_vector = [0 for n in range(max_threads)]
         tps_history = []
@@ -116,6 +117,9 @@ class test_mods(object):
             exp_data = exp_data[segment:] - exp_data[:-segment]
 
             return (segment * exp_data - sum_idx * sum_data) / (segment * exp_idx - sum_idx * sum_idx)
+
+        if out_file:
+            sys.stdout = open(out_file, "a")
 
         while run_flag.value == 1:
             try:
@@ -176,12 +180,15 @@ class test_mods(object):
         print(f"{max_time:.6f} maximum time")
 
     def test_run_a(self, *args, **kwargs):
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(self.mod_unhandled_exception)
         try:
             loop.run_until_complete(self.async_test_run(*args, **kwargs))
         except Exception as err:
-            self.logger.error(f"async test process error: {err}")
+            logger.error(f"async test process error: {err}")
+        debugger.close()
 
     async def async_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
         tasks = []
@@ -204,6 +211,7 @@ class test_mods(object):
 
         if status_vector[0] == 1:
             logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
+            debugger.close()
             return
 
         try:
@@ -214,6 +222,7 @@ class test_mods(object):
             status_vector[0] = 1
             status_vector[2] += 1
             logger.error(f"test_thread_{n:03d}: db connection error: {err}")
+            debugger.close()
             return
 
         try:
@@ -223,10 +232,12 @@ class test_mods(object):
             status_vector[0] = 1
             status_vector[2] += 1
             logger.error(f"test_thread_{n:03d}: randomizer error: {err}")
+            debugger.close()
             return
 
         if status_vector[0] == 1:
             logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
+            debugger.close()
             return
 
         status_vector[3] += 1
@@ -284,6 +295,8 @@ class test_mods(object):
             else:
                 break
 
+        debugger.close()
+
     def test_run_s(self, *args, **kwargs):
         debugger = cb_debug(f"test_run_s")
         logger = debugger.logger
@@ -314,6 +327,7 @@ class test_mods(object):
 
         if status_vector[0] == 1:
             logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
+            debugger.close()
             return
 
         try:
@@ -324,6 +338,7 @@ class test_mods(object):
             status_vector[0] = 1
             status_vector[2] += 1
             logger.info(f"test_thread_{n:03d}: db connection error: {err}")
+            debugger.close()
             return
 
         try:
@@ -333,10 +348,12 @@ class test_mods(object):
             status_vector[0] = 1
             status_vector[2] += 1
             logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
+            debugger.close()
             return
 
         if status_vector[0] == 1:
             logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
+            debugger.close()
             return
 
         status_vector[3] += 1
@@ -390,3 +407,5 @@ class test_mods(object):
                     logger.error(f"test_thread_{n:03d}: max latency exceeded")
             else:
                 break
+
+        debugger.close()

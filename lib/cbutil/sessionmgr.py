@@ -168,9 +168,6 @@ class cb_session(object):
         self._session_cache = cb_session_cache()
         self.capella_target = False
         self.capella_session = None
-        self.debugger = cb_debug(self.__class__.__name__)
-        self.debug = self.debugger.do_debug
-        self.logger = self.debugger.logger
 
         if self.ssl:
             self.prefix = "https://"
@@ -185,13 +182,6 @@ class cb_session(object):
             self.admin_port = "8091"
             self.node_port = "9102"
 
-        if 'CB_PERF_DEBUG_LEVEL' in os.environ:
-            try:
-                debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
-            except ValueError:
-                raise CbUtilEnvironmentError("CB_PERF_DEBUG_LEVEL must be an integer")
-            self.set_debug(level=debug_level)
-
         self.session = requests.Session()
         retries = Retry(total=60,
                         backoff_factor=0.1,
@@ -201,18 +191,7 @@ class cb_session(object):
 
         self.init_cluster()
 
-    def set_debug(self, level=1):
-        if level == 0:
-            self.logger.setLevel(logging.DEBUG)
-        elif level == 1:
-            self.logger.setLevel(logging.INFO)
-        elif level == 2:
-            self.logger.setLevel(logging.ERROR)
-        else:
-            self.logger.setLevel(logging.CRITICAL)
-
     def check_status_code(self, code):
-        self.logger.debug("Couchbase API call status code {}".format(code))
         if code == 200:
             return True
         elif code == 401:
@@ -237,11 +216,9 @@ class cb_session(object):
                 host_answer = resolver.resolve(record['hostname'], 'A')
                 record['address'] = host_answer[0].address
                 self.srv_host_list.append(record)
-            self.logger.info("rally name {} is a DNS domain".format(self.rally_host_name))
             self.rally_cluster_node = self.srv_host_list[0]['hostname']
             self.rally_dns_domain = True
         except dns.resolver.NXDOMAIN:
-            self.logger.info("rally name {} is a node name".format(self.rally_host_name))
             pass
         except dns.exception.Timeout:
             raise DNSLookupTimeout("{} lookup timeout".format(self.srv_prefix + self.rally_host_name))
@@ -253,9 +230,6 @@ class cb_session(object):
         except (NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed) as err:
             raise NodeUnreachable("can not connect to node {}: {}".format(self.rally_cluster_node, err))
 
-        self.logger.info("initial connect node name: {}".format(self.rally_cluster_node))
-        self.logger.debug("is_reachable: rally_host_name: {}".format(self.rally_host_name))
-        self.logger.debug("is_reachable: rally_cluster_node: {}".format(self.rally_cluster_node))
         return True
 
     @retry(allow_list=(NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
@@ -271,10 +245,8 @@ class cb_session(object):
             raise NodeConnectionError("error connecting to {}:{}: {}".format(hostname, port, err))
 
         if result == 0:
-            self.logger.debug("{} port {} is reachable".format(hostname, port))
             return True
         else:
-            self.logger.debug("{} port {} is not reachable".format(hostname, port))
             raise NodeConnectionFailed("node {}:{} unreachable".format(hostname, port))
 
     @property
@@ -320,7 +292,6 @@ class cb_session(object):
 
     def admin_api_get(self, endpoint):
         api_url = self.admin_hostname + endpoint
-        self.logger.debug("admin_api_get connecting to {}".format(api_url))
         response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
 
         try:
@@ -335,7 +306,6 @@ class cb_session(object):
     def node_api_get(self, endpoint):
         for node_name in list(self.node_hostnames()):
             api_url = node_name + endpoint
-            self.logger.debug("node_api_get connecting to {}".format(api_url))
             response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
 
             try:
@@ -354,8 +324,6 @@ class cb_session(object):
     def init_cluster(self):
         if self.restore_session:
             try:
-                if self.debug:
-                    self.logger.debug(f"cluster init from cache")
                 self.node_list = self.restore_session.node_list
                 self.memory_quota = self.restore_session.memory_quota
                 self.cluster_info = self.restore_session.cluster_info
@@ -374,9 +342,6 @@ class cb_session(object):
             except Exception as err:
                 raise ClusterInitError(f"can not read restore cache: {err}")
 
-        if self.debug:
-            self.logger.debug(f"cluster init with host {self.rally_host_name}")
-
         try:
             self.is_reachable()
         except Exception as err:
@@ -394,7 +359,6 @@ class cb_session(object):
         results = self.admin_api_get('/pools/default')
 
         if 'nodes' not in results:
-            self.logger.error("init_cluster: invalid response from cluster.")
             raise ClusterInitError("Can not get node list from {}.".format(self.rally_host_name))
 
         for i in range(len(results['nodes'])):
@@ -405,7 +369,6 @@ class cb_session(object):
                 record['external_name'] = ext_host_name
                 record['external_ports'] = results['nodes'][i]['alternateAddresses']['external']['ports']
                 self.external_network_present = True
-                self.logger.info("Added external node {}".format(ext_host_name))
 
             host_name = results['nodes'][i]['configuredHostname']
             host_name = host_name.split(':')[0]
@@ -417,14 +380,10 @@ class cb_session(object):
             self.cluster_services = list(results['nodes'][i]['services'])
 
             self.node_list.append(record)
-            self.logger.info("Added node {}".format(host_name))
 
         self.cluster_info = results
         self.memory_quota = results['memoryQuota']
         self.sw_version = self.node_list[0]['version']
-
-        if self.debug:
-            self.logger.debug(f"cluster init connect string: {self.cb_connect_string}")
 
         try:
             self.cluster_health_check(restrict=False)
@@ -445,7 +404,6 @@ class cb_session(object):
             self.all_hosts = list(self.node_list[i]['host_name'] for i, item in enumerate(self.node_list))
 
         self.node_cycle = cycle(self.all_hosts)
-        self.logger.info("connected to cluster version {}".format(self.sw_version))
         self._session_cache.extract(self)
         return True
 

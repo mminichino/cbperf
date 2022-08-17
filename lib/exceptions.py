@@ -29,6 +29,7 @@ class cbPerfException(Exception):
         if debug.do_debug:
             logger = debug.logger
             logger.debug(self.message)
+        debug.close()
         super().__init__(self.message)
 
 

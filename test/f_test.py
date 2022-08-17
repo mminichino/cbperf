@@ -13,11 +13,15 @@ from lib import system
 from lib.cbutil import cbconnect
 from lib.cbutil import cbindex
 from lib.cbutil.randomize import randomize
+from lib.executive import print_host_map, test_exec, schema_admin
 import argparse
 import asyncio
 import re
 import types
 import datetime
+import time
+import sys
+from shutil import copyfile
 
 document = {
     "id": 1,
@@ -101,11 +105,112 @@ class CheckCompare(object):
                 return False
 
 
+def check_host_map():
+    out_file = open("test_output.out", "r")
+    line = out_file.readline()
+    p = re.compile("^.*Cluster Host List.*$")
+    if not p.match(line):
+        return False
+    p = re.compile("^ \[[0-9]+\] .*$")
+    for line in out_file.readlines():
+        if not p.match(line):
+            print(f"Unexpected output: {line}")
+            return False
+    return True
+
+
+def check_status_output():
+    matches_found = 0
+    out_file = open("test_output.out", "r")
+    for line in out_file.readlines():
+        p = re.compile("^Creating bucket .*$")
+        if p.match(line):
+            matches_found += 1
+            continue
+        p = re.compile("^Creating index [a-z_]+ on [a-z_]+ with [0-9]+ replica.*$")
+        if p.match(line):
+            matches_found += 1
+            continue
+        p = re.compile("^0 errors.*$")
+        if p.match(line):
+            matches_found += 1
+            continue
+        p = re.compile("^.* [0-9]+ of [0-9]+, 100%.*$")
+        if p.match(line):
+            matches_found += 1
+            continue
+        p = re.compile("^Waiting for index [a-z_]+ on field [a-z_]+.*done.*$")
+        if p.match(line):
+            matches_found += 1
+            continue
+    if matches_found >= 5:
+        return True
+    else:
+        return False
+
+
+def check_run_output():
+    matches_found = 0
+    out_file = open("test_output.out", "r")
+    line = out_file.readline()
+    while line:
+        p = re.compile("^Beginning [a]*sync .* test with [0-9]+ instances.*$")
+        if p.match(line):
+            test_line = out_file.readline()
+            while test_line:
+                p = re.compile("^.* [0-9]+ of [0-9]+, 100%.*$")
+                if p.match(test_line):
+                    matches_found += 1
+                    break
+                test_line = out_file.readline()
+        line = out_file.readline()
+    if matches_found == 7:
+        return True
+    else:
+        return False
+
+
+def check_ramp_output():
+    load_found = 0
+    tests_found = 0
+    out_file = open("test_output.out", "r")
+    line = out_file.readline()
+    while line:
+        p = re.compile("^Beginning [a]*sync .* test with [0-9]+ instances.*$")
+        if p.match(line):
+            test_line = out_file.readline()
+            while test_line:
+                p = re.compile("^.* [0-9]+ of [0-9]+, 100%.*$")
+                if p.match(test_line):
+                    load_found += 1
+                    break
+                test_line = out_file.readline()
+        p = re.compile("^Beginning [a]*sync test ramp with max [0-9]+ instances.*$")
+        if p.match(line):
+            test_line = out_file.readline()
+            while test_line:
+                p = re.compile("^0 errors.*$")
+                if p.match(test_line):
+                    tests_found += 1
+                    break
+                test_line = out_file.readline()
+        line = out_file.readline()
+    if load_found == 1 and tests_found == 2:
+        return True
+    else:
+        return False
+
+
 def check_list(a, b):
     for item in a:
         if item not in b:
             return False
     return True
+
+
+def truncate_output_file():
+    file = open("test_output.out", "w")
+    file.close()
 
 
 def test_unhandled_exception(loop, context):
@@ -118,20 +223,25 @@ def test_unhandled_exception(loop, context):
 
 def test_step(check, fun, *args, __name=None, **kwargs):
     global failed, tests_run
-    fun_name = None
+    fun_name = ""
     try:
         tests_run += 1
-        # args_str = ','.join(map(str, args))
-        # kwargs_str = ','.join('{}={}'.format(k, v) for k, v in kwargs.items())
+
         if __name:
             fun_name = __name
         else:
             fun_name = fun.__name__
+
         print(f" {tests_run}) Test {fun_name}() ... ", end='')
+
+        stdout = sys.stdout
+        sys.stdout = open("test_output.out", "a")
         if __name:
             result = fun
         else:
             result = fun(*args, **kwargs)
+        sys.stdout = stdout
+
         if check:
             if type(check) == list:
                 assert check_list(check, result) is True
@@ -141,22 +251,32 @@ def test_step(check, fun, *args, __name=None, **kwargs):
                 assert check == result.content_as[dict]
             elif type(check) == CheckCompare:
                 assert check.check(result)
+            elif callable(check):
+                assert check() is True
             else:
                 assert check == result
+
         print("Ok")
+        return result
     except Exception as err:
+        copyfile("test_output.out", f"test_fail_{fun_name}.out")
         print(f"Step failed: function {fun_name}: {err}")
         failed += 1
 
 
 async def async_test_step(check, fun, *args, **kwargs):
     global failed, tests_run
+    fun_name = fun.__name__
     try:
         tests_run += 1
-        # args_str = ','.join(map(str, args))
-        # kwargs_str = ','.join('{}={}'.format(k, v) for k, v in kwargs.items())
-        print(f" {tests_run}) Test {fun.__name__}() ... ", end='')
+
+        print(f" {tests_run}) Test {fun_name}() ... ", end='')
+
+        stdout = sys.stdout
+        sys.stdout = open("test_output.out", "a")
         result = await fun(*args, **kwargs)
+        sys.stdout = stdout
+
         if check:
             if type(check) == list:
                 assert check_list(check, result) is True
@@ -166,11 +286,15 @@ async def async_test_step(check, fun, *args, **kwargs):
                 assert check == result.content_as[dict]
             elif type(check) == CheckCompare:
                 assert check.check(result)
+            elif callable(check):
+                assert check() is True
             else:
                 assert check == result
+
         print("Ok")
     except Exception as err:
-        print(f"Step failed: function {fun.__name__}: {err}")
+        copyfile("test_output.out", f"test_fail_{fun_name}.out")
+        print(f"Step failed: function {fun_name}: {err}")
         failed += 1
 
 
@@ -360,6 +484,44 @@ def randomize_test():
     first = r.firstName
     last = r.lastName
     test_step(c, r.userName, first, last)
+    test_step(None, r.randImage)
+
+
+def test_main(parameters, sync=False, schema="default"):
+    username = parameters.user
+    password = parameters.password
+    hostname = parameters.host
+    bucket = parameters.bucket
+    external = parameters.external
+    cloud_api = parameters.noapi
+
+    truncate_output_file()
+    task = print_host_map(parameters)
+    test_step(check_host_map, task.run)
+    parameters.command = 'load'
+    parameters.count = 100
+    parameters.ops = 100
+    parameters.replica = 0
+    parameters.threads = 8
+    parameters.sync = sync
+    parameters.schema = schema
+    parameters.output = "test_output.out"
+    truncate_output_file()
+    task = test_exec(parameters)
+    test_step(check_status_output, task.run)
+    parameters.command = 'run'
+    parameters.ramp = False
+    truncate_output_file()
+    task = test_exec(parameters)
+    test_step(check_run_output, task.run)
+    parameters.ramp = True
+    truncate_output_file()
+    task = test_exec(parameters)
+    test_step(check_ramp_output, task.run)
+    parameters.command = 'clean'
+    truncate_output_file()
+    task = test_exec(parameters)
+    test_step(None, task.test_clean)
 
 
 def main():
@@ -371,7 +533,25 @@ def main():
     parser.add_argument('-e', '--external', action='store_true', help='Use external network')
     parser.add_argument('--noapi', action='store_true', help="Disable Capella API functionality")
     parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')
+    parser.add_argument('--tls', action='store_true', help="Enable SSL")
+    parser.add_argument('--ping', action='store_true', help='Show cluster ping output')
+    parser.add_argument('--test', action='store_true', help='Just check status and error if not ready')
+    parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int)
+    parser.add_argument('--file', action='store', help="File based collection schema JSON")
+    parser.add_argument('--id', action='store', help="ID field for file based collection schema", default="record_id")
+    parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int, default=3)
+    parser.add_argument('--skiprules', action='store_true', help="Do not run rules if defined")
+    # parser.add_argument('--sync', action='store_true', help="Use Synchronous Connections")
+    parser.add_argument('--schema', action='store', help="Test Schema", default="default")
+    parser.add_argument('--noinit', action='store_true', help="Skip init phase")
+    parser.add_argument('--safe', action='store_true', help="Do not overwrite data")
     args = parser.parse_args()
+
+    schema_list = [
+        'default',
+        'profile_demo',
+        'employee_demo'
+    ]
 
     username = args.user
     password = args.password
@@ -394,6 +574,13 @@ def main():
 
     print("Randomize Tests")
     randomize_test()
+
+    for schema in schema_list:
+        print(f"Running tests on schema {schema}")
+        print("Main Async Tests")
+        test_main(args, sync=False, schema=schema)
+        print("Main Sync Tests")
+        test_main(args, sync=True, schema=schema)
 
     print(f"{tests_run} test(s) run")
     if failed > 0:

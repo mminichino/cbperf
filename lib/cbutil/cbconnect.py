@@ -8,11 +8,10 @@ from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from datetime import timedelta
 import concurrent.futures
-from couchbase.options import LOCKMODE_NONE, LOCKMODE_WAIT
+from couchbase.options import LOCKMODE_WAIT
 import couchbase
 import acouchbase.cluster
 from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions
-from couchbase.collection import UpsertOptions, GetOptions
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.auth import PasswordAuthenticator
@@ -23,7 +22,6 @@ from couchbase.exceptions import (CouchbaseException,
                                   BucketNotFoundException, QueryException, ScopeNotFoundException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException)
-import logging
 import asyncio
 
 
@@ -31,13 +29,9 @@ class cb_connect(cb_session):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.auth = PasswordAuthenticator(self.username, self.password)
         self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=360), kv_timeout=timedelta(seconds=360))
         self.db = db_instance()
-        self.debugger = cb_debug(self.__class__.__name__)
-        self.debug = self.debugger.do_debug
-        self.logger = self.debugger.logger
 
     def construct_key(self, key, collection):
         if type(key) == int or str(key).isdigit():
@@ -49,11 +43,14 @@ class cb_connect(cb_session):
             return key
 
     def unhandled_exception(self, loop, context):
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
         err = context.get("exception", context['message'])
         if isinstance(err, Exception):
-            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
+            logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
         else:
-            self.logger.error(f"unhandled error: {err}")
+            logger.error(f"unhandled error: {err}")
+        debugger.close()
 
     @retry_a(factor=0.5, retry_count=10)
     async def connect_a(self):
@@ -61,7 +58,6 @@ class cb_connect(cb_session):
             cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_WAIT, timeout_options=self.timeouts)
             result = await cluster_a.on_connect()
             self.db.set_cluster_a(cluster_a)
-            self.logger.debug(f"connect_a: connected to db as {self.cb_connect_string}")
             return result
         except SystemError as err:
             if isinstance(err.__cause__, HTTPException):
@@ -456,8 +452,11 @@ class cb_connect(cb_session):
         except CouchbaseException as err:
             try:
                 error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
-                self.logger.debug(f"query: {query}")
-                self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
+                debugger = cb_debug(self.__class__.__name__)
+                logger = debugger.logger
+                logger.debug(f"query: {query}")
+                logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
+                debugger.close()
                 raise error_class(err.context.first_error_message)
             except AttributeError:
                 raise QueryError(err.message)
@@ -479,8 +478,11 @@ class cb_connect(cb_session):
         except CouchbaseException as err:
             try:
                 error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
-                self.logger.debug(f"query: {query}")
-                self.logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
+                debugger = cb_debug(self.__class__.__name__)
+                logger = debugger.logger
+                logger.debug(f"query: {query}")
+                logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
+                debugger.close()
                 raise error_class(err.context.first_error_message)
             except AttributeError:
                 raise QueryError(err.message)

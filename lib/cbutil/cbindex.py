@@ -3,9 +3,7 @@
 
 from .exceptions import *
 from .cbconnect import cb_connect
-from .retries import retry, retry_a
-from couchbase.exceptions import (CouchbaseTransientException, TimeoutException, QueryException,  ProtocolException)
-import logging
+from .retries import retry
 import re
 
 
@@ -13,8 +11,6 @@ class cb_index(cb_connect):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.debugger = cb_debug(self.__class__.__name__)
-        self.logger = self.debugger.logger
 
     def index_name(self, name, field, index_name):
         field = field.replace('.', '_') if field else None

@@ -4,10 +4,6 @@
 import time
 from typing import Callable
 from functools import wraps
-from .cbdebug import cb_debug
-
-retry_debugger = cb_debug('retry')
-retry_logger = retry_debugger.logger
 
 
 def retry(retry_count=5,
@@ -31,7 +27,6 @@ def retry(retry_count=5,
                     if retry_number == retry_count:
                         raise
 
-                    retry_logger.debug(f"retry {func.__name__}: {err}")
                     wait = factor
                     wait *= (2**(retry_number+1))
                     time.sleep(wait)
@@ -60,7 +55,6 @@ def retry_a(retry_count=5,
                     if retry_number == retry_count:
                         raise
 
-                    retry_logger.debug(f"retry_a {func.__name__}: {err}")
                     wait = factor
                     wait *= (2**(retry_number+1))
                     time.sleep(wait)

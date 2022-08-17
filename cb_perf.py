@@ -57,6 +57,7 @@ class params(object):
         run_parser.add_argument('--replica', action='store', help="Replica Count", type=int, default=1)
         run_parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int)
         run_parser.add_argument('--file', action='store', help="File based collection schema JSON")
+        run_parser.add_argument('--output', action='store', help="Output file for run stats")
         run_parser.add_argument('--inventory', action='store', help="Location of inventory JSON")
         run_parser.add_argument('--id', action='store', help="ID field for file based collection schema", default="record_id")
         # run_parser.add_argument('--query', action='store', help="Field to query in JSON File", default="last_name")

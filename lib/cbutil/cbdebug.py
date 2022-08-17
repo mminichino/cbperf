@@ -34,9 +34,6 @@ class cb_debug(object):
         self.debug_level = level if level else default_level
 
         try:
-            if overwrite:
-                open(self.debug_file, 'w').close()
-
             if self.debug_level == 0:
                 self._logger.setLevel(logging.DEBUG)
             elif self.debug_level == 1:
@@ -58,3 +55,9 @@ class cb_debug(object):
     @property
     def logger(self):
         return self._logger
+
+    def close(self):
+        handlers = self._logger.handlers[:]
+        for handler in handlers:
+            self._logger.removeHandler(handler)
+            handler.close()

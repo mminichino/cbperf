@@ -60,6 +60,7 @@ class cbPerfBase(object):
         self.collection_list = None
         self.rules_run = False
         self.skip_init = False
+        self.output_file = None
         self.test_playbook = "default"
         self.read_config_file(config_file)
         self.read_schema_file(schema_file)
@@ -209,9 +210,9 @@ class test_exec(cbPerfBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        debugger = cb_debug(self.__class__.__name__)
-        self.logger = debugger.logger
         self.throughput = None
+        self.upsert_latency = None
+        self.get_latency = None
         if self.parameters.user:
             self.username = self.parameters.user
         if self.parameters.password:
@@ -256,6 +257,8 @@ class test_exec(cbPerfBase):
             self.cloud_api = True
         if self.parameters.safe:
             self.safe_mode = True
+        if self.parameters.output:
+            self.output_file = self.parameters.output
 
         if self.parameters.command == 'load':
             self.test_playbook = "load"
@@ -268,6 +271,7 @@ class test_exec(cbPerfBase):
             raise ParameterError("Error: Operation count must be equal or less than record count.")
 
         self.bandwidth_test_flag = False
+        self.latency_test_flag = False
 
         try:
             self.loop = asyncio.get_event_loop()
@@ -338,6 +342,8 @@ class test_exec(cbPerfBase):
         return f"{value} {unit}"
 
     def run(self):
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
         for index, element in enumerate(self.get_next_task()):
             step = element[0]
             step_config = element[1]
@@ -354,6 +360,8 @@ class test_exec(cbPerfBase):
                 self.test_init()
                 if self.bandwidth_test_flag:
                     self.test_bandwidth()
+                if self.latency_test_flag:
+                    self.test_latency()
 
             try:
                 read_p = 100 - write_p
@@ -365,7 +373,7 @@ class test_exec(cbPerfBase):
                     else:
                         self.test_launch_s(read_p=read_p, write_p=write_p, mode=test_type)
             except Exception as err:
-                self.logger.error(f"test launch error: {err}")
+                logger.error(f"test launch error: {err}")
 
             if test_pause:
                 self.pause_test()
@@ -374,6 +382,8 @@ class test_exec(cbPerfBase):
                 if self.run_rules:
                     self.process_rules()
                 self.check_indexes()
+
+        debugger.close()
 
     def write_cache(self):
         try:
@@ -433,7 +443,56 @@ class test_exec(cbPerfBase):
             raise TestExecError(f"bandwidth test: can not drop collection: {err}")
 
         self.throughput = average_throughput
-        self.logger.debug(f"calculated bandwidth as {self.format_bytes(average_throughput)}/s")
+
+    def test_latency(self, quiet=False):
+        key = 1
+        max_passes = 5
+        r = randomize()
+        test_a = {}
+        upsert_total = 0
+        get_total = 0
+        doc_size = 1024
+
+        collection = self.collection_list[0]
+
+        try:
+            self.db.bucket_s(collection.bucket)
+            self.db.scope_s('_default')
+            self.db.create_collection('bandwidth')
+        except Exception as err:
+            raise TestExecError(f"latency test: can not connect to cluster: {err}")
+
+        if not quiet:
+            print("Calculating network latency (this may take a minute)")
+
+        for i in range(max_passes):
+            test_a['data1'] = r._randomHash(doc_size)
+
+            begin_time = time.time()
+            self.db.cb_upsert_s(key, test_a, name='bandwidth')
+            end_time = time.time()
+            upsert_time_diff = end_time - begin_time
+
+            begin_time = time.time()
+            self.db.cb_get_s(key, name='bandwidth')
+            end_time = time.time()
+            get_time_diff = end_time - begin_time
+
+            upsert_total += upsert_time_diff
+            get_total += get_time_diff
+
+        average_upsert_latency = round(upsert_total / max_passes, 2)
+        average_get_latency = round(get_total / max_passes, 2)
+        print(f"[i] Calculated upsert latency: {average_upsert_latency}")
+        print(f"[i] Calculated get latency: {average_get_latency}")
+
+        try:
+            self.db.drop_collection('bandwidth')
+        except Exception as err:
+            raise TestExecError(f"bandwidth test: can not drop collection: {err}")
+
+        self.upsert_latency = average_upsert_latency
+        self.get_latency = average_get_latency
 
     def test_clean(self):
         print(f"Running cleanup for schema {self.schema}")
@@ -531,10 +590,12 @@ class test_exec(cbPerfBase):
             yield list_data[i:i + count]
 
     def run_link_rule(self, foreign_keyspace, primary_keyspace):
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
         primary_key_list = []
         end_char = '\r'
 
-        self.logger.info("run_link_rule: startup")
+        logger.info("run_link_rule: startup")
 
         if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:
             raise RulesError("runLinkRule: link rule key syntax incorrect")
@@ -549,12 +610,12 @@ class test_exec(cbPerfBase):
             raise RulesError("cross scope linking is not supported")
 
         try:
-            self.logger.debug(f"run_link_rule: connecting to bucket and collections {foreign_collection} {primary_collection}")
+            logger.debug(f"run_link_rule: connecting to bucket and collections {foreign_collection} {primary_collection}")
             self.db.bucket_s(primary_bucket)
             self.db.scope_s(primary_scope)
             self.db.collection_s(foreign_collection)
             self.db.collection_s(primary_collection)
-            self.logger.debug(f"run_link_rule: bucket and collections connected")
+            logger.debug(f"run_link_rule: bucket and collections connected")
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")
 
@@ -579,6 +640,8 @@ class test_exec(cbPerfBase):
             self.db.cb_subdoc_multi_upsert_s(sub_list, foreign_field, sub_list, name=foreign_collection)
         sys.stdout.write("\033[K")
         print("Done.")
+
+        debugger.close()
 
     def process_rules(self):
         print("[i] Processing rules.")
@@ -632,7 +695,7 @@ class test_exec(cbPerfBase):
         except Exception as err:
             raise TestPauseError(f"cluster health not ok: {err}")
 
-    def calc_batch_size(self, collection, mode):
+    def calc_batch_size(self, collection, mode, write_p, read_p):
         candidate_size = None
 
         if mode == KV_TEST:
@@ -649,11 +712,20 @@ class test_exec(cbPerfBase):
             if collection.default_batch_size and candidate_size:
                 candidate_size = min(candidate_size, collection.default_batch_size)
 
-            if self.throughput:
+            if self.latency_test_flag:
                 total_data = collection.size * self.run_threads
-                calc_batch_size = self.throughput / total_data
-                new_batch_size = round(calc_batch_size * .7)
-                candidate_size = min(candidate_size, new_batch_size)
+                data_adjust = round(total_data / 1024)
+                data_adjust = data_adjust if data_adjust > 0 else 1
+                l_write = self.upsert_latency if self.upsert_latency > 0 else 1
+                l_read = self.get_latency if self.get_latency > 0 else 1
+                p_write = write_p / 100
+                p_read = read_p / 100
+                write_batch = self.default_kv_batch_size * p_write
+                read_batch = self.default_kv_batch_size * p_read
+                write_batch = write_batch - (write_batch * l_write * data_adjust)
+                read_batch = read_batch - (read_batch * l_read * data_adjust)
+                candidate_size = round(write_batch + read_batch)
+                candidate_size = candidate_size if candidate_size > 0 else 1
 
             batch_size = min(candidate_size, self.default_kv_batch_size) if candidate_size else self.default_kv_batch_size
             return batch_size
@@ -688,13 +760,14 @@ class test_exec(cbPerfBase):
                 operation_count = self.record_count
 
             print(f"Collection {coll_obj.name} document size: {self.format_bytes(coll_obj.size)}")
-            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode)
+            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode, write_p, read_p)
             print(f"Collection {coll_obj.name} mode {mode_text} batch size: {coll_obj.batch_size}")
 
             tm = test_mods(self.host, self.username, self.password, self.tls, self.external_network,
                            self.session_cache, coll_obj.batch_size, self.id_field, self.run_threads, self.thread_max)
 
-            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
+            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector),
+                                                    kwargs={"out_file": self.output_file})
             status_thread.daemon = True
             status_thread.start()
 
@@ -716,6 +789,8 @@ class test_exec(cbPerfBase):
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
     def test_launch_s(self, read_p=100, write_p=0, mode=KV_TEST):
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
         if not self.collection_list:
             raise TestRunError("test not initialized")
 
@@ -739,13 +814,14 @@ class test_exec(cbPerfBase):
                 operation_count = self.record_count
 
             print(f"Collection {coll_obj.name} document size: {self.format_bytes(coll_obj.size)}")
-            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode)
+            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode, write_p, read_p)
             print(f"Collection {coll_obj.name} mode {mode_text} batch size: {coll_obj.batch_size}")
 
             tm = test_mods(self.host, self.username, self.password, self.tls, self.external_network,
                            self.session_cache, coll_obj.batch_size, self.id_field, self.run_threads, self.thread_max)
 
-            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
+            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector),
+                                                    kwargs={"out_file": self.output_file})
             status_thread.daemon = True
             status_thread.start()
 
@@ -765,7 +841,7 @@ class test_exec(cbPerfBase):
                 if status_vector[3] < status_vector[1]:
                     if throttle_count == 30:
                         break
-                    self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
                     throttle_count += 1
                     time.sleep(0.5)
                     continue
@@ -787,7 +863,11 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
+        debugger.close()
+
     def ramp_launch(self, read_p=100, write_p=0, mode=KV_TEST):
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
         scale = []
 
         if not self.collection_list:
@@ -822,13 +902,14 @@ class test_exec(cbPerfBase):
                 record_count = self.record_count
 
             print(f"Collection {coll_obj.name} document size: {self.format_bytes(coll_obj.size)}")
-            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode)
+            coll_obj.batch_size = self.calc_batch_size(coll_obj, mode, write_p, read_p)
             print(f"Collection {coll_obj.name} mode {mode_text} batch size: {coll_obj.batch_size}")
 
             tm = test_mods(self.host, self.username, self.password, self.tls, self.external_network,
                            self.session_cache, coll_obj.batch_size, self.id_field, self.run_threads, self.thread_max)
 
-            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector))
+            status_thread = multiprocessing.Process(target=tm.status_output, args=(operation_count, run_flag, telemetry_queue, status_vector),
+                                                    kwargs={"out_file": self.output_file})
             status_thread.daemon = True
             status_thread.start()
 
@@ -849,7 +930,7 @@ class test_exec(cbPerfBase):
                     if throttle_count == 30:
                         status_vector[0] = 1
                         break
-                    self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
                     throttle_count += 1
                     time.sleep(0.5)
                     continue
@@ -888,9 +969,14 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
+        debugger.close()
+
     def test_unhandled_exception(self, loop, context):
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
         err = context.get("exception", context['message'])
         if isinstance(err, Exception):
-            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
+            logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
         else:
-            self.logger.error(f"unhandled error: {err}")
+            logger.error(f"unhandled error: {err}")
+        debugger.close()
