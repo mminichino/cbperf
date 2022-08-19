@@ -12,6 +12,7 @@ cb_perf.log
 cb_debug.log
 test_output.out
 test_fail_*.out
+test_fail_*.log
 
 # ignore standard Eclipse files
 .project
@@ -25,6 +26,7 @@ test_fail_*.out
 *.ipr
 *.iws
 venv/
+venv36/
 venv.OLD/
 venv.HOLD/
 cbvenv/

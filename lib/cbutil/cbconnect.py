@@ -377,9 +377,10 @@ class cb_connect(cb_session):
 
     @retry_a(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     async def cb_subdoc_multi_upsert_a(self, key_list, field, value_list, name="_default"):
+        loop = asyncio.get_event_loop()
         tasks = []
         for n in range(len(key_list)):
-            tasks.append(asyncio.create_task(self.cb_subdoc_upsert_a(key_list[n], field, value_list[n], name=name)))
+            tasks.append(loop.create_task(self.cb_subdoc_upsert_a(key_list[n], field, value_list[n], name=name)))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):

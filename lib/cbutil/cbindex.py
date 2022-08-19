@@ -115,7 +115,7 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexQueryError("can not drop index on {}: {}".format(name, err))
 
-    @retry(factor=0.5, allow_list=(IndexNotReady,))
+    @retry(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
     def index_wait(self, name="_default", field=None, index_name=None):
         index = self.index_name(name, field, index_name)
         lookup = self.index_lookup(name)

@@ -191,6 +191,7 @@ class test_mods(object):
         debugger.close()
 
     async def async_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
+        loop = asyncio.get_event_loop()
         tasks = []
         rand_gen = fastRandom(record_count)
         id_field = coll_obj.id
@@ -258,14 +259,14 @@ class test_mods(object):
                     if op_select.write(record_number):
                         document = r.processTemplate()
                         document[self.id_field] = record_number
-                        tasks.append(asyncio.create_task(db.cb_upsert_a(record_number, document, name=coll_obj.name)))
+                        tasks.append(loop.create_task(db.cb_upsert_a(record_number, document, name=coll_obj.name)))
                     else:
                         if mode == REMOVE_DATA:
-                            tasks.append(asyncio.create_task(db.cb_remove_a(record_number, name=coll_obj.name)))
+                            tasks.append(loop.create_task(db.cb_remove_a(record_number, name=coll_obj.name)))
                         elif mode == QUERY_TEST:
-                            tasks.append(asyncio.create_task(db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field, value=record_number)))
+                            tasks.append(loop.create_task(db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field, value=record_number)))
                         else:
-                            tasks.append(asyncio.create_task(db.cb_get_a(record_number, name=coll_obj.name)))
+                            tasks.append(loop.create_task(db.cb_get_a(record_number, name=coll_obj.name)))
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1

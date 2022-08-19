@@ -22,10 +22,18 @@ import datetime
 import time
 import sys
 from shutil import copyfile
+import subprocess
 
 document = {
     "id": 1,
     "data": "data",
+    "one": "one",
+    "two": "two",
+    "three": "tree"
+}
+new_document = {
+    "id": 1,
+    "data": "new",
     "one": "one",
     "two": "two",
     "three": "tree"
@@ -38,6 +46,7 @@ query_result = [
 failed = 0
 tests_run = 0
 replica_count = 1
+VERSION = "1.0"
 
 
 class CheckCompare(object):
@@ -119,6 +128,15 @@ def check_host_map():
     return True
 
 
+def check_clean():
+    out_file = open("test_output.out", "r")
+    p = re.compile("^Dropping bucket .*$")
+    for line in out_file.readlines():
+        if p.match(line):
+            return True
+    return False
+
+
 def check_status_output():
     matches_found = 0
     out_file = open("test_output.out", "r")
@@ -139,11 +157,7 @@ def check_status_output():
         if p.match(line):
             matches_found += 1
             continue
-        p = re.compile("^Waiting for index [a-z_]+ on field [a-z_]+.*done.*$")
-        if p.match(line):
-            matches_found += 1
-            continue
-    if matches_found >= 5:
+    if matches_found >= 4:
         return True
     else:
         return False
@@ -233,6 +247,7 @@ def test_step(check, fun, *args, __name=None, **kwargs):
             fun_name = fun.__name__
 
         print(f" {tests_run}) Test {fun_name}() ... ", end='')
+        sys.stdout.flush()
 
         stdout = sys.stdout
         sys.stdout = open("test_output.out", "a")
@@ -259,7 +274,9 @@ def test_step(check, fun, *args, __name=None, **kwargs):
         print("Ok")
         return result
     except Exception as err:
+        sys.stdout.flush()
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
+        copyfile("cb_debug.log", f"test_fail_{fun_name}.log")
         print(f"Step failed: function {fun_name}: {err}")
         failed += 1
 
@@ -294,6 +311,7 @@ async def async_test_step(check, fun, *args, **kwargs):
         print("Ok")
     except Exception as err:
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
+        copyfile("cb_debug.log", f"test_fail_{fun_name}.log")
         print(f"Step failed: function {fun_name}: {err}")
         failed += 1
 
@@ -331,6 +349,13 @@ def cb_sync_test_set(host, username, password, bucket, scope, collection, tls, e
     test_step(document, db.cb_get_s, "test::1", name=collection)
     test_step(1, db.collection_count_s, collection)
     test_step(query_result, db.cb_query_s, field="data", name=collection)
+    test_step(None, db.cb_upsert_s, "test::2", document, name=collection)
+    test_step(None, db.cb_subdoc_multi_upsert_s, ["test::1", "test::2"], "data", ["new", "new"], name=collection)
+    test_step(new_document, db.cb_get_s, "test::1", name=collection)
+    test_step(2, db.collection_count_s, collection)
+    test_step(None, db.cb_upsert_s, "test::3", document, name=collection)
+    test_step(None, db.cb_subdoc_upsert_s, "test::3", "data", "new", name=collection)
+    test_step(new_document, db.cb_get_s, "test::3", name=collection)
     test_step(None, db.drop_bucket, bucket)
 
 
@@ -373,6 +398,13 @@ def cb_async_test_set(host, username, password, bucket, scope, collection, tls, 
     loop.run_until_complete(async_test_step(document, db.cb_get_a, "test::1", name=collection))
     loop.run_until_complete(async_test_step(1, db.collection_count_a, collection))
     loop.run_until_complete(async_test_step(query_result, db.cb_query_a, field="data", name=collection))
+    loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::2", document, name=collection))
+    loop.run_until_complete(async_test_step(None, db.cb_subdoc_multi_upsert_a, ["test::1", "test::2"], "data", ["new", "new"], name=collection))
+    loop.run_until_complete(async_test_step(new_document, db.cb_get_a, "test::1", name=collection))
+    loop.run_until_complete(async_test_step(2, db.collection_count_a, collection))
+    loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::3", document, name=collection))
+    loop.run_until_complete(async_test_step(None, db.cb_subdoc_upsert_a, "test::3", "data", "new", name=collection))
+    loop.run_until_complete(async_test_step(new_document, db.cb_get_a, "test::3", name=collection))
     test_step(None, db.drop_bucket, bucket)
 
 
@@ -502,7 +534,8 @@ def test_main(parameters, sync=False, schema="default"):
     parameters.count = 100
     parameters.ops = 100
     parameters.replica = 0
-    parameters.threads = 8
+    parameters.threads = os.cpu_count()
+    parameters.max = os.cpu_count()
     parameters.sync = sync
     parameters.schema = schema
     parameters.output = "test_output.out"
@@ -522,6 +555,105 @@ def test_main(parameters, sync=False, schema="default"):
     truncate_output_file()
     task = test_exec(parameters)
     test_step(None, task.test_clean)
+
+
+def test_file(parameters, sync=False):
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    package_dir = os.path.dirname(current_dir)
+
+    truncate_output_file()
+    parameters.command = 'load'
+    parameters.count = 100
+    parameters.ops = 100
+    parameters.replica = 0
+    parameters.threads = os.cpu_count()
+    parameters.max = os.cpu_count()
+    parameters.sync = sync
+    parameters.file = package_dir + '/test/test.json'
+    parameters.id = "id"
+    parameters.bucket = "external"
+    parameters.output = "test_output.out"
+    truncate_output_file()
+    task = test_exec(parameters)
+    test_step(check_status_output, task.run)
+    parameters.command = 'run'
+    parameters.ramp = False
+    truncate_output_file()
+    task = test_exec(parameters)
+    test_step(check_run_output, task.run)
+    parameters.ramp = True
+    truncate_output_file()
+    task = test_exec(parameters)
+    test_step(check_ramp_output, task.run)
+    parameters.command = 'clean'
+    truncate_output_file()
+    task = test_exec(parameters)
+    test_step(None, task.test_clean)
+
+
+def cli_run(cmd: str, *args: str):
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    package_dir = os.path.dirname(current_dir)
+    run_cmd = [
+        cmd,
+        *args
+    ]
+
+    out_file = open("test_output.out", "a")
+    p = subprocess.Popen(run_cmd, stdout=out_file, stderr=out_file, cwd=package_dir, bufsize=1)
+    p.communicate()
+
+    if p.returncode != 0:
+        print(f"cli test failed {cmd} {' '.join(str(i) for i in args)}")
+        raise Exception(f"{cmd} returned non-zero")
+
+
+def test_cli(hostname, username, password, schema):
+    cmd = './cb_perf'
+    args = []
+
+    truncate_output_file()
+    args.append('load')
+    args.append('--host')
+    args.append(hostname)
+    args.append('-u')
+    args.append(username)
+    args.append('-p')
+    args.append(password)
+    args.append('--count')
+    args.append('50')
+    args.append('--schema')
+    args.append(schema)
+    args.append('--replica')
+    args.append('0')
+    test_step(check_status_output, cli_run, cmd, *args)
+    truncate_output_file()
+    args.clear()
+    args.append('clean')
+    args.append('--host')
+    args.append(hostname)
+    args.append('-u')
+    args.append(username)
+    args.append('-p')
+    args.append(password)
+    args.append('--schema')
+    args.append(schema)
+    test_step(check_clean, cli_run, cmd, *args)
+
+
+def directory_cleanup():
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    package_dir = os.path.dirname(current_dir)
+    print("Pruning old test files ... ")
+    for file_name in os.listdir(package_dir):
+        p1 = re.compile("test_fail_.*\.out")
+        p2 = re.compile("test_output.out")
+        if p1.match(file_name) or p2.match(file_name):
+            if file_name == "." or file_name == ".." or file_name == "*" or len(file_name) == 0:
+                continue
+            print(f"Removing {file_name}")
+            os.remove(file_name)
+    print("Done.")
 
 
 def main():
@@ -566,6 +698,12 @@ def main():
     else:
         cloud_api = True
 
+    print(f"cbperf test set v{VERSION}")
+    print("Python version:")
+    print(sys.version)
+
+    directory_cleanup()
+
     print("No SSL Tests")
     cb_connect_test(hostname, username, password, bucket, False, external, cloud_api)
 
@@ -579,13 +717,22 @@ def main():
         print(f"Running tests on schema {schema}")
         print("Main Async Tests")
         test_main(args, sync=False, schema=schema)
+        test_file(args, sync=False)
         print("Main Sync Tests")
         test_main(args, sync=True, schema=schema)
+        test_file(args, sync=True)
+
+    print("CLI Invoke Tests")
+    for schema in schema_list:
+        test_cli(hostname, username, password, schema)
 
     print(f"{tests_run} test(s) run")
     if failed > 0:
-        print(f"Not all tests were successful. {failed} test(s) resulted in errors.")
+        print(f"[!] Not all tests were successful. {failed} test(s) resulted in errors.")
         sys.exit(1)
+    else:
+        print("All tests were successful")
+        sys.exit(0)
 
 
 if __name__ == '__main__':

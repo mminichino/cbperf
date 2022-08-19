@@ -43,7 +43,18 @@ class cbPerfBase(object):
         self.tls = False
         self.external_network = False
         self.aio = True
-        self.input_file = None
+        if self.parameters.file:
+            self.input_file = self.parameters.file
+        else:
+            self.input_file = None
+        if self.input_file:
+            self.schema = "external_file"
+            self.parameters.schema = "external_file"
+        else:
+            if self.parameters.schema:
+                self.schema = self.parameters.schema
+            else:
+                self.schema = "default"
         self.query_field = None
         self.create_bucket = True
         self.safe_mode = False
@@ -54,7 +65,7 @@ class cbPerfBase(object):
         self.default_id_field = None
         self.default_bucket_memory = 256
         self.run_threads = os.cpu_count()
-        self.thread_max = 512
+        self.thread_max = os.cpu_count() * 16
         self.replica_count = 1
         self.rule_list = None
         self.collection_list = None
@@ -232,8 +243,6 @@ class test_exec(cbPerfBase):
             self.run_threads = self.parameters.threads
         if self.parameters.memquota:
             self.bucket_memory = self.parameters.memquota
-        if self.parameters.file:
-            self.input_file = self.parameters.file
         if self.parameters.id:
             self.id_field = self.parameters.id
         if self.parameters.debug:
@@ -245,10 +254,6 @@ class test_exec(cbPerfBase):
         if self.parameters.sync:
             self.aio = False
             self.batchSize = 1
-        if self.input_file:
-            self.schema = "external_file"
-        else:
-            self.schema = self.parameters.schema
         if self.parameters.noinit:
             self.skip_init = True
         if self.parameters.noapi:
@@ -259,6 +264,8 @@ class test_exec(cbPerfBase):
             self.safe_mode = True
         if self.parameters.output:
             self.output_file = self.parameters.output
+        if self.parameters.max:
+            self.thread_max = self.parameters.max
 
         if self.parameters.command == 'load':
             self.test_playbook = "load"
