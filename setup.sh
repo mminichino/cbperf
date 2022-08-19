@@ -116,7 +116,7 @@ check_linux_by_type () {
     PKGMGR="yum"
     if [ "$VERSION_ID" = "7" ]; then
       YUM_PKGS=$LEGACY_YUM_PKGS
-      PYTHON_BIN=${PYTHON_BIN:-python3.6}
+      PYTHON_BIN="python3.6"
     fi
     check_yum
     ;;
