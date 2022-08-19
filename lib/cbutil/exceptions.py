@@ -127,6 +127,10 @@ class CollectionWaitException(cbUtilException):
     pass
 
 
+class CollectionCountException(cbUtilException):
+    pass
+
+
 class ScopeWaitException(cbUtilException):
     pass
 

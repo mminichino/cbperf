@@ -257,22 +257,30 @@ class cb_connect(cb_session):
         self.db.drop_collection(name)
 
     @retry(retry_count=10)
-    def collection_count_s(self, name="_default"):
+    def collection_count_s(self, name="_default", expect=None):
         try:
             keyspace = self.db.keyspace_s(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = self.cb_query_s(sql=queryText)
-            return result[0]['count']
+            count = result[0]['count']
+            if expect:
+                if count != expect:
+                    raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
+            return count
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry_a(retry_count=10)
-    async def collection_count_a(self, name="_default"):
+    async def collection_count_a(self, name="_default", expect=None):
         try:
             keyspace = self.db.keyspace_a(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = await self.cb_query_a(sql=queryText)
-            return result[0]['count']
+            count = result[0]['count']
+            if expect:
+                if count != expect:
+                    raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
+            return count
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
