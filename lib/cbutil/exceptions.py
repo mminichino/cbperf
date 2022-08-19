@@ -119,7 +119,7 @@ class CollectionRemoveError(cbUtilException):
     pass
 
 
-class CollectionCountError(cbUtilError):
+class CollectionCountError(cbUtilException):
     pass
 
 
