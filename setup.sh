@@ -4,8 +4,9 @@ SCRIPTDIR=$(cd $(dirname $0) && pwd)
 YUM_PKGS="python39 gcc gcc-c++ git python39-devel python3-pip cmake make openssl-devel"
 APT_PKGS="python3.9 python3.9-dev python3.9-venv git-all python3-pip python3-setuptools cmake build-essential"
 MAC_PKGS="python@3.9 openssl"
+LEGACY_YUM_PKGS="python36 gcc gcc-c++ git python36-devel python3-pip cmake make openssl-devel"
 MAJOR_REV=3
-MINOR_REV=9
+MINOR_REV=6
 VENV_NAME=venv
 YES=0
 FORCE=0
@@ -113,6 +114,10 @@ check_linux_by_type () {
   case $ID in
   centos|rhel)
     PKGMGR="yum"
+    if [ "$VERSION_ID" = "7" ]; then
+      YUM_PKGS=$LEGACY_YUM_PKGS
+      PYTHON_BIN=${PYTHON_BIN:-python3.6}
+    fi
     check_yum
     ;;
   ubuntu)
@@ -149,8 +154,8 @@ SYSTEM_UNAME=$(uname -s)
 case "$SYSTEM_UNAME" in
     Linux*)
       machine=Linux
-      check_linux_by_type
       PYTHON_BIN=${PYTHON_BIN:-python3.9}
+      check_linux_by_type
       ;;
     Darwin*)
       machine=MacOS
