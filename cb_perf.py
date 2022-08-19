@@ -1,4 +1,4 @@
-#!/usr/bin/env -S python3 -W ignore
+#!/usr/bin/env python3
 
 '''
 Couchbase Performance Utility
@@ -6,6 +6,7 @@ Couchbase Performance Utility
 
 import argparse
 import signal
+import warnings
 from lib.executive import print_host_map, test_exec, schema_admin
 from lib.exceptions import *
 
@@ -17,7 +18,9 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '2.0-beta-1'
+VERSION = '1.1'
+
+warnings.filterwarnings("ignore")
 
 
 def break_signal_handler(signum, frame):
