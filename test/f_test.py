@@ -239,6 +239,7 @@ def test_unhandled_exception(loop, context):
 
 def test_step(check, fun, *args, __name=None, **kwargs):
     global failed, tests_run
+    result = None
     fun_name = ""
     try:
         tests_run += 1
@@ -279,6 +280,9 @@ def test_step(check, fun, *args, __name=None, **kwargs):
         tb = traceback.format_exc()
         sys.stdout.flush()
         with open("test_output.out", "a") as out_file:
+            out_file.write(f"Type of check value = {type(check)}")
+            out_file.write(f"Check = {check}")
+            out_file.write(f"Result = {result}")
             out_file.write(tb)
             out_file.close()
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
@@ -289,6 +293,7 @@ def test_step(check, fun, *args, __name=None, **kwargs):
 
 async def async_test_step(check, fun, *args, **kwargs):
     global failed, tests_run
+    result = None
     fun_name = fun.__name__
     try:
         tests_run += 1
@@ -316,6 +321,14 @@ async def async_test_step(check, fun, *args, **kwargs):
 
         print("Ok")
     except Exception as err:
+        tb = traceback.format_exc()
+        sys.stdout.flush()
+        with open("test_output.out", "a") as out_file:
+            out_file.write(f"Type of check value = {type(check)}")
+            out_file.write(f"Check = {check}")
+            out_file.write(f"Result = {result}")
+            out_file.write(tb)
+            out_file.close()
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
         copyfile("cb_debug.log", f"test_fail_{fun_name}.log")
         print(f"Step failed: function {fun_name}: {err}")
