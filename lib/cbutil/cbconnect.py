@@ -256,7 +256,7 @@ class cb_connect(cb_session):
 
         self.db.drop_collection(name)
 
-    @retry(retry_count=10)
+    @retry(retry_count=15)
     def collection_count_s(self, name="_default", expect=None):
         try:
             keyspace = self.db.keyspace_s(name)
@@ -270,7 +270,7 @@ class cb_connect(cb_session):
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
-    @retry_a(retry_count=10)
+    @retry_a(retry_count=15)
     async def collection_count_a(self, name="_default", expect=None):
         try:
             keyspace = self.db.keyspace_a(name)
@@ -446,7 +446,7 @@ class cb_connect(cb_session):
 
         return query
 
-    @retry(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
+    @retry(retry_count=15, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:
@@ -475,7 +475,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
-    @retry_a(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
+    @retry_a(retry_count=15, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:
