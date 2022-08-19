@@ -24,6 +24,7 @@ import sys
 from shutil import copyfile
 import subprocess
 import warnings
+import traceback
 
 document = {
     "id": 1,
@@ -275,7 +276,11 @@ def test_step(check, fun, *args, __name=None, **kwargs):
         print("Ok")
         return result
     except Exception as err:
+        tb = traceback.format_exc()
         sys.stdout.flush()
+        with open("test_output.out", "a") as out_file:
+            out_file.write(tb)
+            out_file.close()
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
         copyfile("cb_debug.log", f"test_fail_{fun_name}.log")
         print(f"Step failed: function {fun_name}: {err}")
