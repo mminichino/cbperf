@@ -1,4 +1,4 @@
-#!/usr/bin/env -S python3 -W ignore
+#!/usr/bin/env python3
 
 import os
 import sys
@@ -23,6 +23,7 @@ import time
 import sys
 from shutil import copyfile
 import subprocess
+import warnings
 
 document = {
     "id": 1,
@@ -47,7 +48,7 @@ failed = 0
 tests_run = 0
 replica_count = 1
 VERSION = "1.0"
-
+warnings.filterwarnings("ignore")
 
 class CheckCompare(object):
 
