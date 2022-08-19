@@ -167,7 +167,8 @@ class test_mods(object):
 
         sys.stdout.write("\033[K")
         if total_count > 0:
-            print(f"=> {total_count} of {total_count}, {percentage}%")
+            percentage = round((total_ops / total_count) * 100)
+            print(f"=> {total_ops} of {total_count}, {percentage}%")
         print("Test Done.")
         if total_count == 0:
             print(f"{total_ops:,} completed operations")
