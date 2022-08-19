@@ -447,7 +447,7 @@ class cb_connect(cb_session):
         return query
 
     @retry(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
-    def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None):
+    def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:
             contents = []
@@ -455,6 +455,9 @@ class cb_connect(cb_session):
             result = self.db.cluster_s.query(query, QueryOptions(metrics=False, adhoc=True))
             for item in result:
                 contents.append(item)
+            if empty_retry:
+                if len(contents) == 0:
+                    raise QueryEmptyException(f"query did not return any results")
             return contents
         except CollectionNameNotFound:
             raise
@@ -473,7 +476,7 @@ class cb_connect(cb_session):
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
     @retry_a(retry_count=10, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
-    async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None):
+    async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:
             contents = []
@@ -481,6 +484,9 @@ class cb_connect(cb_session):
             result = self.db.cluster_a.query(query, QueryOptions(metrics=False, adhoc=True))
             async for item in result:
                 contents.append(item)
+            if empty_retry:
+                if len(contents) == 0:
+                    raise QueryEmptyException(f"query did not return any results")
             return contents
         except CollectionNameNotFound:
             raise

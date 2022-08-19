@@ -143,6 +143,10 @@ class QueryError(cbUtilException):
     pass
 
 
+class QueryEmptyException(cbUtilException):
+    pass
+
+
 class QueryArgumentsError(cbUtilError):
     pass
 
