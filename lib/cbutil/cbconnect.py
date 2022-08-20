@@ -264,8 +264,8 @@ class cb_connect(cb_session):
             result = self.cb_query_s(sql=queryText)
             debugger = cb_debug(self.__class__.__name__)
             logger = debugger.logger
-            logger.debug(f"collection_count_s: expect: {expect}")
-            logger.debug(f"collection_count_s: result: {result}")
+            logger.error(f"collection_count_s: expect: {expect}")
+            logger.error(f"collection_count_s: result: {result}")
             debugger.close()
             if type(result[0]['count']) != int:
                 raise CollectionCountException(f"collection count query didn't yield a number, returned {result[0]['count']}")
@@ -284,8 +284,8 @@ class cb_connect(cb_session):
             result = await self.cb_query_a(sql=queryText)
             debugger = cb_debug(self.__class__.__name__)
             logger = debugger.logger
-            logger.debug(f"collection_count_a: expect: {expect}")
-            logger.debug(f"collection_count_a: result: {result}")
+            logger.error(f"collection_count_a: expect: {expect}")
+            logger.error(f"collection_count_a: result: {result}")
             debugger.close()
             if type(result[0]['count']) != int:
                 raise CollectionCountException(f"collection count query didn't yield a number, returned {result[0]['count']}")
