@@ -577,6 +577,7 @@ def test_main(parameters, sync=False, schema="default"):
     truncate_output_file()
     task = test_exec(parameters)
     test_step(None, task.test_clean)
+    time.sleep(0.2)
 
 
 def test_file(parameters, sync=False):
@@ -611,6 +612,7 @@ def test_file(parameters, sync=False):
     truncate_output_file()
     task = test_exec(parameters)
     test_step(None, task.test_clean)
+    time.sleep(0.2)
 
 
 def cli_run(cmd: str, *args: str):
