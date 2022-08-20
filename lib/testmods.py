@@ -127,15 +127,7 @@ class test_mods(object):
         while loop_run:
             if total_count > 0:
                 if total_count != total_ops:
-                    if run_flag.value != 1:
-                        if queue_wait == 50:
-                            loop_run = False
-                        else:
-                            loop_run = True
-                            queue_wait += 1
-                            time.sleep(0.2)
-                    else:
-                        loop_run = True
+                    loop_run = True
                 else:
                     loop_run = False
             elif run_flag.value == 1:
@@ -165,7 +157,7 @@ class test_mods(object):
             sample_count += 1
 
             tps_history.append(trans_per_sec)
-            if len(tps_history) >= slope_window and total_count == 0:
+            if len(tps_history) >= slope_window:
                 tps_history = tps_history[len(tps_history) - slope_window:len(tps_history)]
                 index = list(range(1, len(tps_history)+1))
                 np_slope = calc_slope(index, tps_history, slope_window)
