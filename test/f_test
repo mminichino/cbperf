@@ -19,7 +19,7 @@ fi
 . $PKGDIR/$VENV/bin/activate
 
 cd $PKGDIR
-test/f_test.py $@
+python3 -W ignore test/f_test.py $@
 
 RETURN_CODE=$?
 if [ $RETURN_CODE -ne 0 ]; then

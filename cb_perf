@@ -8,4 +8,4 @@ if [ ! -d $SCRIPTDIR/venv ]; then
 fi
 
 . $SCRIPTDIR/venv/bin/activate
-$SCRIPTDIR/cb_perf.py $@
+python3 -W ignore $SCRIPTDIR/cb_perf.py $@
