@@ -129,7 +129,7 @@ class test_mods(object):
                 queue_item = True
                 first_run = False
             except Empty:
-                time.sleep(0.1)
+                time.sleep(0.2)
                 queue_item = False
                 continue
 
