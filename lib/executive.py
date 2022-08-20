@@ -24,8 +24,10 @@ import asyncio
 import time
 import traceback
 import signal
+import warnings
 
 VERSION = '1.0'
+warnings.filterwarnings("ignore")
 
 
 class cbPerfBase(object):
