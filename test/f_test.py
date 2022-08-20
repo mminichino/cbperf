@@ -266,6 +266,8 @@ def test_step(check, fun, *args, __name=None, **kwargs):
                 assert check_list(check, result) is True
             elif type(check) == bool and check is True:
                 assert result is not None
+            elif type(check) == int:
+                assert int(check) == int(result)
             elif type(result) == couchbase.result.GetResult:
                 assert check == result.content_as[dict]
             elif type(check) == CheckCompare:
@@ -312,6 +314,8 @@ async def async_test_step(check, fun, *args, **kwargs):
                 assert check_list(check, result) is True
             elif type(check) == bool and check is True:
                 assert result is not None
+            elif type(check) == int:
+                assert int(check) == int(result)
             elif type(result) == couchbase.result.GetResult:
                 assert check == result.content_as[dict]
             elif type(check) == CheckCompare:
@@ -369,12 +373,12 @@ def cb_sync_test_set(host, username, password, bucket, scope, collection, tls, e
     test_step(None, db_index.index_wait, collection, field="data", index_name="data_index")
     test_step(None, db.cb_upsert_s, "test::1", document, name=collection)
     test_step(document, db.cb_get_s, "test::1", name=collection)
-    test_step(1, db.collection_count_s, collection, expect=1)
+    test_step(1, db.collection_count_s, name=collection, expect=1)
     test_step(query_result, db.cb_query_s, field="data", name=collection, empty_retry=True)
     test_step(None, db.cb_upsert_s, "test::2", document, name=collection)
     test_step(None, db.cb_subdoc_multi_upsert_s, ["test::1", "test::2"], "data", ["new", "new"], name=collection)
     test_step(new_document, db.cb_get_s, "test::1", name=collection)
-    test_step(2, db.collection_count_s, collection, expect=2)
+    test_step(2, db.collection_count_s, name=collection, expect=2)
     test_step(None, db.cb_upsert_s, "test::3", document, name=collection)
     test_step(None, db.cb_subdoc_upsert_s, "test::3", "data", "new", name=collection)
     test_step(new_document, db.cb_get_s, "test::3", name=collection)
@@ -418,12 +422,12 @@ def cb_async_test_set(host, username, password, bucket, scope, collection, tls, 
     test_step(None, db_index.index_wait, collection, field="data", index_name="data_index")
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::1", document, name=collection))
     loop.run_until_complete(async_test_step(document, db.cb_get_a, "test::1", name=collection))
-    loop.run_until_complete(async_test_step(1, db.collection_count_a, collection, expect=1))
+    loop.run_until_complete(async_test_step(1, db.collection_count_a, name=collection, expect=1))
     loop.run_until_complete(async_test_step(query_result, db.cb_query_a, field="data", name=collection, empty_retry=True))
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::2", document, name=collection))
     loop.run_until_complete(async_test_step(None, db.cb_subdoc_multi_upsert_a, ["test::1", "test::2"], "data", ["new", "new"], name=collection))
     loop.run_until_complete(async_test_step(new_document, db.cb_get_a, "test::1", name=collection))
-    loop.run_until_complete(async_test_step(2, db.collection_count_a, collection, expect=2))
+    loop.run_until_complete(async_test_step(2, db.collection_count_a, name=collection, expect=2))
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::3", document, name=collection))
     loop.run_until_complete(async_test_step(None, db.cb_subdoc_upsert_a, "test::3", "data", "new", name=collection))
     loop.run_until_complete(async_test_step(new_document, db.cb_get_a, "test::3", name=collection))
@@ -541,13 +545,8 @@ def randomize_test():
     test_step(None, r.randImage)
 
 
-def test_main(parameters, sync=False, schema="default"):
-    username = parameters.user
-    password = parameters.password
-    hostname = parameters.host
-    bucket = parameters.bucket
-    external = parameters.external
-    cloud_api = parameters.noapi
+def test_main(args, sync=False, schema="default"):
+    parameters = args
 
     truncate_output_file()
     task = print_host_map(parameters)
@@ -580,7 +579,8 @@ def test_main(parameters, sync=False, schema="default"):
     time.sleep(0.2)
 
 
-def test_file(parameters, sync=False):
+def test_file(args, sync=False):
+    parameters = args
     current_dir = os.path.dirname(os.path.realpath(__file__))
     package_dir = os.path.dirname(current_dir)
 

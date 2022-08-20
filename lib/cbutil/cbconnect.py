@@ -7,7 +7,6 @@ from .retries import retry, retry_a
 from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from datetime import timedelta
-from typing import Optional
 import concurrent.futures
 from couchbase.options import LOCKMODE_WAIT
 import couchbase
@@ -258,13 +257,13 @@ class cb_connect(cb_session):
         self.db.drop_collection(name)
 
     @retry(retry_count=10, factor=0.5)
-    def collection_count_s(self, name="_default", expect: Optional[int] = None):
+    def collection_count_s(self, name="_default", expect: int = 0) -> int:
         try:
             keyspace = self.db.keyspace_s(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = self.cb_query_s(sql=queryText)
             count: int = int(result[0]['count'])
-            if expect is not None:
+            if expect > 0:
                 if count < expect:
                     raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
             return count
@@ -272,13 +271,13 @@ class cb_connect(cb_session):
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry_a(retry_count=10, factor=0.5)
-    async def collection_count_a(self, name="_default", expect: Optional[int] = None):
+    async def collection_count_a(self, name="_default", expect: int = 0) -> int:
         try:
             keyspace = self.db.keyspace_a(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = await self.cb_query_a(sql=queryText)
             count: int = int(result[0]['count'])
-            if expect is not None:
+            if expect > 0:
                 if count < expect:
                     raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
             return count
