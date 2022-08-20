@@ -4,7 +4,7 @@
 import time
 from typing import Callable
 from functools import wraps
-from cbdebug import cb_debug
+from lib.cbutil.cbdebug import cb_debug
 
 
 def retry(retry_count=5,
