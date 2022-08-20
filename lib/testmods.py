@@ -102,6 +102,7 @@ class test_mods(object):
         slope_total = 0
         slope_avg = 0
         queue_item = True
+        first_run = True
         end_char = '\r'
 
         def calc_slope(idx, data, segment):
@@ -122,11 +123,13 @@ class test_mods(object):
         if out_file:
             sys.stdout = open(out_file, "a")
 
-        while run_flag.value == 1 or queue_item:
+        while run_flag.value == 1 or queue_item or first_run:
             try:
                 entry = telemetry_queue.get(block=False)
                 queue_item = True
+                first_run = False
             except Empty:
+                time.sleep(0.1)
                 queue_item = False
                 continue
 
