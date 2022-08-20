@@ -256,7 +256,7 @@ class cb_connect(cb_session):
 
         self.db.drop_collection(name)
 
-    @retry(retry_count=15)
+    @retry(retry_count=10, factor=0.5)
     def collection_count_s(self, name="_default", expect=None):
         try:
             keyspace = self.db.keyspace_s(name)
@@ -270,7 +270,7 @@ class cb_connect(cb_session):
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
-    @retry_a(retry_count=15)
+    @retry_a(retry_count=10, factor=0.5)
     async def collection_count_a(self, name="_default", expect=None):
         try:
             keyspace = self.db.keyspace_a(name)

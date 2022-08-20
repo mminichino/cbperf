@@ -786,7 +786,14 @@ class test_exec(cbPerfBase):
                 instances.append(self.loop.create_task(tm.async_test_run(mode, input_json, count, coll_obj, operation_count, telemetry_queue, write_p, n, status_vector)))
                 status_vector[1] += 1
 
-            self.loop.run_until_complete(asyncio.gather(*instances))
+            results = self.loop.run_until_complete(asyncio.gather(*instances, return_exceptions=True))
+            for result in results:
+                if isinstance(result, Exception):
+                    status_vector[2] += 1
+                    debugger = cb_debug(self.__class__.__name__)
+                    logger = debugger.logger
+                    logger.error(f"test_launch_a: instance error: {result}")
+                    debugger.close()
 
             run_flag.value = 0
             status_thread.join()
@@ -862,6 +869,9 @@ class test_exec(cbPerfBase):
                 instances[n].start()
                 status_vector[1] += 1
                 n += 1
+
+            for p in instances:
+                p.join()
 
             run_flag.value = 0
             status_thread.join()

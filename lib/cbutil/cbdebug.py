@@ -21,10 +21,7 @@ class cb_debug(object):
         default_level = 3
 
         if overwrite:
-            try:
-                open(self.debug_file, 'w').close()
-            except Exception as err:
-                print(f"warning: can not clear log file {self.debug_file}: {err}")
+            self.clear()
 
         try:
             default_level = int(os.environ['CB_PERF_DEBUG_LEVEL']) if 'CB_PERF_DEBUG_LEVEL' in os.environ else 2
@@ -61,3 +58,9 @@ class cb_debug(object):
         for handler in handlers:
             self._logger.removeHandler(handler)
             handler.close()
+
+    def clear(self):
+        try:
+            open(self.debug_file, 'w').close()
+        except Exception as err:
+            print(f"warning: can not clear log file {self.debug_file}: {err}")

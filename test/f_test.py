@@ -668,8 +668,9 @@ def directory_cleanup():
     print("Pruning old test files ... ")
     for file_name in os.listdir(package_dir):
         p1 = re.compile("test_fail_.*\.out")
-        p2 = re.compile("test_output.out")
-        if p1.match(file_name) or p2.match(file_name):
+        p2 = re.compile("test_fail_.*\.log")
+        p3 = re.compile("test_output.out")
+        if p1.match(file_name) or p2.match(file_name) or p3.match(file_name):
             if file_name == "." or file_name == ".." or file_name == "*" or len(file_name) == 0:
                 continue
             print(f"Removing {file_name}")

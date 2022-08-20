@@ -9,6 +9,7 @@ import signal
 import warnings
 from lib.executive import print_host_map, test_exec, schema_admin
 from lib.exceptions import *
+from lib.cbutil.cbdebug import cb_debug
 
 
 LOAD_DATA = 0x0000
@@ -116,6 +117,10 @@ def main():
     arg_parser = params()
     parameters = arg_parser.parser.parse_args()
     signal.signal(signal.SIGINT, break_signal_handler)
+
+    debugger = cb_debug(os.path.basename(__file__))
+    debugger.clear()
+    debugger.close()
 
     test_run = cbPerf(parameters)
     test_run.run()
