@@ -281,8 +281,12 @@ def test_step(check, fun, *args, __name=None, **kwargs):
         return result
     except Exception as err:
         tb = traceback.format_exc()
+        args_str = ','.join(map(str, args))
+        kwargs_str = ','.join('{}={}'.format(k, v) for k, v in kwargs.items())
+        func_call = f"{fun_name}({','.join([args_str, kwargs_str])})"
         sys.stdout.flush()
         with open("test_output.out", "a") as out_file:
+            out_file.write(f"Called = {func_call}\n")
             out_file.write(f"Type of check value = {type(check)}\n")
             out_file.write(f"Check = {check}\n")
             out_file.write(f"Result = {result}\n")
@@ -328,8 +332,12 @@ async def async_test_step(check, fun, *args, **kwargs):
         print("Ok")
     except Exception as err:
         tb = traceback.format_exc()
+        args_str = ','.join(map(str, args))
+        kwargs_str = ','.join('{}={}'.format(k, v) for k, v in kwargs.items())
+        func_call = f"{fun_name}({','.join([args_str, kwargs_str])})"
         sys.stdout.flush()
         with open("test_output.out", "a") as out_file:
+            out_file.write(f"Called = {func_call}\n")
             out_file.write(f"Type of check value = {type(check)}\n")
             out_file.write(f"Check = {check}\n")
             out_file.write(f"Result = {result}\n")
@@ -373,12 +381,12 @@ def cb_sync_test_set(host, username, password, bucket, scope, collection, tls, e
     test_step(None, db_index.index_wait, collection, field="data", index_name="data_index")
     test_step(None, db.cb_upsert_s, "test::1", document, name=collection)
     test_step(document, db.cb_get_s, "test::1", name=collection)
-    test_step(1, db.collection_count_s, name=collection, expect=1)
+    test_step(1, db.collection_count_s, name=collection, expect_count=1)
     test_step(query_result, db.cb_query_s, field="data", name=collection, empty_retry=True)
     test_step(None, db.cb_upsert_s, "test::2", document, name=collection)
     test_step(None, db.cb_subdoc_multi_upsert_s, ["test::1", "test::2"], "data", ["new", "new"], name=collection)
     test_step(new_document, db.cb_get_s, "test::1", name=collection)
-    test_step(2, db.collection_count_s, name=collection, expect=2)
+    test_step(2, db.collection_count_s, name=collection, expect_count=2)
     test_step(None, db.cb_upsert_s, "test::3", document, name=collection)
     test_step(None, db.cb_subdoc_upsert_s, "test::3", "data", "new", name=collection)
     test_step(new_document, db.cb_get_s, "test::3", name=collection)
@@ -422,12 +430,12 @@ def cb_async_test_set(host, username, password, bucket, scope, collection, tls, 
     test_step(None, db_index.index_wait, collection, field="data", index_name="data_index")
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::1", document, name=collection))
     loop.run_until_complete(async_test_step(document, db.cb_get_a, "test::1", name=collection))
-    loop.run_until_complete(async_test_step(1, db.collection_count_a, name=collection, expect=1))
+    loop.run_until_complete(async_test_step(1, db.collection_count_a, name=collection, expect_count=1))
     loop.run_until_complete(async_test_step(query_result, db.cb_query_a, field="data", name=collection, empty_retry=True))
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::2", document, name=collection))
     loop.run_until_complete(async_test_step(None, db.cb_subdoc_multi_upsert_a, ["test::1", "test::2"], "data", ["new", "new"], name=collection))
     loop.run_until_complete(async_test_step(new_document, db.cb_get_a, "test::1", name=collection))
-    loop.run_until_complete(async_test_step(2, db.collection_count_a, name=collection, expect=2))
+    loop.run_until_complete(async_test_step(2, db.collection_count_a, name=collection, expect_count=2))
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::3", document, name=collection))
     loop.run_until_complete(async_test_step(None, db.cb_subdoc_upsert_a, "test::3", "data", "new", name=collection))
     loop.run_until_complete(async_test_step(new_document, db.cb_get_a, "test::3", name=collection))

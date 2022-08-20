@@ -257,29 +257,29 @@ class cb_connect(cb_session):
         self.db.drop_collection(name)
 
     @retry(retry_count=10, factor=0.5)
-    def collection_count_s(self, name="_default", expect: int = 0) -> int:
+    def collection_count_s(self, name="_default", expect_count: int = 0) -> int:
         try:
             keyspace = self.db.keyspace_s(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = self.cb_query_s(sql=queryText)
             count: int = int(result[0]['count'])
-            if expect > 0:
-                if count < expect:
-                    raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
+            if expect_count > 0:
+                if count < expect_count:
+                    raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
             return count
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry_a(retry_count=10, factor=0.5)
-    async def collection_count_a(self, name="_default", expect: int = 0) -> int:
+    async def collection_count_a(self, name="_default", expect_count: int = 0) -> int:
         try:
             keyspace = self.db.keyspace_a(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = await self.cb_query_a(sql=queryText)
             count: int = int(result[0]['count'])
-            if expect > 0:
-                if count < expect:
-                    raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
+            if expect_count > 0:
+                if count < expect_count:
+                    raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
             return count
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
