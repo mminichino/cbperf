@@ -262,6 +262,8 @@ class cb_connect(cb_session):
             keyspace = self.db.keyspace_s(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = self.cb_query_s(sql=queryText)
+            if type(result[0]['count']) != int:
+                raise CollectionCountException(f"collection count query didn't yield a number, returned {result[0]['count']}")
             if expect:
                 if result[0]['count'] != expect:
                     raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
@@ -275,6 +277,8 @@ class cb_connect(cb_session):
             keyspace = self.db.keyspace_a(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = await self.cb_query_a(sql=queryText)
+            if type(result[0]['count']) != int:
+                raise CollectionCountException(f"collection count query didn't yield a number, returned {result[0]['count']}")
             if expect:
                 if result[0]['count'] != expect:
                     raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")

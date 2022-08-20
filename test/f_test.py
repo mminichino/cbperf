@@ -741,12 +741,15 @@ def main():
 
     for schema in schema_list:
         print(f"Running tests on schema {schema}")
-        print("Main Async Tests")
+        print(f"Main Async Tests - {schema}")
         test_main(args, sync=False, schema=schema)
-        test_file(args, sync=False)
-        print("Main Sync Tests")
+        print(f"Main Sync Tests - {schema}")
         test_main(args, sync=True, schema=schema)
-        test_file(args, sync=True)
+
+    print("External file async test")
+    test_file(args, sync=False)
+    print("External file sync test")
+    test_file(args, sync=True)
 
     print("CLI Invoke Tests")
     for schema in schema_list:
