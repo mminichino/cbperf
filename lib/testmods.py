@@ -137,7 +137,14 @@ class test_mods(object):
 
             try:
                 entry = telemetry_queue.get(block=False)
+                queue_wait = 0
             except Empty:
+                if total_count > 0:
+                    if total_count != total_ops:
+                        if queue_wait == 50:
+                            loop_run = False
+                        else:
+                            queue_wait += 1
                 time.sleep(0.2)
                 continue
 

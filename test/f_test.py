@@ -13,6 +13,7 @@ from lib import system
 from lib.cbutil import cbconnect
 from lib.cbutil import cbindex
 from lib.cbutil.randomize import randomize
+from lib.cbutil.cbdebug import cb_debug
 from lib.executive import print_host_map, test_exec, schema_admin
 import argparse
 import asyncio
@@ -725,6 +726,9 @@ def main():
     print(sys.version)
 
     directory_cleanup()
+    debugger = cb_debug(os.path.basename(__file__))
+    debugger.clear()
+    debugger.close()
 
     print("No SSL Tests")
     cb_connect_test(hostname, username, password, bucket, False, external, cloud_api)
