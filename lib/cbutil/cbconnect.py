@@ -7,6 +7,7 @@ from .retries import retry, retry_a
 from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from datetime import timedelta
+from typing import Optional
 import concurrent.futures
 from couchbase.options import LOCKMODE_WAIT
 import couchbase
@@ -257,42 +258,30 @@ class cb_connect(cb_session):
         self.db.drop_collection(name)
 
     @retry(retry_count=10, factor=0.5)
-    def collection_count_s(self, name="_default", expect=None):
+    def collection_count_s(self, name="_default", expect: Optional[int] = None):
         try:
             keyspace = self.db.keyspace_s(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = self.cb_query_s(sql=queryText)
-            debugger = cb_debug(self.__class__.__name__)
-            logger = debugger.logger
-            logger.error(f"collection_count_s: expect: {expect}")
-            logger.error(f"collection_count_s: result: {result}")
-            debugger.close()
-            if type(result[0]['count']) != int:
-                raise CollectionCountException(f"collection count query didn't yield a number, returned {result[0]['count']}")
-            if expect:
-                if result[0]['count'] != expect:
+            count: int = int(result[0]['count'])
+            if expect is not None:
+                if count < expect:
                     raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
-            return result[0]['count']
+            return count
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry_a(retry_count=10, factor=0.5)
-    async def collection_count_a(self, name="_default", expect=None):
+    async def collection_count_a(self, name="_default", expect: Optional[int] = None):
         try:
             keyspace = self.db.keyspace_a(name)
             queryText = 'select count(*) as count from ' + keyspace + ';'
             result = await self.cb_query_a(sql=queryText)
-            debugger = cb_debug(self.__class__.__name__)
-            logger = debugger.logger
-            logger.error(f"collection_count_a: expect: {expect}")
-            logger.error(f"collection_count_a: result: {result}")
-            debugger.close()
-            if type(result[0]['count']) != int:
-                raise CollectionCountException(f"collection count query didn't yield a number, returned {result[0]['count']}")
-            if expect:
-                if result[0]['count'] != expect:
+            count: int = int(result[0]['count'])
+            if expect is not None:
+                if count < expect:
                     raise CollectionCountException(f"collection {name} expect count {expect} but current count is {count}")
-            return result[0]['count']
+            return count
         except Exception as err:
             CollectionCountError("can not get item count for {}: {}".format(name, err))
 

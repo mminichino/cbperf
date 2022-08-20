@@ -872,9 +872,6 @@ class test_exec(cbPerfBase):
                 status_vector[1] += 1
                 n += 1
 
-            for p in instances:
-                p.join()
-
             run_flag.value = 0
             status_thread.join()
             end_time = time.perf_counter()
