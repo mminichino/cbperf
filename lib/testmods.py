@@ -159,6 +159,7 @@ class test_mods(object):
                 queue_start_wait = False
             except Empty:
                 if queue_wait == 100:
+                    self.write_log(f"status thread: data wait timeout: total count {total_count} op count {total_ops}", test_mods.ERROR)
                     loop_run = False
                     queue_start_wait = False
                 else:

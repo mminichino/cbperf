@@ -279,7 +279,8 @@ class cb_connect(cb_session):
                     raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
             return count
         except Exception as err:
-            CollectionCountError("can not get item count for {}: {}".format(name, err))
+            self.write_log(f"collection_count_s: error occurred: {err}")
+            raise CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry_a(retry_count=10, factor=0.5)
     async def collection_count_a(self, name="_default", expect_count: int = 0) -> int:
@@ -294,7 +295,8 @@ class cb_connect(cb_session):
                     raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
             return count
         except Exception as err:
-            CollectionCountError("can not get item count for {}: {}".format(name, err))
+            self.write_log(f"collection_count_a: error occurred: {err}")
+            raise CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10, factor=0.5)
     def cb_get_s(self, key, name="_default"):
