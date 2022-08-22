@@ -45,6 +45,10 @@ class rwMixer(object):
 
 
 class test_mods(object):
+    DEBUG = 0
+    INFO = 1
+    ERROR = 2
+    CRITICAL = 3
 
     def __init__(self,  hostname: str, username: str, password: str, ssl, external, restore, batch_size, id_field, run_t, max_t):
         self.host = hostname
@@ -73,6 +77,19 @@ class test_mods(object):
             return True
         else:
             return False
+
+    def write_log(self, message: str, level: int = 2) -> None:
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
+        if level == 0:
+            logger.debug(message)
+        elif level == 1:
+            logger.info(message)
+        elif level == 2:
+            logger.error(message)
+        else:
+            logger.critical(message)
+        debugger.close()
 
     def mod_unhandled_exception(self, loop, context):
         debugger = cb_debug(self.__class__.__name__)
@@ -123,6 +140,8 @@ class test_mods(object):
         if out_file:
             sys.stdout = open(out_file, "a")
 
+        self.write_log(f"status thread start: expected count {total_count}", test_mods.ERROR)
+
         while loop_run or queue_start_wait:
             if total_count > 0:
                 if total_count != total_ops:
@@ -139,7 +158,7 @@ class test_mods(object):
                 queue_wait = 0
                 queue_start_wait = False
             except Empty:
-                if queue_wait == 75:
+                if queue_wait == 100:
                     loop_run = False
                     queue_start_wait = False
                 else:

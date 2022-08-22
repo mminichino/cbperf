@@ -42,15 +42,25 @@ class cb_connect(cb_session):
         else:
             return key
 
-    def unhandled_exception(self, loop, context):
+    def write_log(self, message: str, level: int = 2) -> None:
         debugger = cb_debug(self.__class__.__name__)
         logger = debugger.logger
+        if level == 0:
+            logger.debug(message)
+        elif level == 1:
+            logger.info(message)
+        elif level == 2:
+            logger.error(message)
+        else:
+            logger.critical(message)
+        debugger.close()
+
+    def unhandled_exception(self, loop, context):
         err = context.get("exception", context['message'])
         if isinstance(err, Exception):
-            logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
+            self.write_log(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
         else:
-            logger.error(f"unhandled error: {err}")
-        debugger.close()
+            self.write_log(f"unhandled error: {err}")
 
     @retry_a(factor=0.5, retry_count=10)
     async def connect_a(self):
@@ -265,6 +275,7 @@ class cb_connect(cb_session):
             count: int = int(result[0]['count'])
             if expect_count > 0:
                 if count < expect_count:
+                    self.write_log(f"collection_count_s: expected {expect_count} got {count} query result {result}")
                     raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
             return count
         except Exception as err:
@@ -279,6 +290,7 @@ class cb_connect(cb_session):
             count: int = int(result[0]['count'])
             if expect_count > 0:
                 if count < expect_count:
+                    self.write_log(f"collection_count_a: expected {expect_count} got {count} query result {result}")
                     raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
             return count
         except Exception as err:

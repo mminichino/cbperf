@@ -18,7 +18,7 @@ class cb_debug(object):
         self.formatter = logging.Formatter(logging.BASIC_FORMAT)
         self.handler.setFormatter(self.formatter)
         self.debug = False
-        default_level = 3
+        default_level = 2
 
         if overwrite:
             self.clear()
