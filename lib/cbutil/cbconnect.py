@@ -275,11 +275,10 @@ class cb_connect(cb_session):
             count: int = int(result[0]['count'])
             if expect_count > 0:
                 if count < expect_count:
-                    self.write_log(f"collection_count_s: expected {expect_count} got {count} query result {result}")
                     raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
             return count
         except Exception as err:
-            self.write_log(f"collection_count_s: error occurred: {err}")
+            self.write_log(f"collection_count_s: error occurred: {err}", cb_debug.ERROR)
             raise CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry_a(retry_count=10, factor=0.5)
@@ -291,11 +290,10 @@ class cb_connect(cb_session):
             count: int = int(result[0]['count'])
             if expect_count > 0:
                 if count < expect_count:
-                    self.write_log(f"collection_count_a: expected {expect_count} got {count} query result {result}")
                     raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
             return count
         except Exception as err:
-            self.write_log(f"collection_count_a: error occurred: {err}")
+            self.write_log(f"collection_count_a: error occurred: {err}", cb_debug.ERROR)
             raise CollectionCountError("can not get item count for {}: {}".format(name, err))
 
     @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10, factor=0.5)
@@ -478,11 +476,8 @@ class cb_connect(cb_session):
         except CouchbaseException as err:
             try:
                 error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
-                debugger = cb_debug(self.__class__.__name__)
-                logger = debugger.logger
-                logger.debug(f"query: {query}")
-                logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
-                debugger.close()
+                self.write_log(f"query: {query}", cb_debug.DEBUG)
+                self.write_log(f"query error code {err.context.first_error_code} message {err.context.first_error_message}", cb_debug.DEBUG)
                 raise error_class(err.context.first_error_message)
             except AttributeError:
                 raise QueryError(err.message)
@@ -507,11 +502,8 @@ class cb_connect(cb_session):
         except CouchbaseException as err:
             try:
                 error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
-                debugger = cb_debug(self.__class__.__name__)
-                logger = debugger.logger
-                logger.debug(f"query: {query}")
-                logger.debug(f"query error code {err.context.first_error_code} message {err.context.first_error_message}")
-                debugger.close()
+                self.write_log(f"query: {query}", cb_debug.DEBUG)
+                self.write_log(f"query error code {err.context.first_error_code} message {err.context.first_error_message}", cb_debug.DEBUG)
                 raise error_class(err.context.first_error_message)
             except AttributeError:
                 raise QueryError(err.message)

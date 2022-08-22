@@ -45,10 +45,6 @@ class rwMixer(object):
 
 
 class test_mods(object):
-    DEBUG = 0
-    INFO = 1
-    ERROR = 2
-    CRITICAL = 3
 
     def __init__(self,  hostname: str, username: str, password: str, ssl, external, restore, batch_size, id_field, run_t, max_t):
         self.host = hostname
@@ -140,7 +136,7 @@ class test_mods(object):
         if out_file:
             sys.stdout = open(out_file, "a")
 
-        self.write_log(f"status thread start: expected count {total_count}", test_mods.ERROR)
+        self.write_log(f"status thread start: expected count {total_count}", cb_debug.DEBUG)
 
         while loop_run or queue_start_wait:
             if total_count > 0:
@@ -159,7 +155,7 @@ class test_mods(object):
                 queue_start_wait = False
             except Empty:
                 if queue_wait == 100:
-                    self.write_log(f"status thread: data wait timeout: total count {total_count} op count {total_ops}", test_mods.ERROR)
+                    self.write_log(f"status thread: data wait timeout: total count {total_count} op count {total_ops}", cb_debug.ERROR)
                     loop_run = False
                     queue_start_wait = False
                 else:

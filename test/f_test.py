@@ -556,7 +556,6 @@ def randomize_test():
 def test_main(args, sync=False, schema="default"):
     parameters = args
 
-    directory_cleanup()
     debugger = cb_debug(os.path.basename(__file__))
     debugger.clear()
     debugger.close()
@@ -597,7 +596,6 @@ def test_file(args, sync=False):
     current_dir = os.path.dirname(os.path.realpath(__file__))
     package_dir = os.path.dirname(current_dir)
 
-    directory_cleanup()
     debugger = cb_debug(os.path.basename(__file__))
     debugger.clear()
     debugger.close()

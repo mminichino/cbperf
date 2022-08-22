@@ -6,6 +6,10 @@ import os
 
 
 class cb_debug(object):
+    DEBUG = 0
+    INFO = 1
+    ERROR = 2
+    CRITICAL = 3
 
     def __init__(self, name, filename=None, level=None, overwrite=False):
         if filename:
