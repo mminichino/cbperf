@@ -95,13 +95,12 @@ class test_mods(object):
         max_time = 0
         avg_tps = 0
         avg_time = 0
-        percentage = 0
         total_ops = 0
         slope_window = 100
         slope_count = 0
         slope_total = 0
         slope_avg = 0
-        queue_item = True
+        queue_start_wait = True
         loop_run = True
         queue_wait = 0
         end_char = '\r'
@@ -124,7 +123,7 @@ class test_mods(object):
         if out_file:
             sys.stdout = open(out_file, "a")
 
-        while loop_run:
+        while loop_run or queue_start_wait:
             if total_count > 0:
                 if total_count != total_ops:
                     loop_run = True
@@ -138,13 +137,13 @@ class test_mods(object):
             try:
                 entry = telemetry_queue.get(block=False)
                 queue_wait = 0
+                queue_start_wait = False
             except Empty:
-                if total_count > 0:
-                    if total_count != total_ops:
-                        if queue_wait == 50:
-                            loop_run = False
-                        else:
-                            queue_wait += 1
+                if queue_wait == 75:
+                    loop_run = False
+                    queue_start_wait = False
+                else:
+                    queue_wait += 1
                 time.sleep(0.2)
                 continue
 
