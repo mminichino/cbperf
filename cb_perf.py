@@ -7,6 +7,7 @@ Couchbase Performance Utility
 import argparse
 import signal
 import warnings
+import traceback
 from lib.executive import print_host_map, test_exec, schema_admin
 from lib.exceptions import *
 from lib.cbutil.cbdebug import cb_debug
@@ -25,6 +26,10 @@ warnings.filterwarnings("ignore")
 
 
 def break_signal_handler(signum, frame):
+    if 'CB_PERF_DEBUG_LEVEL' in os.environ:
+        if int(os.environ['CB_PERF_DEBUG_LEVEL']) == 0:
+            tb = traceback.format_exc()
+            print(tb)
     print("")
     print("Break received, aborting.")
     sys.exit(1)

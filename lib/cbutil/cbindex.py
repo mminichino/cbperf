@@ -62,6 +62,7 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexCollectionError("can not connect to collection {}: {}".format(name, err))
 
+    @retry(retry_count=10)
     def is_index(self, field=None, name="_default", index_name=None):
         index = self.index_name(name, field, index_name)
 
@@ -233,3 +234,8 @@ class cb_index(cb_connect):
             return index_list
         except Exception as err:
             raise IndexNotReady(f"index_list: bucket {bucket} error: {err}")
+
+    @retry(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
+    def delete_wait(self, field=None, name="_default", index_name=None):
+        if self.is_index(field=field, name=name, index_name=index_name):
+            raise IndexNotReady(f"delete_wait: index on {name} still exists")

@@ -540,6 +540,7 @@ class test_exec(cbPerfBase):
         try:
             schema = self.inventory.getSchema(self.schema)
             if schema:
+                self.index_delete_wait()
                 for bucket in self.inventory.nextBucket(schema):
                     print(f"Dropping bucket {bucket.name}")
                     if self.db.is_bucket(bucket.name):
@@ -699,7 +700,90 @@ class test_exec(cbPerfBase):
 
         self.rules_run = True
 
+    def secondary_index_walk(self):
+        try:
+            schema = self.inventory.getSchema(self.schema)
+            if schema:
+                for bucket in self.inventory.nextBucket(schema):
+                    for scope in self.inventory.nextScope(bucket):
+                        for collection in self.inventory.nextCollection(scope):
+                            if self.inventory.hasIndexes(collection):
+                                for index_field, index_name in self.inventory.nextIndex(collection):
+                                    yield bucket.name, scope.name, collection.name, collection.key_prefix, index_field, index_name
+                            else:
+                                yield from ()
+            else:
+                raise ParameterError("schema {} not found".format(self.schema))
+        except Exception as err:
+            raise TestExecError("secondary_index_walk: failed: {}".format(err))
+
+    def primary_index_walk(self):
+        try:
+            schema = self.inventory.getSchema(self.schema)
+            if schema:
+                for bucket in self.inventory.nextBucket(schema):
+                    for scope in self.inventory.nextScope(bucket):
+                        for collection in self.inventory.nextCollection(scope):
+                            if self.inventory.hasPrimaryIndex(collection):
+                                yield bucket.name, scope.name, collection.name, collection.key_prefix
+                            else:
+                                yield from ()
+            else:
+                raise ParameterError("schema {} not found".format(self.schema))
+        except Exception as err:
+            raise TestExecError("primary_index_walk: failed: {}".format(err))
+
     def check_indexes(self, check_count=True):
+        try:
+            for bucket, scope, collection, keyspace_id in self.primary_index_walk():
+                self.db_index.connect_bucket(bucket)
+                self.db_index.connect_scope(scope)
+                self.db_index.connect_collection(collection)
+                self.print_partial(f"Waiting for primary index on {collection} ... ")
+                self.db_index.index_online(keyspace_id, primary=True)
+                self.print_partial("online ")
+                if check_count:
+                    self.db_index.index_wait(name=collection)
+                    self.print_partial("current ")
+                print("done.")
+
+            for bucket, scope, collection, keyspace_id, index_field, index_name in self.secondary_index_walk():
+                self.db_index.connect_bucket(bucket)
+                self.db_index.connect_scope(scope)
+                self.db_index.connect_collection(collection)
+                self.print_partial(f"Waiting for index {index_name} on {collection} ... ")
+                self.db_index.index_online(keyspace_id, field=index_field)
+                self.print_partial("online ")
+                if check_count:
+                    self.db_index.index_wait(name=collection, field=index_field, index_name=index_name)
+                    self.print_partial("current ")
+                print("done.")
+        except Exception as err:
+            raise TestExecError("check_indexes: failed: {}".format(err))
+
+    def index_delete_wait(self):
+        try:
+            for bucket, scope, collection, keyspace_id in self.primary_index_walk():
+                self.db_index.connect_bucket(bucket)
+                self.db_index.connect_scope(scope)
+                self.db_index.connect_collection(collection)
+                self.print_partial(f"Waiting for primary index to delete on {collection} ... ")
+                self.db_index.drop_index(name=collection)
+                self.db_index.delete_wait(name=collection)
+                print("done.")
+
+            for bucket, scope, collection, keyspace_id, index_field, index_name in self.secondary_index_walk():
+                self.db_index.connect_bucket(bucket)
+                self.db_index.connect_scope(scope)
+                self.db_index.connect_collection(collection)
+                self.print_partial(f"Waiting for index {index_name} to delete on {collection} ... ")
+                self.db_index.drop_index(name=collection, field=index_field, index_name=index_name)
+                self.db_index.delete_wait(name=collection, field=index_field, index_name=index_name)
+                print("done.")
+        except Exception as err:
+            raise TestExecError("index_delete_wait: failed: {}".format(err))
+
+    def check_indexes_old(self, check_count=True):
         print("Waiting for indexes to settle")
         try:
             schema = self.inventory.getSchema(self.schema)
