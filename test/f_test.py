@@ -398,6 +398,8 @@ def cb_sync_test_set(host, username, password, bucket, scope, collection, tls, e
     test_step(None, db_index.create_index, collection, field="data", index_name="data_index", replica=replica_count)
     test_step(None, db_index.index_wait, collection)
     test_step(None, db_index.index_wait, collection, field="data", index_name="data_index")
+    test_step(True, db_index.is_index, name=collection)
+    test_step(True, db_index.is_index, name=collection, field="data", index_name="data_index")
     test_step(None, db.cb_upsert_s, "test::1", document, name=collection)
     test_step(None, db.bucket_wait, bucket, count=1)
     test_step(document, db.cb_get_s, "test::1", name=collection)
@@ -410,6 +412,10 @@ def cb_sync_test_set(host, username, password, bucket, scope, collection, tls, e
     test_step(None, db.cb_upsert_s, "test::3", document, name=collection)
     test_step(None, db.cb_subdoc_upsert_s, "test::3", "data", "new", name=collection)
     test_step(new_document, db.cb_get_s, "test::3", name=collection)
+    test_step(None, db_index.drop_index, name=collection)
+    test_step(None, db_index.drop_index, name=collection, field="data", index_name="data_index")
+    test_step(None, db_index.delete_wait, name=collection)
+    test_step(None, db_index.delete_wait, name=collection, field="data", index_name="data_index")
     test_step(None, db.drop_bucket, bucket)
 
 
@@ -448,6 +454,8 @@ def cb_async_test_set(host, username, password, bucket, scope, collection, tls, 
     test_step(None, db_index.create_index, collection, field="data", index_name="data_index", replica=replica_count)
     test_step(None, db_index.index_wait, collection)
     test_step(None, db_index.index_wait, collection, field="data", index_name="data_index")
+    test_step(True, db_index.is_index, name=collection)
+    test_step(True, db_index.is_index, name=collection, field="data", index_name="data_index")
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::1", document, name=collection))
     test_step(None, db.bucket_wait, bucket, count=1)
     loop.run_until_complete(async_test_step(document, db.cb_get_a, "test::1", name=collection))
@@ -460,6 +468,10 @@ def cb_async_test_set(host, username, password, bucket, scope, collection, tls, 
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::3", document, name=collection))
     loop.run_until_complete(async_test_step(None, db.cb_subdoc_upsert_a, "test::3", "data", "new", name=collection))
     loop.run_until_complete(async_test_step(new_document, db.cb_get_a, "test::3", name=collection))
+    test_step(None, db_index.drop_index, name=collection)
+    test_step(None, db_index.drop_index, name=collection, field="data", index_name="data_index")
+    test_step(None, db_index.delete_wait, name=collection)
+    test_step(None, db_index.delete_wait, name=collection, field="data", index_name="data_index")
     test_step(None, db.drop_bucket, bucket)
 
 
