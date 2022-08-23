@@ -193,3 +193,43 @@ class cb_index(cb_connect):
             return True
         else:
             raise IndexNotReady(f"index {index} not ready")
+
+    @retry(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
+    def index_online(self, keyspace_id, field=None, primary=False):
+        if primary:
+            query_text = f"SELECT * FROM system:indexes AS i where i.keyspace_id = \"{keyspace_id}\" and i.is_primary = true;"
+        elif field is not None:
+            query_text = f"SELECT * FROM system:indexes AS i UNNEST i.index_key AS l where i.keyspace_id = \"{keyspace_id}\" and l = \"`{field}`\";"
+        else:
+            raise IndexInternalError(f"index_online: either set primary to True or provide field parameter")
+
+        try:
+            result = self.cb_query_s(sql=query_text)
+            for row in result:
+                for key, value in row.items():
+                    if key != 'i':
+                        continue
+                    if value['keyspace_id'] == keyspace_id and value['state'] == 'online':
+                        return True
+            raise IndexNotReady(f"index not online")
+        except Exception as err:
+            raise IndexNotReady(f"index_online: keyspace_id {keyspace_id} error: {err}")
+
+    @retry(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
+    def index_list(self, bucket):
+        query_text = "SELECT * FROM system:indexes;"
+        index_list = {}
+
+        try:
+            result = self.cb_query_s(sql=query_text)
+            for row in result:
+                for key, value in row.items():
+                    if 'bucket_id' in value:
+                        if value['bucket_id'] == bucket:
+                            index_list[value['id']] = value['name']
+                    else:
+                        if value['keyspace_id'] == bucket:
+                            index_list[value['id']] = value['name']
+            return index_list
+        except Exception as err:
+            raise IndexNotReady(f"index_list: bucket {bucket} error: {err}")

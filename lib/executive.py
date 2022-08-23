@@ -4,6 +4,7 @@
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
+from typing import Union
 import logging
 import logging.handlers
 from queue import Empty
@@ -16,6 +17,7 @@ from lib.exceptions import *
 from lib.cbutil.cbdebug import cb_debug
 from lib.system import sys_info
 from lib.testmods import test_mods
+from lib.mptools import mp_value, mp_queue
 from lib.constants import *
 import json
 import os
@@ -279,6 +281,9 @@ class test_exec(cbPerfBase):
         if self.operation_count > self.record_count:
             raise ParameterError("Error: Operation count must be equal or less than record count.")
 
+        self.test_step = None
+        self.test_record_count = 0
+
         self.bandwidth_test_flag = False
         self.latency_test_flag = False
 
@@ -350,6 +355,29 @@ class test_exec(cbPerfBase):
             value = 1
         return f"{value} {unit}"
 
+    def print_partial(self, message: str) -> None:
+        end_char = ''
+        print(message, end=end_char)
+        sys.stdout.flush()
+
+    def write_log(self, message: str, level: int = 2) -> None:
+        debugger = cb_debug(self.__class__.__name__)
+        logger = debugger.logger
+        if level == 0:
+            logger.debug(message)
+        elif level == 1:
+            logger.info(message)
+        elif level == 2:
+            logger.error(message)
+        else:
+            logger.critical(message)
+        debugger.close()
+
+    def write_dict_log(self, message: dict, level: int = 2) -> None:
+        for key, value in message.items():
+            message = f"{key}: {value}"
+            self.write_log(message, level)
+
     def run(self):
         debugger = cb_debug(self.__class__.__name__)
         logger = debugger.logger
@@ -371,8 +399,10 @@ class test_exec(cbPerfBase):
                     self.test_bandwidth()
                 if self.latency_test_flag:
                     self.test_latency()
+                self.check_indexes(check_count=False)
 
             try:
+                self.test_step = step
                 read_p = 100 - write_p
                 if self.test_playbook == "ramp" and step != "load":
                     self.ramp_launch(read_p=read_p, write_p=write_p, mode=test_type)
@@ -381,6 +411,7 @@ class test_exec(cbPerfBase):
                         self.test_launch_a(read_p=read_p, write_p=write_p, mode=test_type)
                     else:
                         self.test_launch_s(read_p=read_p, write_p=write_p, mode=test_type)
+                self.check_indexes()
             except Exception as err:
                 logger.error(f"test launch error: {err}")
 
@@ -668,8 +699,7 @@ class test_exec(cbPerfBase):
 
         self.rules_run = True
 
-    def check_indexes(self):
-        end_char = ''
+    def check_indexes(self, check_count=True):
         print("Waiting for indexes to settle")
         try:
             schema = self.inventory.getSchema(self.schema)
@@ -681,13 +711,21 @@ class test_exec(cbPerfBase):
                         for collection in self.inventory.nextCollection(scope):
                             self.db_index.connect_collection(collection.name)
                             if self.inventory.hasPrimaryIndex(collection):
-                                print(f"Waiting for primary index on {collection.name} ...", end=end_char)
-                                self.db_index.index_wait(name=collection.name)
+                                self.print_partial(f"Waiting for primary index on {collection.name} ... ")
+                                self.db_index.index_online(collection.key_prefix, primary=True)
+                                self.print_partial("online ")
+                                if check_count:
+                                    self.db_index.index_wait(name=collection.name)
+                                    self.print_partial("current ")
                                 print("done.")
                             if self.inventory.hasIndexes(collection):
                                 for index_field, index_name in self.inventory.nextIndex(collection):
-                                    print(f"Waiting for index {index_name} on field {index_field} in keyspace {self.db_index.db.keyspace_s(collection.name)} ...", end=end_char)
-                                    self.db_index.index_wait(name=collection.name, field=index_field, index_name=index_name)
+                                    self.print_partial(f"Waiting for index {index_name} on field {index_field} in keyspace {self.db_index.db.keyspace_s(collection.name)} ... ")
+                                    self.db_index.index_online(collection.key_prefix, field=index_field)
+                                    self.print_partial("online ")
+                                    if check_count:
+                                        self.db_index.index_wait(name=collection.name, field=index_field, index_name=index_name)
+                                        self.print_partial("current ")
                                     print("done.")
             else:
                 raise ParameterError("Schema {} not found".format(self.schema))
@@ -703,6 +741,15 @@ class test_exec(cbPerfBase):
             print("done.")
         except Exception as err:
             raise TestPauseError(f"cluster health not ok: {err}")
+
+    def debug_dump(self, coll_obj):
+        try:
+            basic_stats = self.db.bucket_stats(coll_obj.bucket)
+            self.write_dict_log(basic_stats, cb_debug.DEBUG)
+            index_stats = self.db_index.index_list(coll_obj.bucket)
+            self.write_dict_log(index_stats, cb_debug.DEBUG)
+        except Exception as err:
+            raise TestExecError(f"can not get bucket {coll_obj.bucket} stats: {err}")
 
     def calc_batch_size(self, collection, mode, write_p, read_p):
         candidate_size = None
@@ -801,6 +848,13 @@ class test_exec(cbPerfBase):
             status_thread.join()
             end_time = time.perf_counter()
 
+            if self.test_step == "load":
+                self.print_partial("Waiting for bucket items to populate ... ")
+                self.test_record_count += operation_count
+                self.db.bucket_wait(coll_obj.bucket, count=self.test_record_count)
+                print("done.")
+                self.debug_dump(coll_obj)
+
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
@@ -875,6 +929,13 @@ class test_exec(cbPerfBase):
             run_flag.value = 0
             status_thread.join()
             end_time = time.perf_counter()
+
+            if self.test_step == "load":
+                self.print_partial("Waiting for bucket items to populate ... ")
+                self.test_record_count += operation_count
+                self.db.bucket_wait(coll_obj.bucket, count=self.test_record_count)
+                print("done.")
+                self.debug_dump(coll_obj)
 
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))

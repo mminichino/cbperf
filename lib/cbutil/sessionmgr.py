@@ -191,15 +191,15 @@ class cb_session(object):
 
         self.init_cluster()
 
-    def check_status_code(self, code):
+    def check_status_code(self, code, endpoint):
         if code == 200:
             return True
         elif code == 401:
-            raise NotAuthorized("Unauthorized: Insufficient privileges")
+            raise NotAuthorized(f"{endpoint}: Unauthorized: Insufficient privileges")
         elif code == 403:
-            raise ForbiddenError("Forbidden")
+            raise ForbiddenError(f"{endpoint}: Forbidden")
         elif code == 404:
-            raise NotFoundError("Not Found")
+            raise NotFoundError(f"{endpoint}: Not Found")
         else:
             raise Exception("Unknown API status code {}".format(code))
 
@@ -295,7 +295,7 @@ class cb_session(object):
         response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
 
         try:
-            self.check_status_code(response.status_code)
+            self.check_status_code(response.status_code, endpoint)
         except Exception as err:
             message = api_url + ": " + str(err)
             raise AdminApiError(message)
@@ -309,7 +309,7 @@ class cb_session(object):
             response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
 
             try:
-                self.check_status_code(response.status_code)
+                self.check_status_code(response.status_code, endpoint)
             except NotFoundError:
                 continue
             except Exception as err:

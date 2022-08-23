@@ -189,10 +189,17 @@ class cb_connect(cb_session):
         if not self.is_scope(scope):
             raise ScopeWaitException(f"waiting: scope {scope} does not exist")
 
-    @retry(retry_count=10)
-    def bucket_wait(self, bucket):
+    @retry(retry_count=10, factor=0.5)
+    def bucket_wait(self, bucket, count=None):
         if not self.is_bucket(bucket):
             raise BucketWaitException(f"waiting: bucket {bucket} does not exist")
+        if count:
+            try:
+                bucket_stats = self.bucket_stats(bucket)
+                if bucket_stats['itemCount'] < count:
+                    raise BucketWaitException(f"item count {bucket_stats['itemCount']} less than {count}")
+            except Exception as err:
+                raise BucketWaitException(f"bucket_wait: error: {err}")
 
     @retry(always_raise_list=(BucketAlreadyExistsException,), retry_count=10)
     def create_bucket(self, name, quota=256):
@@ -535,3 +542,12 @@ class cb_connect(cb_session):
             raise
         except Exception as err:
             raise CollectionRemoveError("can not remove {} from {}: {}".format(key, name, err))
+
+    @retry(retry_count=10)
+    def bucket_stats(self, bucket):
+        try:
+            results = self.admin_api_get(f"/pools/default/buckets/{bucket}")
+            basic_stats = results['basicStats']
+            return basic_stats
+        except Exception as err:
+            raise BucketStatsError(f"can not get bucket {bucket} stats: {err}")

@@ -204,6 +204,8 @@ class test_mods(object):
         sys.stdout.write("\033[K")
         if total_count > 0:
             percentage = round((total_ops / total_count) * 100)
+            if percentage != 100:
+                status_vector[2] += 1
             print(f"=> {total_ops} of {total_count}, {percentage}%")
         print("Test Done.")
         if total_count == 0:

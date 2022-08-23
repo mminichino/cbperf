@@ -175,6 +175,10 @@ class IndexCollectionError(cbUtilError):
     pass
 
 
+class IndexInternalError(cbUtilError):
+    pass
+
+
 class ClusterConnectException(cbUtilException):
     pass
 
@@ -240,5 +244,9 @@ class TransientError(cbUtilException):
 
 
 class TestPauseError(cbUtilException):
+    pass
+
+
+class BucketStatsError(cbUtilException):
     pass
 

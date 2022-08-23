@@ -167,23 +167,42 @@ def check_status_output():
 
 
 def check_run_output():
-    matches_found = 0
+    success_found = False
+    failure_found = 0
+
     out_file = open("test_output.out", "r")
     line = out_file.readline()
     while line:
-        p = re.compile("^Beginning [a]*sync .* test with [0-9]+ instances.*$")
+        p = re.compile("Beginning [a]*sync .* test with [0-9]+ instances")
         if p.match(line):
-            test_line = out_file.readline()
-            while test_line:
-                p = re.compile("^.* [0-9]+ of [0-9]+, 100%.*$")
-                if p.match(test_line):
-                    matches_found += 1
+            success_found = False
+            result_line = out_file.readline()
+            while result_line:
+                p = re.compile(".*[0-9]+ of [0-9]+, [0-9]+%")
+                if p.match(result_line):
+                    result = re.search("[0-9]+ of [0-9]+, [0-9]+%", result_line)
+                    percentage = result.group(0).split(',')[1].lstrip().rstrip("%")
+                    if int(percentage) != 100:
+                        failure_found += 1
+                    error_line = out_file.readline()
+                    while error_line:
+                        p = re.compile("^[0-9]+ errors.*$")
+                        if p.match(error_line):
+                            result = re.search("^[0-9]+ errors.*$", error_line)
+                            err_num = result.group(0).split(' ')[0].strip()
+                            if int(err_num) != 0:
+                                failure_found += 1
+                            success_found = True
+                            break
+                        error_line = out_file.readline()
+                if success_found:
                     break
-                test_line = out_file.readline()
+                result_line = out_file.readline()
         line = out_file.readline()
-    if matches_found == 7:
+    if failure_found == 0 and success_found:
         return True
     else:
+        print(f"{failure_found} failures ", end='')
         return False
 
 
@@ -380,6 +399,7 @@ def cb_sync_test_set(host, username, password, bucket, scope, collection, tls, e
     test_step(None, db_index.index_wait, collection)
     test_step(None, db_index.index_wait, collection, field="data", index_name="data_index")
     test_step(None, db.cb_upsert_s, "test::1", document, name=collection)
+    test_step(None, db.bucket_wait, bucket, count=1)
     test_step(document, db.cb_get_s, "test::1", name=collection)
     test_step(1, db.collection_count_s, name=collection, expect_count=1)
     test_step(query_result, db.cb_query_s, field="data", name=collection, empty_retry=True)
@@ -429,6 +449,7 @@ def cb_async_test_set(host, username, password, bucket, scope, collection, tls, 
     test_step(None, db_index.index_wait, collection)
     test_step(None, db_index.index_wait, collection, field="data", index_name="data_index")
     loop.run_until_complete(async_test_step(None, db.cb_upsert_a, "test::1", document, name=collection))
+    test_step(None, db.bucket_wait, bucket, count=1)
     loop.run_until_complete(async_test_step(document, db.cb_get_a, "test::1", name=collection))
     loop.run_until_complete(async_test_step(1, db.collection_count_a, name=collection, expect_count=1))
     loop.run_until_complete(async_test_step(query_result, db.cb_query_a, field="data", name=collection, empty_retry=True))
@@ -574,7 +595,7 @@ def test_main(args, sync=False, schema="default"):
     parameters.output = "test_output.out"
     truncate_output_file()
     task = test_exec(parameters)
-    test_step(check_status_output, task.run)
+    test_step(check_run_output, task.run)
     parameters.command = 'run'
     parameters.ramp = False
     truncate_output_file()
