@@ -16,7 +16,7 @@ from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.auth import PasswordAuthenticator
 import couchbase.subdocument as SD
-from couchbase.exceptions import (CouchbaseException,
+from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException,
                                   DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
                                   BucketAlreadyExistsException, HTTPException,
                                   BucketNotFoundException, QueryException, ScopeNotFoundException,
@@ -465,7 +465,7 @@ class cb_connect(cb_session):
 
         return query
 
-    @retry(retry_count=20, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
+    @retry(retry_count=20, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError, QueryIndexNotFoundException))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:
@@ -491,7 +491,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
-    @retry_a(retry_count=20, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError))
+    @retry_a(retry_count=20, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError, QueryIndexNotFoundException))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:

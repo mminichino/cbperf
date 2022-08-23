@@ -768,7 +768,8 @@ class test_exec(cbPerfBase):
                 self.db_index.connect_scope(scope)
                 self.db_index.connect_collection(collection)
                 self.print_partial(f"Waiting for primary index to delete on {collection} ... ")
-                self.db_index.drop_index(name=collection)
+                if self.db_index.is_index(name=collection):
+                    self.db_index.drop_index(name=collection)
                 self.db_index.delete_wait(name=collection)
                 print("done.")
 
@@ -777,7 +778,8 @@ class test_exec(cbPerfBase):
                 self.db_index.connect_scope(scope)
                 self.db_index.connect_collection(collection)
                 self.print_partial(f"Waiting for index {index_name} to delete on {collection} ... ")
-                self.db_index.drop_index(name=collection, field=index_field, index_name=index_name)
+                if self.db_index.is_index(name=collection, field=index_field, index_name=index_name):
+                    self.db_index.drop_index(name=collection, field=index_field, index_name=index_name)
                 self.db_index.delete_wait(name=collection, field=index_field, index_name=index_name)
                 print("done.")
         except Exception as err:

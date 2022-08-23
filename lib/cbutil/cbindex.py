@@ -67,13 +67,16 @@ class cb_index(cb_connect):
         index = self.index_name(name, field, index_name)
 
         try:
-            keyspace = self.db.keyspace_s(name)
+            if name == "_default":
+                collection_name = self.db.bucket_name
+            else:
+                collection_name = name
             indexList = self.db.qim.get_all_indexes(self.db.bucket_name)
             for i in range(len(indexList)):
                 if index == '#primary':
-                    if indexList[i].keyspace == keyspace and indexList[i].name == '#primary':
+                    if indexList[i].collection_name == collection_name and indexList[i].name == '#primary':
                         return True
-                if indexList[i].name == index:
+                elif indexList[i].name == index:
                     return True
         except Exception as err:
             raise IndexStatError("Could not get index status: {}".format(err))
