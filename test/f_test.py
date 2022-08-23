@@ -574,16 +574,30 @@ def randomize_test():
     test_step(None, r.randImage)
 
 
-def test_main(args, sync=False, schema="default"):
+def test_map(args):
     parameters = args
 
     debugger = cb_debug(os.path.basename(__file__))
     debugger.clear()
     debugger.close()
 
+    print(" -> Testing host map")
     truncate_output_file()
     task = print_host_map(parameters)
     test_step(check_host_map, task.run)
+
+
+def test_load(args, sync=False, schema="default", filetest=False):
+    parameters = args
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    package_dir = os.path.dirname(current_dir)
+
+    debugger = cb_debug(os.path.basename(__file__))
+    debugger.clear()
+    debugger.close()
+
+    print(" -> Testing load")
+    truncate_output_file()
     parameters.command = 'load'
     parameters.count = 100
     parameters.ops = 100
@@ -591,22 +605,86 @@ def test_main(args, sync=False, schema="default"):
     parameters.threads = os.cpu_count()
     parameters.max = os.cpu_count()
     parameters.sync = sync
-    parameters.schema = schema
+    if filetest:
+        parameters.file = package_dir + '/test/test.json'
+        parameters.id = "id"
+        parameters.bucket = "external"
+    else:
+        parameters.schema = schema
     parameters.output = "test_output.out"
-    truncate_output_file()
     task = test_exec(parameters)
     test_step(check_run_output, task.run)
-    parameters.command = 'run'
-    parameters.ramp = False
-    truncate_output_file()
-    task = test_exec(parameters)
-    test_step(check_run_output, task.run)
-    parameters.ramp = True
-    truncate_output_file()
-    task = test_exec(parameters)
-    test_step(check_ramp_output, task.run)
     parameters.command = 'clean'
+    task = test_exec(parameters)
+    test_step(None, task.test_clean)
+    time.sleep(0.2)
+
+
+def test_run(args, sync=False, schema="default", filetest=False):
+    parameters = args
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    package_dir = os.path.dirname(current_dir)
+
+    debugger = cb_debug(os.path.basename(__file__))
+    debugger.clear()
+    debugger.close()
+
+    print(" -> Testing run")
     truncate_output_file()
+    parameters.command = 'run'
+    parameters.count = 100
+    parameters.ops = 100
+    parameters.replica = 0
+    parameters.threads = os.cpu_count()
+    parameters.max = os.cpu_count()
+    parameters.sync = sync
+    if filetest:
+        parameters.file = package_dir + '/test/test.json'
+        parameters.id = "id"
+        parameters.bucket = "external"
+    else:
+        parameters.schema = schema
+    parameters.output = "test_output.out"
+    parameters.ramp = False
+    task = test_exec(parameters)
+    test_step(check_run_output, task.run)
+    parameters.command = 'clean'
+    task = test_exec(parameters)
+    test_step(None, task.test_clean)
+    time.sleep(0.2)
+
+
+def test_ramp(args, sync=False, schema="default", filetest=False):
+    parameters = args
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    package_dir = os.path.dirname(current_dir)
+
+    debugger = cb_debug(os.path.basename(__file__))
+    debugger.clear()
+    debugger.close()
+
+    print(" -> Testing ramp")
+    truncate_output_file()
+    task = print_host_map(parameters)
+    test_step(check_host_map, task.run)
+    parameters.command = 'run'
+    parameters.count = 100
+    parameters.ops = 100
+    parameters.replica = 0
+    parameters.threads = os.cpu_count()
+    parameters.max = os.cpu_count()
+    parameters.sync = sync
+    if filetest:
+        parameters.file = package_dir + '/test/test.json'
+        parameters.id = "id"
+        parameters.bucket = "external"
+    else:
+        parameters.schema = schema
+    parameters.output = "test_output.out"
+    parameters.ramp = True
+    task = test_exec(parameters)
+    test_step(check_run_output, task.run)
+    parameters.command = 'clean'
     task = test_exec(parameters)
     test_step(None, task.test_clean)
     time.sleep(0.2)
@@ -781,14 +859,26 @@ def main():
     for schema in schema_list:
         print(f"Running tests on schema {schema}")
         print(f"Main Async Tests - {schema}")
-        test_main(args, sync=False, schema=schema)
+        test_map(args)
+        test_load(args, sync=False, schema=schema)
+        test_run(args, sync=False, schema=schema)
+        test_ramp(args, sync=False, schema=schema)
         print(f"Main Sync Tests - {schema}")
-        test_main(args, sync=True, schema=schema)
+        test_map(args)
+        test_load(args, sync=True, schema=schema)
+        test_run(args, sync=True, schema=schema)
+        test_ramp(args, sync=True, schema=schema)
 
     print("External file async test")
-    test_file(args, sync=False)
+    test_map(args)
+    test_load(args, sync=False, filetest=True)
+    test_run(args, sync=False, filetest=True)
+    test_ramp(args, sync=False, filetest=True)
     print("External file sync test")
-    test_file(args, sync=True)
+    test_map(args)
+    test_load(args, sync=True, filetest=True)
+    test_run(args, sync=True, filetest=True)
+    test_ramp(args, sync=True, filetest=True)
 
     print("CLI Invoke Tests")
     for schema in schema_list:

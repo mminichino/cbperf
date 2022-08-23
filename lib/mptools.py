@@ -55,3 +55,9 @@ class mp_queue(multiprocessing.queues.Queue):
     def clear(self):
         while not self.empty():
             self.get()
+
+
+class telemetry(mp_queue):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
