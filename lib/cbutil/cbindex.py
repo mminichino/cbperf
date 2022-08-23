@@ -108,7 +108,7 @@ class cb_index(cb_connect):
             if field and index != '#primary':
                 queryText = 'DROP INDEX ' + index + ' ON ' + keyspace + ' USING GSI;'
             else:
-                queryText = 'DROP PRIMARY INDEX ON' + keyspace + ' USING GSI;'
+                queryText = 'DROP PRIMARY INDEX ON ' + keyspace + ' USING GSI;'
             result = self.cb_query_s(sql=queryText)
             return result
         except CollectionNameNotFound:
