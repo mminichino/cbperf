@@ -13,18 +13,23 @@ from .capexceptions import *
 class capella_auth(AuthBase):
 
     def __init__(self):
-        if 'CAPELLA_ACCESS_KEY_ID' in os.environ:
-            self.capella_key = os.environ['CAPELLA_ACCESS_KEY_ID']
+        if 'CBC_ACCESS_KEY' in os.environ:
+            self.capella_key = os.environ['CBC_ACCESS_KEY']
         else:
-            raise CapellaMissingAuthKey("Please set CAPELLA_ACCESS_KEY_ID for Capella API access")
+            raise CapellaMissingAuthKey("Please set CBC_ACCESS_KEY for Capella API access")
 
-        if 'CAPELLA_SECRET_ACCESS_KEY' in os.environ:
-            self.capella_secret = os.environ['CAPELLA_SECRET_ACCESS_KEY']
+        if 'CBC_SECRET_KEY' in os.environ:
+            self.capella_secret = os.environ['CBC_SECRET_KEY']
         else:
-            raise CapellaMissingSecretKey("Please set CAPELLA_SECRET_ACCESS_KEY for Capella API access")
+            raise CapellaMissingSecretKey("Please set CBC_SECRET_KEY for Capella API access")
 
     def __call__(self, r):
-        cbc_api_endpoint = urlparse(r.url).path
+        ep_path = urlparse(r.url).path
+        ep_params = urlparse(r.url).query
+        if len(ep_params) > 0:
+            cbc_api_endpoint = ep_path + f"?{ep_params}"
+        else:
+            cbc_api_endpoint = ep_path
         cbc_api_method = r.method
         cbc_api_now = int(datetime.datetime.now().timestamp() * 1000)
         cbc_api_message = cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(cbc_api_now)
