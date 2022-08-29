@@ -6,7 +6,7 @@ APT_PKGS="python3.9 python3.9-dev python3.9-venv git-all python3-pip python3-set
 MAC_PKGS="python@3.9 openssl"
 LEGACY_YUM_PKGS="gcc gcc-c++ git python3-pip cmake make openssl11 openssl11-devel"
 MAJOR_REV=3
-MINOR_REV=6
+MINOR_REV=9
 VENV_NAME=venv
 YES=0
 FORCE=0
@@ -22,6 +22,15 @@ err_exit () {
 check_sudo () {
   sudo ls > /dev/null 2>&1
   [ $? -ne 0 ] && err_exit "Unable to sudo. Make sure sudo is install and you are authorized to use it."
+}
+
+set_pip_bin () {
+  which pip3.9 > /dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    PIP_BIN=pip3.9
+  else
+    PIP_BIN=pip3
+  fi
 }
 
 install_pkg () {
@@ -212,6 +221,8 @@ if [ "$PY_MAJOR" -lt "$MAJOR_REV" ] || [ "$PY_MINOR" -lt "$MINOR_REV" ]; then
   exit 1
 fi
 
+set_pip_bin
+
 if [ -d $SCRIPTDIR/$VENV_NAME -a $FORCE -eq 0 ]; then
   echo "Virtual environment $SCRIPTDIR/$VENV_NAME already exists."
   exit 1
@@ -232,8 +243,8 @@ printf "Activating virtual environment... "
 echo "Done."
 
 printf "Installing dependencies... "
-python3 -m pip install --upgrade pip > setup.log 2>&1
-pip3 install -r requirements.txt > setup.log 2>&1
+$PYTHON_BIN -m pip install --upgrade pip > setup.log 2>&1
+$PIP_BIN install -r requirements.txt > setup.log 2>&1
 if [ $? -ne 0 ]; then
   echo "Setup failed."
   rm -rf ${SCRIPTDIR:?}/${VENV_NAME:?}
