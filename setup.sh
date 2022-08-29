@@ -4,7 +4,7 @@ SCRIPTDIR=$(cd $(dirname $0) && pwd)
 YUM_PKGS="python39 gcc gcc-c++ git python39-devel python3-pip cmake make openssl-devel"
 APT_PKGS="python3.9 python3.9-dev python3.9-venv git-all python3-pip python3-setuptools cmake build-essential"
 MAC_PKGS="python@3.9 openssl"
-LEGACY_YUM_PKGS="gcc gcc-c++ git python3-pip cmake make openssl11 openssl11-devel"
+LEGACY_YUM_PKGS="gcc gcc-c++ git python3-pip cmake make openssl11 openssl11-devel libffi-devel"
 MAJOR_REV=3
 MINOR_REV=9
 VENV_NAME=venv
@@ -221,8 +221,6 @@ if [ "$PY_MAJOR" -lt "$MAJOR_REV" ] || [ "$PY_MINOR" -lt "$MINOR_REV" ]; then
   exit 1
 fi
 
-set_pip_bin
-
 if [ -d $SCRIPTDIR/$VENV_NAME -a $FORCE -eq 0 ]; then
   echo "Virtual environment $SCRIPTDIR/$VENV_NAME already exists."
   exit 1
@@ -242,8 +240,11 @@ printf "Activating virtual environment... "
 . ${SCRIPTDIR:?}/${VENV_NAME:?}/bin/activate
 echo "Done."
 
+set_pip_bin
+
 printf "Installing dependencies... "
 $PYTHON_BIN -m pip install --upgrade pip > setup.log 2>&1
+$PIP_BIN install --upgrade setuptools > setup.log 2>&1
 $PIP_BIN install --no-cache-dir -r requirements.txt > setup.log 2>&1
 if [ $? -ne 0 ]; then
   echo "Setup failed."
