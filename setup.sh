@@ -4,12 +4,13 @@ SCRIPTDIR=$(cd $(dirname $0) && pwd)
 YUM_PKGS="python39 gcc gcc-c++ git python39-devel python3-pip cmake make openssl-devel"
 APT_PKGS="python3.9 python3.9-dev python3.9-venv git-all python3-pip python3-setuptools cmake build-essential"
 MAC_PKGS="python@3.9 openssl"
-LEGACY_YUM_PKGS="python36 gcc gcc-c++ git python36-devel python3-pip cmake make openssl-devel"
+LEGACY_YUM_PKGS="gcc gcc-c++ git python3-pip cmake make openssl11 openssl11-devel"
 MAJOR_REV=3
 MINOR_REV=6
 VENV_NAME=venv
 YES=0
 FORCE=0
+BUILD_PYTHON=0
 
 err_exit () {
    if [ -n "$1" ]; then
@@ -55,6 +56,10 @@ check_yum () {
       fi
     fi
   done
+  if [ $BUILD_PYTHON -eq 1 ]; then
+    echo "Building and installing Python 3.9 ..."
+    sudo $SCRIPTDIR/install_python.sh
+  fi
 }
 
 check_apt () {
@@ -116,7 +121,7 @@ check_linux_by_type () {
     PKGMGR="yum"
     if [ "$VERSION_ID" = "7" ]; then
       YUM_PKGS=$LEGACY_YUM_PKGS
-      PYTHON_BIN="python3.6"
+      BUILD_PYTHON=1
     fi
     check_yum
     ;;
