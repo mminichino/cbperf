@@ -51,6 +51,10 @@ class NotAuthorized(httpError):
     pass
 
 
+class HTTPForbidden(httpException):
+    pass
+
+
 class RequestValidationError(httpException):
     pass
 
@@ -67,6 +71,6 @@ class ConnectException(httpException):
     pass
 
 
-class HTTPNotImplemented(httpError):
+class HTTPNotImplemented(httpException):
     pass
 

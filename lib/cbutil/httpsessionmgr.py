@@ -18,9 +18,11 @@ class basic_auth(AuthBase):
         self.password = password
 
     def __call__(self, r):
-        auth_hash = bytes(f"{self.username}:{self.password}")
+        auth_hash = f"{self.username}:{self.password}"
+        auth_bytes = auth_hash.encode('ascii')
+        auth_encoded = base64.b64encode(auth_bytes)
         request_headers = {
-            "Authorization": f"Basic {base64.b64encode(auth_hash)}",
+            "Authorization": f"Basic {auth_encoded.decode('ascii')}",
         }
         r.headers.update(request_headers)
         return r
@@ -43,12 +45,34 @@ class api_session(object):
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
         self._response = None
 
+        if "CB_PERF_DEBUG_LEVEL" in os.environ:
+            import http.client as http_client
+            http_client.HTTPConnection.debuglevel = 1
+            logging.basicConfig()
+            self.debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
+            requests_log = logging.getLogger("requests.packages.urllib3")
+            if self.debug_level == 0:
+                self.logger.setLevel(logging.DEBUG)
+                requests_log.setLevel(logging.DEBUG)
+            elif self.debug_level == 1:
+                self.logger.setLevel(logging.INFO)
+                requests_log.setLevel(logging.INFO)
+            elif self.debug_level == 2:
+                self.logger.setLevel(logging.ERROR)
+                requests_log.setLevel(logging.ERROR)
+            else:
+                self.logger.setLevel(logging.CRITICAL)
+                requests_log.setLevel(logging.CRITICAL)
+            requests_log.propagate = True
+
     def check_status_code(self, code):
         self.logger.debug("API status code {}".format(code))
-        if code == 200:
+        if code == 200 or code == 201:
             return True
+        elif code == 401:
+            raise NotAuthorized("API: Unauthorized")
         elif code == 403:
-            raise NotAuthorized("API: Forbidden: Insufficient privileges")
+            raise HTTPForbidden("API: Forbidden: Insufficient privileges")
         elif code == 404:
             raise HTTPNotImplemented("API: Not Found")
         elif code == 422:
@@ -103,8 +127,11 @@ class api_session(object):
         except Exception:
             raise
 
-        response_json = json.loads(response.text)
-        return response_json
+        try:
+            response_data = json.loads(response.text)
+        except ValueError:
+            response_data = response.text
+        return response_data
 
     def api_post(self, endpoint, body):
         response = self.session.post(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), json=body)
@@ -114,6 +141,36 @@ class api_session(object):
         except Exception:
             raise
 
-        response_json = json.loads(response.text)
-        return response_json
+        try:
+            response_data = json.loads(response.text)
+        except ValueError:
+            response_data = response.text
+        return response_data
 
+    def api_put(self, endpoint, body):
+        response = self.session.put(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), json=body)
+
+        try:
+            self.check_status_code(response.status_code)
+        except Exception:
+            raise
+
+        try:
+            response_data = json.loads(response.text)
+        except ValueError:
+            response_data = response.text
+        return response_data
+
+    def api_delete(self, endpoint):
+        response = self.session.delete(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password))
+
+        try:
+            self.check_status_code(response.status_code)
+        except Exception:
+            raise
+
+        try:
+            response_data = json.loads(response.text)
+        except ValueError:
+            response_data = response.text
+        return response_data
