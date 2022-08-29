@@ -16,7 +16,7 @@ from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.auth import PasswordAuthenticator
 import couchbase.subdocument as SD
-from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException,
+from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException, SDKException,
                                   DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
                                   BucketAlreadyExistsException, HTTPException,
                                   BucketNotFoundException, QueryException, ScopeNotFoundException,
@@ -215,6 +215,9 @@ class cb_connect(cb_session):
                                                               ram_quota_mb=quota))
         except BucketAlreadyExistsException:
             pass
+        except SDKException as err:
+            self.write_log(f"create_bucket: SDKException: {err.objextra}", cb_debug.DEBUG)
+            raise BucketCreateException(f"create_bucket: SDKException: {err}")
         except Exception as err:
             raise BucketCreateException("can not create bucket {}: {}".format(name, err))
 
