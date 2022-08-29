@@ -244,7 +244,7 @@ echo "Done."
 
 printf "Installing dependencies... "
 $PYTHON_BIN -m pip install --upgrade pip > setup.log 2>&1
-$PIP_BIN install -r requirements.txt > setup.log 2>&1
+$PIP_BIN install --no-cache-dir -r requirements.txt > setup.log 2>&1
 if [ $? -ne 0 ]; then
   echo "Setup failed."
   rm -rf ${SCRIPTDIR:?}/${VENV_NAME:?}
