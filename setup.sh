@@ -19,6 +19,11 @@ err_exit () {
    exit 1
 }
 
+check_sudo () {
+  sudo ls > /dev/null 2>&1
+  [ $? -ne 0 ] && err_exit "Unable to sudo. Make sure sudo is install and you are authorized to use it."
+}
+
 install_pkg () {
   case $PKGMGR in
   yum)
@@ -57,8 +62,15 @@ check_yum () {
     fi
   done
   if [ $BUILD_PYTHON -eq 1 ]; then
-    echo "Building and installing Python 3.9 ..."
-    sudo $SCRIPTDIR/install_python.sh
+    which python3.9 >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+      printf "Building and installing Python 3.9 ... "
+      sudo $SCRIPTDIR/install_python.sh > setup.log 2>&1
+      [ $? -ne 0 ] && err_exit "Python build failed. See setup.log for more details."
+      echo "Done."
+    else
+      echo "Python 3.9 already installed."
+    fi
   fi
 }
 
@@ -178,6 +190,8 @@ case "$SYSTEM_UNAME" in
       exit 1
       ;;
 esac
+
+check_sudo
 
 which $PYTHON_BIN >/dev/null 2>&1
 if [ $? -ne 0 ]; then
