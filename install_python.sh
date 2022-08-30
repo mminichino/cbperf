@@ -12,7 +12,7 @@ config_linux_by_type () {
         exit 1
       fi
       CWD=$(pwd)
-      mkdir /usr/local/openssl11
+      [ ! -d /usr/local/openssl11 ] && mkdir /usr/local/openssl11
       cd /usr/local/openssl11
       ln -s /usr/lib64/openssl11 lib
       ln -s /usr/include/openssl11 include
