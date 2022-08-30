@@ -5,22 +5,17 @@ import requests
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 import json
-import logging
-import logging.handlers
 import socket
 import dns.resolver
-import traceback
 from itertools import cycle
 from datetime import timedelta
-from couchbase.exceptions import (CouchbaseTransientException, TimeoutException, ProtocolException, HTTPException)
+from couchbase.exceptions import (HTTPException)
 from couchbase.diagnostics import PingState
-from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions, QueryIndexManager
+from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions
 from couchbase.auth import PasswordAuthenticator
-from couchbase.options import LOCKMODE_NONE
-import lib.cbutil.exceptions
+from couchbase.diagnostics import ServiceType
 from .exceptions import *
 from .capexceptions import *
-from .cbdebug import cb_debug
 from .retries import retry
 from .capella import capella_api
 
@@ -443,16 +438,16 @@ class cb_session(object):
                     print("%s:%s" % (key, ext_port_list[key]), end=' ')
             print("[Services] %s [version] %s [platform] %s" % (services, version, ostype))
 
-    @retry(retry_count=10, allow_list=(CouchbaseTransientException, ProtocolException, ClusterHealthCheckError, TimeoutException, ClusterKVServiceError))
+    @retry(retry_count=10)
     def cluster_health_check(self, output=False, restrict=True, noraise=False, extended=False):
         cb_auth = PasswordAuthenticator(self.username, self.password)
         cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
 
         try:
-            cluster = Cluster(self.cb_connect_string, authenticator=cb_auth, lockmode=LOCKMODE_NONE, timeout_options=cb_timeouts)
+            cluster = Cluster(self.cb_connect_string, authenticator=cb_auth, timeout_options=cb_timeouts)
             result = cluster.ping()
         except SystemError as err:
-            if isinstance(err.__cause__, HTTPException) and err.__cause__.rc == 1049:
+            if isinstance(err.__cause__, HTTPException) and err.__cause__.error_code == 1049:
                 self.use_external_network = not self.use_external_network
                 raise ClusterHealthCheckError("HTTP unknown host: {}".format(err.__cause__))
             else:
@@ -460,15 +455,16 @@ class cb_session(object):
         except Exception as err:
             raise ClusterHealthCheckError("cluster health check error: {}".format(err))
 
+        endpoint: ServiceType
         for endpoint, reports in result.endpoints.items():
             for report in reports:
-                if restrict and endpoint.value != 'kv':
+                if restrict and endpoint != ServiceType.KeyValue:
                     continue
                 report_string = " {0}: {1} took {2} {3}".format(
                     endpoint.value,
                     report.remote,
                     report.latency,
-                    report.state)
+                    report.state.value)
                 if output:
                     print(report_string)
                     continue
@@ -477,11 +473,11 @@ class cb_session(object):
                         print(f"{endpoint.value} service not ok: {report.state}")
                         sys.exit(2)
                     else:
-                        if endpoint.value == 'kv':
+                        if endpoint == ServiceType.KeyValue:
                             raise ClusterKVServiceError("{} KV service not ok".format(self.cb_connect_string))
-                        elif endpoint.value == 'n1ql':
+                        elif endpoint == ServiceType.Query:
                             raise ClusterQueryServiceError("{} query service not ok".format(self.cb_connect_string))
-                        elif endpoint.value == 'views':
+                        elif endpoint == ServiceType.View:
                             raise ClusterViewServiceError("{} view service not ok".format(self.cb_connect_string))
                         else:
                             raise ClusterHealthCheckError("{} service {} not ok".format(self.cb_connect_string, endpoint.value))
@@ -495,7 +491,7 @@ class cb_session(object):
                         endpoint.value,
                         report.remote,
                         report.last_activity,
-                        report.state)
+                        report.state.value)
                     print(report_string)
 
         if extended:
@@ -514,5 +510,3 @@ class cb_session(object):
                     sys.exit(3)
                 else:
                     raise ClusterQueryServiceError(f"query service test error: {err}")
-
-        cluster.disconnect()

@@ -8,7 +8,6 @@ from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from datetime import timedelta
 import concurrent.futures
-from couchbase.options import LOCKMODE_WAIT
 import couchbase
 import acouchbase.cluster
 from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions
@@ -16,10 +15,10 @@ from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.auth import PasswordAuthenticator
 import couchbase.subdocument as SD
-from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException, SDKException,
+from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException,
                                   DocumentNotFoundException, DocumentExistsException, BucketDoesNotExistException,
                                   BucketAlreadyExistsException, HTTPException,
-                                  BucketNotFoundException, QueryException, ScopeNotFoundException,
+                                  BucketNotFoundException, ScopeNotFoundException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException)
 import asyncio
@@ -65,7 +64,7 @@ class cb_connect(cb_session):
     @retry_a(factor=0.5, retry_count=10)
     async def connect_a(self):
         try:
-            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_WAIT, timeout_options=self.timeouts)
+            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, timeout_options=self.timeouts)
             result = await cluster_a.on_connect()
             self.db.set_cluster_a(cluster_a)
             return result
@@ -82,7 +81,7 @@ class cb_connect(cb_session):
     @retry(factor=0.5, retry_count=10)
     def connect_s(self):
         try:
-            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, lockmode=LOCKMODE_WAIT, timeout_options=self.timeouts)
+            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, timeout_options=self.timeouts)
             self.db.set_cluster_s(cluster_s)
             return True
         except SystemError as err:
@@ -174,7 +173,7 @@ class cb_connect(cb_session):
         try:
             scope_spec = next((s for s in self.db.cm_s.get_all_scopes() if s.name == self.db.scope_name), None)
             if not scope_spec:
-                raise ScopeNotFoundException(f"is_collection: no scope configured")
+                raise IsCollectionException(f"is_collection: no scope configured")
             return next((c for c in scope_spec.collections if c.name == collection), None)
         except AttributeError:
             return None
@@ -215,9 +214,6 @@ class cb_connect(cb_session):
                                                               ram_quota_mb=quota))
         except BucketAlreadyExistsException:
             pass
-        except SDKException as err:
-            self.write_log(f"create_bucket: SDKException: {err.objextra}", cb_debug.DEBUG)
-            raise BucketCreateException(f"create_bucket: SDKException: {err}")
         except Exception as err:
             raise BucketCreateException("can not create bucket {}: {}".format(name, err))
 
@@ -468,7 +464,7 @@ class cb_connect(cb_session):
 
         return query
 
-    @retry(retry_count=20, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError, QueryIndexNotFoundException))
+    @retry(retry_count=20, always_raise_list=(CollectionNameNotFound, QueryArgumentsError, IndexExistsError, QueryIndexNotFoundException))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:
@@ -490,11 +486,11 @@ class cb_connect(cb_session):
                 self.write_log(f"query error code {err.context.first_error_code} message {err.context.first_error_message}", cb_debug.DEBUG)
                 raise error_class(err.context.first_error_message)
             except AttributeError:
-                raise QueryError(err.message)
+                raise QueryError(err)
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
-    @retry_a(retry_count=20, always_raise_list=(QueryException, CollectionNameNotFound, QueryArgumentsError, IndexExistsError, QueryIndexNotFoundException))
+    @retry_a(retry_count=20, always_raise_list=(CollectionNameNotFound, QueryArgumentsError, IndexExistsError, QueryIndexNotFoundException))
     async def cb_query_a(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:
@@ -516,7 +512,7 @@ class cb_connect(cb_session):
                 self.write_log(f"query error code {err.context.first_error_code} message {err.context.first_error_message}", cb_debug.DEBUG)
                 raise error_class(err.context.first_error_message)
             except AttributeError:
-                raise QueryError(err.message)
+                raise QueryError(err)
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 

@@ -5,7 +5,7 @@ import asyncio
 from .exceptions import *
 from .retries import retry
 from couchbase.cluster import QueryIndexManager
-from acouchbase.cluster import ACluster
+from acouchbase.cluster import Cluster
 
 
 class cb_collection(object):
@@ -115,7 +115,7 @@ class cbdb(object):
 
     def add(self, cluster):
         try:
-            if isinstance(cluster, ACluster):
+            if isinstance(cluster, Cluster):
                 self._cluster_a = cb_cluster_a(cluster)
             else:
                 self._cluster_s = cb_cluster_s(cluster)

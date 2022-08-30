@@ -195,6 +195,10 @@ class ScopeCreateException(cbUtilException):
     pass
 
 
+class IsCollectionException(cbUtilException):
+    pass
+
+
 class CollectionCreateException(cbUtilException):
     pass
 
