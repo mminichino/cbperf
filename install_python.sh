@@ -7,10 +7,6 @@ config_linux_by_type () {
   case $ID in
   centos|rhel)
     if [ "$VERSION_ID" = "7" ]; then
-      if [ ! -f /usr/lib64/openssl11/libcrypto.so ]; then
-        echo "Error: Install openssl11 packages."
-        exit 1
-      fi
       CWD=$(pwd)
       curl -s -o /var/tmp/openssl-1.1.1q.tar.gz https://www.openssl.org/source/openssl-1.1.1q.tar.gz
       cd /var/tmp
