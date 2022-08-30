@@ -33,6 +33,11 @@ set_pip_bin () {
   fi
 }
 
+clear_log_file () {
+  echo "Setup begins at $(date +%T)" > setup.log 2>&1
+  echo "===========================" >> setup.log 2>&1
+}
+
 install_pkg () {
   case $PKGMGR in
   yum)
@@ -74,7 +79,7 @@ check_yum () {
     which python3.9 >/dev/null 2>&1
     if [ $? -ne 0 ]; then
       printf "Building and installing Python 3.9 ... "
-      sudo $SCRIPTDIR/install_python.sh > setup.log 2>&1
+      sudo $SCRIPTDIR/install_python.sh >> setup.log 2>&1
       [ $? -ne 0 ] && err_exit "Python build failed. See setup.log for more details."
       echo "Done."
     else
@@ -176,6 +181,8 @@ do
   esac
 done
 
+clear_log_file
+
 SYSTEM_UNAME=$(uname -s)
 case "$SYSTEM_UNAME" in
     Linux*)
@@ -243,9 +250,9 @@ echo "Done."
 set_pip_bin
 
 printf "Installing dependencies... "
-$PYTHON_BIN -m pip install --upgrade pip > setup.log 2>&1
-$PIP_BIN install --upgrade setuptools > setup.log 2>&1
-$PIP_BIN install --no-cache-dir -r requirements.txt > setup.log 2>&1
+$PYTHON_BIN -m pip install --upgrade pip >> setup.log 2>&1
+$PIP_BIN install --upgrade setuptools >> setup.log 2>&1
+$PIP_BIN install --no-cache-dir -r requirements.txt >> setup.log 2>&1
 if [ $? -ne 0 ]; then
   echo "Setup failed."
   rm -rf ${SCRIPTDIR:?}/${VENV_NAME:?}
