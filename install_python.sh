@@ -12,12 +12,15 @@ config_linux_by_type () {
         exit 1
       fi
       CWD=$(pwd)
-      [ ! -d /usr/local/openssl11 ] && mkdir /usr/local/openssl11
-      cd /usr/local/openssl11
-      ln -s /usr/lib64/openssl11 lib
-      ln -s /usr/include/openssl11 include
+      curl -s -o /var/tmp/openssl-1.1.1q.tar.gz https://www.openssl.org/source/openssl-1.1.1q.tar.gz
+      cd /var/tmp
+      tar xzf openssl-1.1.1q.tar.gz
+      cd openssl-1.1.1q
+      ./config --prefix=/usr/local/openssl --openssldir=/usr/local/openssl --libdir=/lib64 shared zlib-dynamic
+      make -j4
+      make install
       cd $CWD
-      ./configure --enable-optimizations --with-openssl=/usr/local/openssl11
+      ./configure --enable-optimizations --with-openssl=/usr/local/openssl
     fi
     ;;
   ubuntu)
