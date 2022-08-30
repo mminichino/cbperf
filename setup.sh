@@ -250,8 +250,7 @@ echo "Done."
 set_pip_bin
 
 printf "Installing dependencies... "
-$PYTHON_BIN -m pip install --upgrade pip >> setup.log 2>&1
-$PIP_BIN install --upgrade setuptools >> setup.log 2>&1
+$PYTHON_BIN -m pip install --upgrade pip setuptools wheel >> setup.log 2>&1
 $PIP_BIN install --no-cache-dir -r requirements.txt >> setup.log 2>&1
 if [ $? -ne 0 ]; then
   echo "Setup failed."
