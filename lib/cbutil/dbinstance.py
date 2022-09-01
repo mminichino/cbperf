@@ -2,9 +2,7 @@
 ##
 
 import asyncio
-from .exceptions import *
-from .retries import retry
-from couchbase.cluster import QueryIndexManager
+from .exceptions import ClusterConnectException, CollectionNameNotFound
 from acouchbase.cluster import Cluster
 
 
@@ -59,7 +57,7 @@ class cb_cluster_a(object):
         self._cluster = cluster
         try:
             self._bm = self.loop.run_until_complete(cluster.buckets())
-            self._qim = QueryIndexManager(cluster)
+            self._qim = cluster.query_indexes()
         except Exception as err:
             raise ClusterConnectException(f"cb_cluster_a: can not connect: {err}")
         self._buckets = {}
@@ -86,7 +84,7 @@ class cb_cluster_s(object):
         self._cluster = cluster
         try:
             self._bm = cluster.buckets()
-            self._qim = QueryIndexManager(cluster)
+            self._qim = cluster.query_indexes()
         except Exception as err:
             raise ClusterConnectException(f"cb_cluster_s: can not connect: {err}")
         self._buckets = {}
@@ -150,12 +148,12 @@ class db_instance(object):
 
     def set_cluster_a(self, cluster_a):
         self.cluster_obj_a = cluster_a
-        self.qim_obj = QueryIndexManager(cluster_a)
+        self.qim_obj = cluster_a.query_indexes()
 
     def set_cluster_s(self, cluster_s):
         self.cluster_obj_s = cluster_s
         self.bm_obj = cluster_s.buckets()
-        self.qim_obj = QueryIndexManager(cluster_s)
+        self.qim_obj = cluster_s.query_indexes()
 
     def set_bucket(self, name, bucket_s, bucket_a):
         self.bucket_name = name

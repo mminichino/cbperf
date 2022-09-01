@@ -4,14 +4,13 @@
 import time
 from typing import Callable
 from functools import wraps
-from lib.cbutil.cbdebug import cb_debug
 
 
-def retry(retry_count=5,
-          factor=0.01,
-          allow_list=None,
-          always_raise_list=None
-          ) -> Callable:
+def retry_s(retry_count=5,
+            factor=0.01,
+            allow_list=None,
+            always_raise_list=None
+            ) -> Callable:
     def retry_handler(func):
         @wraps(func)
         def f_wrapper(*args, **kwargs):
@@ -26,10 +25,6 @@ def retry(retry_count=5,
                         raise
 
                     if retry_number == retry_count:
-                        debug = cb_debug(retry.__name__)
-                        logger = debug.logger
-                        logger.error(f"{func.__name__} retry exceeded")
-                        debug.close()
                         raise
 
                     wait = factor
@@ -58,10 +53,6 @@ def retry_a(retry_count=5,
                         raise
 
                     if retry_number == retry_count:
-                        debug = cb_debug(retry_a.__name__)
-                        logger = debug.logger
-                        logger.error(f"{func.__name__} retry exceeded")
-                        debug.close()
                         raise
 
                     wait = factor

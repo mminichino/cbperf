@@ -2,14 +2,17 @@
 ##
 
 from .sessionmgr import cb_session
-from .exceptions import *
-from .retries import retry, retry_a
+from .exceptions import (ClusterConnectException, IsCollectionException, CollectionWaitException, ScopeWaitException, BucketWaitException, BucketCreateException,
+                         BucketDeleteException, ScopeCreateException, CollectionCreateException, CollectionRemoveError, CollectionCountException, CollectionNameNotFound, CollectionCountError,
+                         CollectionGetError, CollectionUpsertError, CollectionSubdocUpsertError, CollectionSubdocGetError, QueryArgumentsError, IndexExistsError, QueryEmptyException, decode_error_code,
+                         QueryError, BucketStatsError)
+from .retries import retry_s, retry_a
 from .dbinstance import db_instance
 from .cbdebug import cb_debug
+from .httpsessionmgr import api_session
 from datetime import timedelta
 import concurrent.futures
-import couchbase
-import acouchbase.cluster
+from acouchbase.cluster import AsyncCluster
 from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
@@ -22,6 +25,7 @@ from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundExceptio
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException)
 import asyncio
+from couchbase.options import LockMode, ClusterOptions
 
 
 class cb_connect(cb_session):
@@ -64,10 +68,11 @@ class cb_connect(cb_session):
     @retry_a(factor=0.5, retry_count=10)
     async def connect_a(self):
         try:
-            cluster_a = acouchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, timeout_options=self.timeouts)
-            result = await cluster_a.on_connect()
+            # cluster_a = acouchbase.cluster.Cluster.connect(self.cb_connect_string, authenticator=self.auth, timeout_options=self.timeouts, lockmode=LockMode.WAIT)
+            cluster_a = await AsyncCluster.connect(self.cb_connect_string, ClusterOptions(self.auth, timeout_options=self.timeouts, lockmode=LockMode.WAIT))
+            # result = await cluster_a.on_connect()
             self.db.set_cluster_a(cluster_a)
-            return result
+            return True
         except SystemError as err:
             if isinstance(err.__cause__, HTTPException):
                 raise ClusterConnectException("cluster connect HTTP error: {}".format(err.__cause__))
@@ -78,10 +83,11 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException("cluster connect general error: {}".format(err))
 
-    @retry(factor=0.5, retry_count=10)
+    @retry_s(factor=0.5, retry_count=10)
     def connect_s(self):
         try:
-            cluster_s = couchbase.cluster.Cluster(self.cb_connect_string, authenticator=self.auth, timeout_options=self.timeouts)
+            # cluster_s = Cluster.connect(self.cb_connect_string, authenticator=self.auth, timeout_options=self.timeouts, lockmode=LockMode.WAIT)
+            cluster_s = Cluster.connect(self.cb_connect_string, ClusterOptions(self.auth, timeout_options=self.timeouts, lockmode=LockMode.WAIT))
             self.db.set_cluster_s(cluster_s)
             return True
         except SystemError as err:
@@ -106,7 +112,7 @@ class cb_connect(cb_session):
         await bucket_a.on_connect()
         self.db.set_bucket_a(name, bucket_a)
 
-    @retry(always_raise_list=(BucketNotFoundException,), retry_count=10, factor=0.5)
+    @retry_s(always_raise_list=(BucketNotFoundException,), retry_count=10, factor=0.5)
     def bucket_s(self, name):
         bucket_s = self.db.cluster_s.bucket(name)
         self.db.set_bucket_s(name, bucket_s)
@@ -116,7 +122,7 @@ class cb_connect(cb_session):
         scope_a = self.db.bucket_a.scope(name)
         self.db.set_scope_a(name, scope_a)
 
-    @retry(always_raise_list=(ScopeNotFoundException,), retry_count=10)
+    @retry_s(always_raise_list=(ScopeNotFoundException,), retry_count=10)
     def scope_s(self, name="_default"):
         scope_s = self.db.bucket_s.scope(name)
         self.db.set_scope_s(name, scope_s)
@@ -124,10 +130,9 @@ class cb_connect(cb_session):
     @retry_a(always_raise_list=(CollectionNotFoundException,), retry_count=10)
     async def collection_a(self, name="_default"):
         collection_a = self.db.scope_a.collection(name)
-        await collection_a.on_connect()
         self.db.add_collection_a(name, collection_a)
 
-    @retry(always_raise_list=(CollectionNotFoundException,), retry_count=10)
+    @retry_s(always_raise_list=(CollectionNotFoundException,), retry_count=10)
     def collection_s(self, name="_default"):
         collection_s = self.db.scope_s.collection(name)
         self.db.add_collection_s(name, collection_s)
@@ -143,7 +148,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException(f"quick connect error: {err}")
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def quick_connect_s(self, bucket, scope, collection):
         try:
             self.connect_s()
@@ -154,21 +159,21 @@ class cb_connect(cb_session):
         except Exception as err:
             raise ClusterConnectException(f"quick connect error: {err}")
 
-    @retry(always_raise_list=(BucketDoesNotExistException,), retry_count=10)
+    @retry_s(always_raise_list=(BucketDoesNotExistException,), retry_count=10)
     def is_bucket(self, name):
         try:
             return self.db.bm.get_bucket(name)
         except BucketDoesNotExistException:
             return None
 
-    @retry(always_raise_list=(AttributeError,), retry_count=10)
+    @retry_s(always_raise_list=(AttributeError,), retry_count=10)
     def is_scope(self, scope):
         try:
             return next((s for s in self.db.cm_s.get_all_scopes() if s.name == scope), None)
         except AttributeError:
             return None
 
-    @retry(always_raise_list=(AttributeError,), retry_count=10)
+    @retry_s(always_raise_list=(AttributeError,), retry_count=10)
     def is_collection(self, collection):
         try:
             scope_spec = next((s for s in self.db.cm_s.get_all_scopes() if s.name == self.db.scope_name), None)
@@ -178,21 +183,21 @@ class cb_connect(cb_session):
         except AttributeError:
             return None
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def collection_wait(self, collection):
         if not self.is_collection(collection):
             raise CollectionWaitException(f"waiting: collection {collection} does not exist")
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def scope_wait(self, scope):
         if not self.is_scope(scope):
             raise ScopeWaitException(f"waiting: scope {scope} does not exist")
 
-    @retry(retry_count=10, factor=0.5)
-    def bucket_wait(self, bucket, count=None):
+    @retry_s(retry_count=10, factor=0.5)
+    def bucket_wait(self, bucket: str, count: int = 0):
         if not self.is_bucket(bucket):
             raise BucketWaitException(f"waiting: bucket {bucket} does not exist")
-        if count:
+        if count > 0:
             try:
                 bucket_stats = self.bucket_stats(bucket)
                 if bucket_stats['itemCount'] < count:
@@ -200,18 +205,12 @@ class cb_connect(cb_session):
             except Exception as err:
                 raise BucketWaitException(f"bucket_wait: error: {err}")
 
-    @retry(always_raise_list=(BucketAlreadyExistsException,), retry_count=10)
+    @retry_s(always_raise_list=(BucketAlreadyExistsException,), retry_count=10)
     def create_bucket(self, name, quota=256):
         try:
-            if self.capella_target:
-                try:
-                    self.is_bucket(name)
-                except BucketDoesNotExistException:
-                    self.capella_session.capella_create_bucket(name, quota)
-            else:
-                self.db.bm.create_bucket(CreateBucketSettings(name=name,
-                                                              bucket_type=BucketType.COUCHBASE,
-                                                              ram_quota_mb=quota))
+            self.db.bm.create_bucket(CreateBucketSettings(name=name,
+                                                          bucket_type=BucketType.COUCHBASE,
+                                                          ram_quota_mb=quota))
         except BucketAlreadyExistsException:
             pass
         except Exception as err:
@@ -219,17 +218,10 @@ class cb_connect(cb_session):
 
         self.bucket_s(name)
 
-    @retry(always_raise_list=(BucketNotFoundException,), retry_count=10)
+    @retry_s(always_raise_list=(BucketNotFoundException,), retry_count=10)
     def drop_bucket(self, name):
         try:
-            if self.capella_target:
-                try:
-                    self.is_bucket(name)
-                    self.capella_session.capella_delete_bucket(name)
-                except BucketDoesNotExistException:
-                    return True
-            else:
-                self.db.bm.drop_bucket(name)
+            self.db.bm.drop_bucket(name)
         except BucketNotFoundException:
             pass
         except Exception as err:
@@ -237,7 +229,7 @@ class cb_connect(cb_session):
 
         self.db.drop_bucket()
 
-    @retry(always_raise_list=(ScopeAlreadyExistsException,), retry_count=10)
+    @retry_s(always_raise_list=(ScopeAlreadyExistsException,), retry_count=10)
     def create_scope(self, name):
         try:
             self.db.cm_s.create_scope(name)
@@ -248,7 +240,7 @@ class cb_connect(cb_session):
 
         self.scope_s(name)
 
-    @retry(always_raise_list=(CollectionAlreadyExistsException,), retry_count=10)
+    @retry_s(always_raise_list=(CollectionAlreadyExistsException,), retry_count=10)
     def create_collection(self, name):
         try:
             collection_spec = CollectionSpec(name, scope_name=self.db.scope_name)
@@ -260,7 +252,7 @@ class cb_connect(cb_session):
 
         self.collection_s(name)
 
-    @retry(always_raise_list=(CollectionNotFoundException,), retry_count=10)
+    @retry_s(always_raise_list=(CollectionNotFoundException,), retry_count=10)
     def drop_collection(self, name):
         try:
             collection_spec = CollectionSpec(name, scope_name=self.db.scope_name)
@@ -272,7 +264,7 @@ class cb_connect(cb_session):
 
         self.db.drop_collection(name)
 
-    @retry(retry_count=10, factor=0.5)
+    @retry_s(retry_count=10, factor=0.5)
     def collection_count_s(self, name="_default", expect_count: int = 0) -> int:
         try:
             keyspace = self.db.keyspace_s(name)
@@ -302,7 +294,7 @@ class cb_connect(cb_session):
             self.write_log(f"collection_count_a: error occurred: {err}", cb_debug.ERROR)
             raise CollectionCountError("can not get item count for {}: {}".format(name, err))
 
-    @retry(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10, factor=0.5)
+    @retry_s(always_raise_list=(DocumentNotFoundException, CollectionNameNotFound), retry_count=10, factor=0.5)
     def cb_get_s(self, key, name="_default"):
         # options = GetOptions(timeout=timedelta(seconds=5))
         try:
@@ -330,7 +322,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionGetError("can not get {} from {}: {}".format(key, name, err))
 
-    @retry(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10, factor=0.5)
+    @retry_s(always_raise_list=(DocumentExistsException, CollectionNameNotFound), retry_count=10, factor=0.5)
     def cb_upsert_s(self, key, document, name="_default"):
         # options = UpsertOptions(timeout=timedelta(seconds=5))
         try:
@@ -360,7 +352,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionUpsertError("can not upsert {} into {}: {}".format(key, name, err))
 
-    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    @retry_s(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def cb_subdoc_upsert_s(self, key, field, value, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -384,7 +376,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionSubdocUpsertError("can not update {} in {}: {}".format(key, field, err))
 
-    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    @retry_s(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def cb_subdoc_multi_upsert_s(self, key_list, field, value_list, name="_default"):
         tasks = set()
         executor = concurrent.futures.ThreadPoolExecutor()
@@ -412,7 +404,7 @@ class cb_connect(cb_session):
             if isinstance(result, Exception):
                 raise result
 
-    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    @retry_s(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def cb_subdoc_get_s(self, key, field, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -464,7 +456,7 @@ class cb_connect(cb_session):
 
         return query
 
-    @retry(retry_count=20, always_raise_list=(CollectionNameNotFound, QueryArgumentsError, IndexExistsError, QueryIndexNotFoundException))
+    @retry_s(retry_count=20, always_raise_list=(CollectionNameNotFound, QueryArgumentsError, IndexExistsError, QueryIndexNotFoundException))
     def cb_query_s(self, field=None, name="_default", where=None, value=None, sql=None, empty_retry=False):
         query = ""
         try:
@@ -516,7 +508,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise QueryError("{}: can not query {} from {}: {}".format(query, field, name, err))
 
-    @retry(retry_count=10, always_raise_list=(DocumentNotFoundException, CollectionNameNotFound))
+    @retry_s(retry_count=10, always_raise_list=(DocumentNotFoundException, CollectionNameNotFound))
     def cb_remove_s(self, key, name="_default"):
         try:
             document_id = self.construct_key(key, name)
@@ -542,11 +534,24 @@ class cb_connect(cb_session):
         except Exception as err:
             raise CollectionRemoveError("can not remove {} from {}: {}".format(key, name, err))
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def bucket_stats(self, bucket):
         try:
-            results = self.admin_api_get(f"/pools/default/buckets/{bucket}")
+            hostname = next(self.node_cycle)
+            s = api_session(self.username, self.password)
+            s.set_host(hostname, self.ssl, self.admin_port)
+            results = s.api_get(f"/pools/default/buckets/{bucket}")
             basic_stats = results['basicStats']
             return basic_stats
         except Exception as err:
             raise BucketStatsError(f"can not get bucket {bucket} stats: {err}")
+
+    # def close(self):
+    #     try:
+    #         if self.db.cluster_s:
+    #             self.db.cluster_s.close()
+    #         if self.db.cluster_a:
+    #             self.db.cluster_a.close()
+    #         self.db.drop_cluster()
+    #     except Exception as err:
+    #         raise ClusterCloseError(f"cluster close error: {err}")

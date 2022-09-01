@@ -67,6 +67,10 @@ class ClusterInitError(cbUtilException):
     pass
 
 
+class ClusterCloseError(cbUtilException):
+    pass
+
+
 class CbUtilEnvironmentError(cbUtilError):
     pass
 

@@ -123,7 +123,7 @@ check_macos () {
       if [ $YES -eq 1 ]; then
         INPUT="y"
       else
-        echo -n "Install dependency ${package}? (y/n) [y]:"
+        printf "Install dependency ${package}? (y/n/s) [y]: "
         read INPUT
       fi
       if [ "$INPUT" = "s" ]; then

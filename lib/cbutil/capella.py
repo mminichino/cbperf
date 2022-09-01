@@ -2,8 +2,9 @@
 ##
 
 from .capsessionmgr import capella_session
-from .capexceptions import *
+from .capexceptions import CapellaConnectException, CapellaClusterNotFound, CapellaNotImplemented, CapellaMissingClusterName
 import logging
+import os
 
 
 class capella_api(capella_session):
@@ -23,7 +24,7 @@ class capella_api(capella_session):
     def cluster_id(self):
         return self._cluster_id
 
-    def connect(self):
+    def capella_connect(self):
         try:
             self._cluster_id = self.get_cluster_id(self._cluster_name)
         except Exception as err:

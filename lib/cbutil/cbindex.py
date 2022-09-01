@@ -3,7 +3,9 @@
 
 from .exceptions import *
 from .cbconnect import cb_connect
-from .retries import retry
+from .retries import retry_s
+from .httpsessionmgr import api_session
+from .httpexceptions import HTTPNotImplemented
 import re
 
 
@@ -11,6 +13,7 @@ class cb_index(cb_connect):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.qim = None
 
     def index_name(self, name, field, index_name):
         field = field.replace('.', '_') if field else None
@@ -34,35 +37,35 @@ class cb_index(cb_connect):
 
         return lookup
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def connect(self):
         try:
             self.connect_s()
         except Exception as err:
             raise IndexConnectError(f"can not connect to cluster: {err}")
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def connect_bucket(self, name):
         try:
             self.bucket_s(name)
         except Exception as err:
             raise IndexBucketError("can not connect to bucket {}: {}".format(name, err))
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def connect_scope(self, name="_default"):
         try:
             self.scope_s(name)
         except Exception as err:
             raise IndexScopeError("can not connect to scope {}: {}".format(name, err))
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def connect_collection(self, name="_default"):
         try:
             self.collection_s(name)
         except Exception as err:
             raise IndexCollectionError("can not connect to collection {}: {}".format(name, err))
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def is_index(self, field=None, name="_default", index_name=None):
         index = self.index_name(name, field, index_name)
 
@@ -83,7 +86,7 @@ class cb_index(cb_connect):
 
         return False
 
-    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound, IndexExistsError))
+    @retry_s(retry_count=10, always_raise_list=(CollectionNameNotFound, IndexExistsError))
     def create_index(self, name="_default", field=None, index_name=None, replica=1):
         index = self.index_name(name, field, index_name)
 
@@ -102,7 +105,7 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexQueryError("can not create index on {}: {}".format(name, err))
 
-    @retry(retry_count=10, always_raise_list=(CollectionNameNotFound,))
+    @retry_s(retry_count=10, always_raise_list=(CollectionNameNotFound,))
     def drop_index(self, name="_default", field=None, index_name=None):
         index = self.index_name(name, field, index_name)
 
@@ -119,7 +122,7 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexQueryError("can not drop index on {}: {}".format(name, err))
 
-    @retry(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
+    @retry_s(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
     def index_wait(self, name="_default", field=None, index_name=None):
         index = self.index_name(name, field, index_name)
         lookup = self.index_lookup(name)
@@ -151,8 +154,13 @@ class cb_index(cb_connect):
 
         index_data = {}
         endpoint = '/api/v1/stats/' + bucket
-        for response_json in list(self.node_api_get(endpoint)):
-
+        s = api_session(self.username, self.password)
+        for node in self.all_hosts:
+            s.set_host(node, self.ssl, self.node_port)
+            try:
+                response_json = s.api_get(endpoint)
+            except HTTPNotImplemented:
+                continue
             for key in response_json:
                 index_name = key.split(':')[-1]
                 index_object = key.split(':')[-2]
@@ -198,7 +206,7 @@ class cb_index(cb_connect):
         else:
             raise IndexNotReady(f"index {index} not ready")
 
-    @retry(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
+    @retry_s(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
     def index_online(self, keyspace_id, field=None, primary=False):
         if primary:
             query_text = f"SELECT * FROM system:indexes AS i where i.keyspace_id = \"{keyspace_id}\" and i.is_primary = true;"
@@ -219,7 +227,7 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexNotReady(f"index_online: keyspace_id {keyspace_id} error: {err}")
 
-    @retry(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
+    @retry_s(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
     def index_list(self, bucket):
         query_text = "SELECT * FROM system:indexes;"
         index_list = {}
@@ -238,7 +246,7 @@ class cb_index(cb_connect):
         except Exception as err:
             raise IndexNotReady(f"index_list: bucket {bucket} error: {err}")
 
-    @retry(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
+    @retry_s(retry_count=10, factor=0.5, allow_list=(IndexNotReady,))
     def delete_wait(self, field=None, name="_default", index_name=None):
         if self.is_index(field=field, name=name, index_name=index_name):
             raise IndexNotReady(f"delete_wait: index on {name} still exists")

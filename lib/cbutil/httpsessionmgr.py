@@ -7,8 +7,9 @@ from requests.adapters import HTTPAdapter
 import json
 import logging
 import base64
+import os
 from requests.auth import AuthBase
-from .httpexceptions import *
+from .httpexceptions import NotAuthorized, HTTPForbidden, HTTPNotImplemented, RequestValidationError, InternalServerError
 
 
 class basic_auth(AuthBase):
@@ -45,11 +46,11 @@ class api_session(object):
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
         self._response = None
 
-        if "CB_PERF_DEBUG_LEVEL" in os.environ:
+        if "HTTP_DEBUG_LEVEL" in os.environ:
             import http.client as http_client
             http_client.HTTPConnection.debuglevel = 1
             logging.basicConfig()
-            self.debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
+            self.debug_level = int(os.environ['HTTP_DEBUG_LEVEL'])
             requests_log = logging.getLogger("requests.packages.urllib3")
             if self.debug_level == 0:
                 self.logger.setLevel(logging.DEBUG)
@@ -120,7 +121,7 @@ class api_session(object):
         return self
 
     def api_get(self, endpoint):
-        response = self.session.get(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password))
+        response = self.session.get(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), verify=False, timeout=15)
 
         try:
             self.check_status_code(response.status_code)
@@ -134,7 +135,7 @@ class api_session(object):
         return response_data
 
     def api_post(self, endpoint, body):
-        response = self.session.post(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), json=body)
+        response = self.session.post(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), json=body, verify=False, timeout=15)
 
         try:
             self.check_status_code(response.status_code)
@@ -148,7 +149,7 @@ class api_session(object):
         return response_data
 
     def api_put(self, endpoint, body):
-        response = self.session.put(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), json=body)
+        response = self.session.put(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), json=body, verify=False, timeout=15)
 
         try:
             self.check_status_code(response.status_code)
@@ -162,7 +163,7 @@ class api_session(object):
         return response_data
 
     def api_delete(self, endpoint):
-        response = self.session.delete(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password))
+        response = self.session.delete(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), verify=False, timeout=15)
 
         try:
             self.check_status_code(response.status_code)

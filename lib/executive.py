@@ -4,28 +4,20 @@
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
-from typing import Union
-import logging
-import logging.handlers
-from queue import Empty
 from lib.cbutil.cbconnect import cb_connect
 from lib.cbutil.cbindex import cb_index
-from lib.cbutil.randomize import randomize, fastRandom
+from lib.cbutil.randomize import randomize
 from lib.inventorymgr import inventoryManager
 from lib.cbutil.exceptions import *
 from lib.exceptions import *
 from lib.cbutil.cbdebug import cb_debug
 from lib.system import sys_info
 from lib.testmods import test_mods
-from lib.mptools import mp_value, mp_queue
-from lib.constants import *
+from lib.constants import KV_TEST, QUERY_TEST, REMOVE_DATA, RANDOM_KEYS
 import json
 import os
-import numpy as np
 import asyncio
 import time
-import traceback
-import signal
 import warnings
 
 VERSION = '1.0'

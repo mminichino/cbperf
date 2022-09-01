@@ -2,6 +2,7 @@
 
 import os
 import sys
+import psutil
 
 import couchbase.result
 
@@ -244,6 +245,32 @@ def check_list(a, b):
     return True
 
 
+def check_open_files(dump=False):
+    p = psutil.Process()
+    open_files = p.open_files()
+    open_count = len(open_files)
+    connections = p.connections()
+    con_count = len(connections)
+    num_fds = p.num_fds()
+    children = p.children(recursive=True)
+    num_children = len(children)
+    if dump:
+        with open("test_output.out", "a") as out_file:
+            out_file.write(f"Open files:\n")
+            for item in open_files:
+                out_file.write(f"{item}\n")
+            out_file.write(f"Connections:\n")
+            for item in connections:
+                out_file.write(f"{item}\n")
+            out_file.write(f"Child processes:\n")
+            for item in children:
+                out_file.write(f"{item}\n")
+            out_file.write("\n")
+            out_file.close()
+    else:
+        print(f"open: {open_count} connections: {con_count} fds: {num_fds} children: {num_children}")
+
+
 def truncate_output_file():
     file = open("test_output.out", "w")
     file.close()
@@ -312,6 +339,7 @@ def test_step(check, fun, *args, __name=None, **kwargs):
             out_file.write(tb)
             out_file.write("\n")
             out_file.close()
+        check_open_files(dump=True)
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
         copyfile("cb_debug.log", f"test_fail_{fun_name}.log")
         print(f"Step failed: function {fun_name}: {err}")
@@ -363,6 +391,7 @@ async def async_test_step(check, fun, *args, **kwargs):
             out_file.write(tb)
             out_file.write("\n")
             out_file.close()
+        check_open_files(dump=True)
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
         copyfile("cb_debug.log", f"test_fail_{fun_name}.log")
         print(f"Step failed: function {fun_name}: {err}")
@@ -417,6 +446,8 @@ def cb_sync_test_set(host, username, password, bucket, scope, collection, tls, e
     test_step(None, db_index.delete_wait, name=collection)
     test_step(None, db_index.delete_wait, name=collection, field="data", index_name="data_index")
     test_step(None, db.drop_bucket, bucket)
+    # test_step(None, db.close())
+    check_open_files()
 
 
 def cb_async_test_set(host, username, password, bucket, scope, collection, tls, external_network, cloud_api):
@@ -473,6 +504,7 @@ def cb_async_test_set(host, username, password, bucket, scope, collection, tls, 
     test_step(None, db_index.delete_wait, name=collection)
     test_step(None, db_index.delete_wait, name=collection, field="data", index_name="data_index")
     test_step(None, db.drop_bucket, bucket)
+    check_open_files()
 
 
 def cb_connect_test(host, username, password, bucket, tls, external_network, cloud_api):
@@ -584,6 +616,7 @@ def randomize_test():
     last = r.lastName
     test_step(c, r.userName, first, last)
     test_step(None, r.randImage)
+    check_open_files()
 
 
 def test_map(args):
@@ -597,6 +630,7 @@ def test_map(args):
     truncate_output_file()
     task = print_host_map(parameters)
     test_step(check_host_map, task.run)
+    check_open_files()
 
 
 def test_load(args, sync=False, schema="default", filetest=False):
@@ -630,6 +664,7 @@ def test_load(args, sync=False, schema="default", filetest=False):
     task = test_exec(parameters)
     test_step(None, task.test_clean)
     time.sleep(0.2)
+    check_open_files()
 
 
 def test_run(args, sync=False, schema="default", filetest=False):
@@ -664,6 +699,7 @@ def test_run(args, sync=False, schema="default", filetest=False):
     task = test_exec(parameters)
     test_step(None, task.test_clean)
     time.sleep(0.2)
+    check_open_files()
 
 
 def test_ramp(args, sync=False, schema="default", filetest=False):
@@ -700,6 +736,7 @@ def test_ramp(args, sync=False, schema="default", filetest=False):
     task = test_exec(parameters)
     test_step(None, task.test_clean)
     time.sleep(0.2)
+    check_open_files()
 
 
 def test_file(args, sync=False):
@@ -740,6 +777,7 @@ def test_file(args, sync=False):
     task = test_exec(parameters)
     test_step(None, task.test_clean)
     time.sleep(0.2)
+    check_open_files()
 
 
 def cli_run(cmd: str, *args: str):
@@ -790,6 +828,7 @@ def test_cli(hostname, username, password, schema):
     args.append('--schema')
     args.append(schema)
     test_step(check_clean, cli_run, cmd, *args)
+    check_open_files()
 
 
 def directory_cleanup():
@@ -809,6 +848,8 @@ def directory_cleanup():
 
 
 def main():
+    p = psutil.Process()
+    pid = p.pid
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('-u', '--user', action='store', help="User Name", default="Administrator")
     parser.add_argument('-p', '--password', action='store', help="User Password", default="password")
@@ -851,7 +892,8 @@ def main():
         cloud_api = True
 
     print(f"cbperf test set v{VERSION}")
-    print("Python version:")
+    print(f"PID: {pid}")
+    print("Python version: ", end='')
     print(sys.version)
 
     directory_cleanup()

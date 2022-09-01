@@ -1,23 +1,29 @@
 ##
 ##
 
-import requests
-from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
+# import requests
+# from urllib3.util.retry import Retry
+# from requests.adapters import HTTPAdapter
 import json
 import socket
 import dns.resolver
+import sys
 from itertools import cycle
 from datetime import timedelta
-from couchbase.exceptions import (HTTPException)
-from couchbase.diagnostics import PingState
-from couchbase.cluster import Cluster, QueryOptions, ClusterTimeoutOptions
+from couchbase.exceptions import HTTPException
+from couchbase.cluster import Cluster
+try:
+    from couchbase.options import ClusterOptions, ClusterTimeoutOptions, QueryOptions
+except:
+    from couchbase.cluster import ClusterOptions, ClusterTimeoutOptions, QueryOptions
 from couchbase.auth import PasswordAuthenticator
-from couchbase.diagnostics import ServiceType
-from .exceptions import *
-from .capexceptions import *
-from .retries import retry
-from .capella import capella_api
+from couchbase.diagnostics import ServiceType, PingState
+from .exceptions import (NotAuthorized, ForbiddenError, NotFoundError, DNSLookupTimeout, NodeUnreachable, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed,
+                         AdminApiError, NodeApiError, TransientError, ClusterKVServiceError, ClusterHealthCheckError, ClusterInitError, ClusterQueryServiceError,
+                         ClusterViewServiceError)
+from .retries import retry_s
+from .httpsessionmgr import api_session
+# from .capella import capella_api
 
 
 class cb_session_cache(object):
@@ -34,8 +40,8 @@ class cb_session_cache(object):
         self._rally_cluster_node = None
         self._srv_host_list = []
         self._rally_dns_domain = False
-        self._capella_target = False
-        self._capella_session = None
+        # self._capella_target = False
+        # self._capella_session = None
 
     def extract(self, session):
         self._node_list = session.node_list
@@ -49,8 +55,8 @@ class cb_session_cache(object):
         self._rally_cluster_node = session.rally_cluster_node
         self._srv_host_list = session.srv_host_list
         self._rally_dns_domain = session.rally_dns_domain
-        self._capella_target = session.capella_target
-        self._capella_session = session.capella_session
+        # self._capella_target = session.capella_target
+        # self._capella_session = session.capella_session
 
     def store_node_list(self, value):
         self._node_list = value
@@ -129,13 +135,13 @@ class cb_session_cache(object):
     def rally_dns_domain(self):
         return self._rally_dns_domain
 
-    @property
-    def capella_target(self):
-        return self._capella_target
+    # @property
+    # def capella_target(self):
+    #     return self._capella_target
 
-    @property
-    def capella_session(self):
-        return self._capella_session
+    # @property
+    # def capella_session(self):
+    #     return self._capella_session
 
 
 class cb_session(object):
@@ -161,8 +167,8 @@ class cb_session(object):
         self.restore_session = restore
         self.cloud_api = cloud
         self._session_cache = cb_session_cache()
-        self.capella_target = False
-        self.capella_session = None
+        # self.capella_target = False
+        # self.capella_session = None
 
         if self.ssl:
             self.prefix = "https://"
@@ -177,12 +183,12 @@ class cb_session(object):
             self.admin_port = "8091"
             self.node_port = "9102"
 
-        self.session = requests.Session()
-        retries = Retry(total=60,
-                        backoff_factor=0.1,
-                        status_forcelist=[500, 501, 503])
-        self.session.mount('http://', HTTPAdapter(max_retries=retries))
-        self.session.mount('https://', HTTPAdapter(max_retries=retries))
+        # self.session = requests.Session()
+        # retries = Retry(total=60,
+        #                 backoff_factor=0.1,
+        #                 status_forcelist=[500, 501, 503])
+        # self.session.mount('http://', HTTPAdapter(max_retries=retries))
+        # self.session.mount('https://', HTTPAdapter(max_retries=retries))
 
         self.init_cluster()
 
@@ -198,7 +204,7 @@ class cb_session(object):
         else:
             raise Exception("Unknown API status code {}".format(code))
 
-    @retry(allow_list=(DNSLookupTimeout, NodeUnreachable))
+    @retry_s(allow_list=(DNSLookupTimeout, NodeUnreachable))
     def is_reachable(self):
         resolver = dns.resolver.Resolver()
         resolver.timeout = 15
@@ -227,7 +233,7 @@ class cb_session(object):
 
         return True
 
-    @retry(allow_list=(NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
+    @retry_s(allow_list=(NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
     def check_node_connectivity(self, hostname, port):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -285,36 +291,36 @@ class cb_session(object):
         for node in self.all_hosts:
             yield self.prefix + node + ":" + self.node_port
 
-    def admin_api_get(self, endpoint):
-        api_url = self.admin_hostname + endpoint
-        response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
+    # def admin_api_get(self, endpoint):
+    #     api_url = self.admin_hostname + endpoint
+    #     response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
+    #
+    #     try:
+    #         self.check_status_code(response.status_code, endpoint)
+    #     except Exception as err:
+    #         message = api_url + ": " + str(err)
+    #         raise AdminApiError(message)
+    #
+    #     response_json = json.loads(response.text)
+    #     return response_json
 
-        try:
-            self.check_status_code(response.status_code, endpoint)
-        except Exception as err:
-            message = api_url + ": " + str(err)
-            raise AdminApiError(message)
+    # def node_api_get(self, endpoint):
+    #     for node_name in list(self.node_hostnames()):
+    #         api_url = node_name + endpoint
+    #         response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
+    #
+    #         try:
+    #             self.check_status_code(response.status_code, endpoint)
+    #         except NotFoundError:
+    #             continue
+    #         except Exception as err:
+    #             message = api_url + ": " + str(err)
+    #             raise NodeApiError(message)
+    #
+    #         response_json = json.loads(response.text)
+    #         yield response_json
 
-        response_json = json.loads(response.text)
-        return response_json
-
-    def node_api_get(self, endpoint):
-        for node_name in list(self.node_hostnames()):
-            api_url = node_name + endpoint
-            response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
-
-            try:
-                self.check_status_code(response.status_code, endpoint)
-            except NotFoundError:
-                continue
-            except Exception as err:
-                message = api_url + ": " + str(err)
-                raise NodeApiError(message)
-
-            response_json = json.loads(response.text)
-            yield response_json
-
-    @retry(retry_count=10, allow_list=(TransientError, ClusterKVServiceError, ClusterHealthCheckError, NodeUnreachable, DNSLookupTimeout,
+    @retry_s(retry_count=10, allow_list=(TransientError, ClusterKVServiceError, ClusterHealthCheckError, NodeUnreachable, DNSLookupTimeout,
                                        ClusterInitError, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
     def init_cluster(self):
         if self.restore_session:
@@ -330,8 +336,8 @@ class cb_session(object):
                 self.rally_cluster_node = self.restore_session.rally_cluster_node
                 self.srv_host_list = self.restore_session.srv_host_list
                 self.rally_dns_domain = self.restore_session.rally_dns_domain
-                self.capella_target = self.restore_session.capella_target
-                self.capella_session = self.restore_session.capella_session
+                # self.capella_target = self.restore_session.capella_target
+                # self.capella_session = self.restore_session.capella_session
                 self.node_cycle = cycle(self.all_hosts)
                 return True
             except Exception as err:
@@ -342,16 +348,19 @@ class cb_session(object):
         except Exception as err:
             raise ClusterInitError("cluster not reachable at {}: {}".format(self.rally_host_name, err))
 
-        domain_name_check = '.'.join(self.rally_host_name.split('.')[-3:])
-        if domain_name_check == 'cloud.couchbase.com' and self.cloud_api:
-            self.capella_target = True
-            try:
-                self.capella_session = capella_api()
-                self.capella_session.connect()
-            except Exception as err:
-                raise ClusterInitError(f"{err}")
+        # domain_name_check = '.'.join(self.rally_host_name.split('.')[-3:])
+        # if domain_name_check == 'cloud.couchbase.com' and self.cloud_api:
+        #     self.capella_target = True
+        #     try:
+        #         self.capella_session = capella_api()
+        #         self.capella_session.capella_connect()
+        #     except Exception as err:
+        #         raise ClusterInitError(f"{err}")
 
-        results = self.admin_api_get('/pools/default')
+        hostname = self.rally_cluster_node
+        s = api_session(self.username, self.password)
+        s.set_host(hostname, self.ssl, self.admin_port)
+        results = s.api_get('/pools/default')
 
         if 'nodes' not in results:
             raise ClusterInitError("Can not get node list from {}.".format(self.rally_host_name))
@@ -416,8 +425,8 @@ class cb_session(object):
             for record in self.srv_host_list:
                 print(" => %s (%s)" % (record['hostname'], record['address']))
 
-        if self.capella_session:
-            print(f"Capella cluster ID: {self.capella_session.cluster_id}")
+        # if self.capella_session:
+        #     print(f"Capella cluster ID: {self.capella_session.cluster_id}")
 
         print("Cluster Host List:")
         for record in self.node_list:
@@ -438,13 +447,13 @@ class cb_session(object):
                     print("%s:%s" % (key, ext_port_list[key]), end=' ')
             print("[Services] %s [version] %s [platform] %s" % (services, version, ostype))
 
-    @retry(retry_count=10)
+    @retry_s(retry_count=10)
     def cluster_health_check(self, output=False, restrict=True, noraise=False, extended=False):
         cb_auth = PasswordAuthenticator(self.username, self.password)
         cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
 
         try:
-            cluster = Cluster(self.cb_connect_string, authenticator=cb_auth, timeout_options=cb_timeouts)
+            cluster = Cluster.connect(self.cb_connect_string, ClusterOptions(cb_auth, timeout_options=cb_timeouts))
             result = cluster.ping()
         except SystemError as err:
             if isinstance(err.__cause__, HTTPException) and err.__cause__.error_code == 1049:
@@ -510,3 +519,5 @@ class cb_session(object):
                     sys.exit(3)
                 else:
                     raise ClusterQueryServiceError(f"query service test error: {err}")
+
+        # cluster.close()

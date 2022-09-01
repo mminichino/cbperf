@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import json
 import logging
 from .capauth import capella_auth
-from .capexceptions import *
+from .capexceptions import CapellaNotAuthorized, CapellaNotImplemented, CapellaRequestValidationError, CapellaInternalServerError
 
 
 class capella_session(object):
