@@ -2,8 +2,7 @@
 ##
 
 import requests
-from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
+from requests.adapters import HTTPAdapter, Retry
 from urllib.parse import urlparse
 import json
 import logging
@@ -18,8 +17,7 @@ class capella_session(object):
         self.capella_url = 'https://cloudapi.cloud.couchbase.com'
         self.session = requests.Session()
         retries = Retry(total=60,
-                        backoff_factor=0.1,
-                        status_forcelist=[500, 501, 503])
+                        backoff_factor=0.2)
         self.session.mount('http://', HTTPAdapter(max_retries=retries))
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
         self._response = None

@@ -1,10 +1,6 @@
 ##
 ##
 
-# import requests
-# from urllib3.util.retry import Retry
-# from requests.adapters import HTTPAdapter
-import json
 import socket
 import dns.resolver
 import sys
@@ -320,8 +316,7 @@ class cb_session(object):
     #         response_json = json.loads(response.text)
     #         yield response_json
 
-    @retry_s(retry_count=10, allow_list=(TransientError, ClusterKVServiceError, ClusterHealthCheckError, NodeUnreachable, DNSLookupTimeout,
-                                       ClusterInitError, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
+    @retry_s(retry_count=10)
     def init_cluster(self):
         if self.restore_session:
             try:

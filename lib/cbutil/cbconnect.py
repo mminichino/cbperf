@@ -3,9 +3,9 @@
 
 from .sessionmgr import cb_session
 from .exceptions import (ClusterConnectException, IsCollectionException, CollectionWaitException, ScopeWaitException, BucketWaitException, BucketCreateException,
-                         BucketDeleteException, ScopeCreateException, CollectionCreateException, CollectionRemoveError, CollectionCountException, CollectionNameNotFound, CollectionCountError,
-                         CollectionGetError, CollectionUpsertError, CollectionSubdocUpsertError, CollectionSubdocGetError, QueryArgumentsError, IndexExistsError, QueryEmptyException, decode_error_code,
-                         QueryError, BucketStatsError)
+                         BucketDeleteException, ScopeCreateException, CollectionCreateException, CollectionRemoveError, CollectionCountException, CollectionNameNotFound,
+                         CollectionCountError, CollectionGetError, CollectionUpsertError, CollectionSubdocUpsertError, CollectionSubdocGetError, QueryArgumentsError,
+                         IndexExistsError, QueryEmptyException, decode_error_code, QueryError, BucketStatsError, ClusterCloseError)
 from .retries import retry_s, retry_a
 from .dbinstance import db_instance
 from .cbdebug import cb_debug
@@ -546,7 +546,7 @@ class cb_connect(cb_session):
         except Exception as err:
             raise BucketStatsError(f"can not get bucket {bucket} stats: {err}")
 
-    # def close(self):
+    # def __del__(self):
     #     try:
     #         if self.db.cluster_s:
     #             self.db.cluster_s.close()

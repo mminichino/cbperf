@@ -2,8 +2,7 @@
 ##
 
 import requests
-from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
+from requests.adapters import HTTPAdapter, Retry
 import json
 import logging
 import base64
@@ -40,8 +39,7 @@ class api_session(object):
         self.url_prefix = "http://127.0.0.1"
         self.session = requests.Session()
         retries = Retry(total=60,
-                        backoff_factor=0.1,
-                        status_forcelist=[500, 501, 503])
+                        backoff_factor=0.2)
         self.session.mount('http://', HTTPAdapter(max_retries=retries))
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
         self._response = None
