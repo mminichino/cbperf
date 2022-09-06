@@ -158,7 +158,7 @@ class cb_index(cb_connect):
         for node in self.all_hosts:
             s.set_host(node, self.ssl, self.node_port)
             try:
-                response_json = s.api_get(endpoint)
+                response_json = s.api_get(endpoint).json()
             except HTTPNotImplemented:
                 continue
             for key in response_json:

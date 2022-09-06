@@ -541,7 +541,7 @@ class cb_connect(cb_session):
             s = api_session(self.username, self.password)
             s.set_host(hostname, self.ssl, self.admin_port)
             results = s.api_get(f"/pools/default/buckets/{bucket}")
-            basic_stats = results['basicStats']
+            basic_stats = results.json()['basicStats']
             return basic_stats
         except Exception as err:
             raise BucketStatsError(f"can not get bucket {bucket} stats: {err}")

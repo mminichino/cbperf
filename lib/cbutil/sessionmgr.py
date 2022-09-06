@@ -355,7 +355,7 @@ class cb_session(object):
         hostname = self.rally_cluster_node
         s = api_session(self.username, self.password)
         s.set_host(hostname, self.ssl, self.admin_port)
-        results = s.api_get('/pools/default')
+        results = s.api_get('/pools/default').json()
 
         if 'nodes' not in results:
             raise ClusterInitError("Can not get node list from {}.".format(self.rally_host_name))

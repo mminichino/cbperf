@@ -50,7 +50,7 @@ class sg_database(api_session):
 
     def list(self, name):
         try:
-            response = self.api_get(f"/{name}/_config")
+            response = self.api_get(f"/{name}/_config").json()
             print(f"Bucket:   {response['bucket']}")
             print(f"Name:     {response['name']}")
             print(f"Replicas: {response['num_index_replicas']}")
@@ -63,7 +63,7 @@ class sg_database(api_session):
 
     def dump(self, name):
         try:
-            response = self.api_get(f"/{name}/_all_docs")
+            response = self.api_get(f"/{name}/_all_docs").json()
             for item in response["rows"]:
                 print(f"Key: {item['key']} Id: {item['id']}")
         except HTTPForbidden:
@@ -114,7 +114,7 @@ class sg_user(api_session):
     def list(self, name, username=None):
         try:
             if username:
-                response = self.api_get(f"/{name}/_user/{username}")
+                response = self.api_get(f"/{name}/_user/{username}").json()
                 print(f"Name:           {response['name']}")
                 print(f"Admin channels: {response['admin_channels']}")
                 print(f"All channels:   {response['all_channels']}")

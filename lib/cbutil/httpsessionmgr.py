@@ -7,8 +7,46 @@ import json
 import logging
 import base64
 import os
+import datetime
+import hmac
+import hashlib
+from urllib.parse import urlparse
 from requests.auth import AuthBase
-from .httpexceptions import NotAuthorized, HTTPForbidden, HTTPNotImplemented, RequestValidationError, InternalServerError
+from .httpexceptions import NotAuthorized, HTTPForbidden, HTTPNotImplemented, RequestValidationError, InternalServerError, PaginationDataNotFound
+
+
+class capella_auth(AuthBase):
+
+    def __init__(self):
+        if 'CBC_ACCESS_KEY' in os.environ:
+            self.capella_key = os.environ['CBC_ACCESS_KEY']
+        else:
+            raise Exception("Please set CBC_ACCESS_KEY for Capella API access")
+
+        if 'CBC_SECRET_KEY' in os.environ:
+            self.capella_secret = os.environ['CBC_SECRET_KEY']
+        else:
+            raise Exception("Please set CBC_SECRET_KEY for Capella API access")
+
+    def __call__(self, r):
+        ep_path = urlparse(r.url).path
+        ep_params = urlparse(r.url).query
+        if len(ep_params) > 0:
+            cbc_api_endpoint = ep_path + f"?{ep_params}"
+        else:
+            cbc_api_endpoint = ep_path
+        cbc_api_method = r.method
+        cbc_api_now = int(datetime.datetime.now().timestamp() * 1000)
+        cbc_api_message = cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(cbc_api_now)
+        cbc_api_signature = base64.b64encode(hmac.new(bytes(self.capella_secret, 'utf-8'),
+                                                      bytes(cbc_api_message, 'utf-8'),
+                                                      digestmod=hashlib.sha256).digest())
+        cbc_api_request_headers = {
+            'Authorization': 'Bearer ' + self.capella_key + ':' + cbc_api_signature.decode(),
+            'Couchbase-Timestamp': str(cbc_api_now)
+        }
+        r.headers.update(cbc_api_request_headers)
+        return r
 
 
 class basic_auth(AuthBase):
@@ -31,8 +69,10 @@ class basic_auth(AuthBase):
 class api_session(object):
     HTTP = 0
     HTTPS = 1
+    AUTH_BASIC = 0
+    AUTH_CAPELLA = 1
 
-    def __init__(self, username=None, password=None):
+    def __init__(self, username=None, password=None, auth_type=0):
         self.username = username
         self.password = password
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -43,6 +83,10 @@ class api_session(object):
         self.session.mount('http://', HTTPAdapter(max_retries=retries))
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
         self._response = None
+        if auth_type == 0:
+            self.auth_class = basic_auth(self.username, self.password)
+        else:
+            self.auth_class = capella_auth()
 
         if "HTTP_DEBUG_LEVEL" in os.environ:
             import http.client as http_client
@@ -96,6 +140,9 @@ class api_session(object):
     def json(self):
         return json.loads(self._response)
 
+    def dump_json(self, indent=2):
+        return json.dumps(self.json(), indent=indent)
+
     def http_get(self, endpoint, headers=None, verify=False):
         response = self.session.get(self.url_prefix + endpoint, headers=headers, verify=verify)
 
@@ -118,8 +165,26 @@ class api_session(object):
         self._response = response.text
         return self
 
-    def api_get(self, endpoint):
-        response = self.session.get(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), verify=False, timeout=15)
+    def capella_pagination(self, response_json):
+        if "cursor" in response_json:
+            if "pages" in response_json["cursor"]:
+                if "items" in response_json["data"]:
+                    data = response_json["data"]["items"]
+                else:
+                    data = response_json["data"]
+                if "next" in response_json["cursor"]["pages"]:
+                    next_page = response_json["cursor"]["pages"]["next"]
+                    per_page = response_json["cursor"]["pages"]["perPage"]
+                    return data, next_page, per_page
+                else:
+                    return data, None, None
+        else:
+            raise PaginationDataNotFound("pagination values not found")
+
+    def api_get(self, endpoint, items=None):
+        if items is None:
+            items = []
+        response = self.session.get(self.url_prefix + endpoint, auth=self.auth_class, verify=False, timeout=15)
 
         try:
             self.check_status_code(response.status_code)
@@ -127,49 +192,48 @@ class api_session(object):
             raise
 
         try:
-            response_data = json.loads(response.text)
-        except ValueError:
-            response_data = response.text
-        return response_data
+            response_json = json.loads(response.text)
+            data, next_page, per_page = self.capella_pagination(response_json)
+            items.extend(data)
+            if next_page:
+                ep_path = urlparse(endpoint).path
+                self.api_get(f"{ep_path}?page={next_page}&perPage={per_page}", items)
+            response_text = json.dumps(items)
+        except PaginationDataNotFound:
+            response_text = response.text
+
+        self._response = response_text
+        return self
 
     def api_post(self, endpoint, body):
-        response = self.session.post(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), json=body, verify=False, timeout=15)
+        response = self.session.post(self.url_prefix + endpoint, auth=self.auth_class, json=body, verify=False, timeout=15)
 
         try:
             self.check_status_code(response.status_code)
         except Exception:
             raise
 
-        try:
-            response_data = json.loads(response.text)
-        except ValueError:
-            response_data = response.text
-        return response_data
+        self._response = response.text
+        return self
 
     def api_put(self, endpoint, body):
-        response = self.session.put(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), json=body, verify=False, timeout=15)
+        response = self.session.put(self.url_prefix + endpoint, auth=self.auth_class, json=body, verify=False, timeout=15)
 
         try:
             self.check_status_code(response.status_code)
         except Exception:
             raise
 
-        try:
-            response_data = json.loads(response.text)
-        except ValueError:
-            response_data = response.text
-        return response_data
+        self._response = response.text
+        return self
 
     def api_delete(self, endpoint):
-        response = self.session.delete(self.url_prefix + endpoint, auth=basic_auth(self.username, self.password), verify=False, timeout=15)
+        response = self.session.delete(self.url_prefix + endpoint, auth=self.auth_class, verify=False, timeout=15)
 
         try:
             self.check_status_code(response.status_code)
         except Exception:
             raise
 
-        try:
-            response_data = json.loads(response.text)
-        except ValueError:
-            response_data = response.text
-        return response_data
+        self._response = response.text
+        return self

@@ -74,3 +74,7 @@ class ConnectException(httpException):
 class HTTPNotImplemented(httpException):
     pass
 
+
+class PaginationDataNotFound(httpException):
+    pass
+
