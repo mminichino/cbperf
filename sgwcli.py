@@ -28,8 +28,8 @@ class sg_database(api_session):
             "num_index_replicas": replicas
         }
         try:
-            response = self.api_put(f"/{bucket}/", data)
-            print(f"Database created for bucket {bucket}.")
+            response = self.api_put(f"/{name}/", data)
+            print(f"Database {name} created for bucket {bucket}.")
         except HTTPForbidden:
             print(f"Bucket {bucket} does not exist.")
             sys.exit(1)
@@ -120,7 +120,7 @@ class sg_user(api_session):
                 print(f"All channels:   {response['all_channels']}")
                 print(f"Disabled:       {response['disabled']}")
             else:
-                response = self.api_get(f"/{name}/_user/")
+                response = self.api_get(f"/{name}/_user/").json()
                 for item in response:
                     print(item)
         except HTTPForbidden:
