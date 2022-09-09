@@ -23,6 +23,14 @@ class cluster_mgr(object):
         self.api = api_session(auth_type=api_session.AUTH_CAPELLA)
         self.api.set_host("cloudapi.cloud.couchbase.com", api_session.HTTPS)
 
+    def service_sort(self, service_list):
+        ref = ['data', 'index', 'query', 'search', 'eventing', 'analytics']
+        result = []
+        for item in ref:
+            if item in service_list:
+                result.append(item)
+        return result
+
     def cluster_get(self, name):
         clusters = self.api.api_get("/v3/clusters").json()
         for item in clusters:
@@ -33,6 +41,64 @@ class cluster_mgr(object):
                     break
                 except HTTPNotImplemented:
                     print(f"Cluster details for {name} were not found.")
+
+    def cluster_list(self):
+        clusters = self.api.api_get("/v3/clusters").json()
+        print("Type   "
+              "Name                                     "
+              "ID                                   "
+              "Project                              "
+              "Cloud Region               "
+              "#   "
+              "Stor  "
+              "Ver   "
+              "MDS Services                                    "
+              "Nodes")
+        print("====== "
+              "======================================== "
+              "==================================== "
+              "==================================== "
+              "===== "
+              "==================== "
+              "=== "
+              "===== "
+              "===== "
+              "=== "
+              "=========================================== "
+              "=======================================")
+        for item in clusters:
+            print(f"{item['environment'].ljust(6)} {item['name'].ljust(40)} {item['id']} {item['projectId']} ", end='')
+            try:
+                node_total = 0
+                storage_total = 0
+                type_list = []
+                service_list = []
+                last_list = []
+                mds = "N"
+                cluster_info = self.api.api_get(f"/v3/clusters/{item['id']}").json()
+                for server_group in cluster_info['servers']:
+                    node_total += server_group['size']
+                    storage_total += (server_group['storage']['size'] * server_group['size'])
+                    type_list.append(server_group['compute'])
+                    current_list = server_group['services']
+                    service_list.extend(current_list)
+                    current_list.sort()
+                    if len(last_list) > 0:
+                        if last_list != current_list:
+                            mds = "Y"
+                    last_list = current_list
+                service_list = self.service_sort([*set(service_list)])
+                type_list = [*set(type_list)]
+                print(f"{cluster_info['place']['provider'].ljust(5)} "
+                      f"{cluster_info['place']['region'].ljust(20)} "
+                      f"{str(node_total).ljust(3)} {str(storage_total).ljust(5)} "
+                      f"{cluster_info['version']['components']['cbServerVersion']} "
+                      f"{mds.ljust(3)} "
+                      f"{','.join(service_list).ljust(43)} "
+                      f"{','.join(type_list)}")
+            except HTTPNotImplemented:
+                print("")
+                continue
 
 
 def main():
@@ -48,6 +114,7 @@ def main():
     cluster_parser = command_parser.add_parser('cluster', help="Cluster Operations", parents=[], add_help=False)
     cluster_command_parser = cluster_parser.add_subparsers(dest='cluster_command')
     cluster_command_get = cluster_command_parser.add_parser('get', help="Get Cluster Info", parents=[], add_help=False)
+    cluster_command_list = cluster_command_parser.add_parser('list', help="Get Cluster List", parents=[], add_help=False)
     cluster_command_get.add_argument('remainder', nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -67,6 +134,8 @@ def main():
             cm = cluster_mgr()
             if args.cluster_command == "get":
                 cm.cluster_get(args.remainder[0])
+            elif args.cluster_command == "list":
+                cm.cluster_list()
     except HTTPNotImplemented:
         sys.exit(404)
     except Exception:

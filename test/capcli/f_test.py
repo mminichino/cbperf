@@ -107,3 +107,23 @@ def test_cli_3():
     except Exception as err:
         raise Exception(f"test_cli_3 failed: unexpected output: {err}")
 
+
+def test_cli_4():
+    cmd = './capella_api_cli.py'
+    args = []
+
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    package_dir = os.path.dirname(current_dir)
+    root_dir = os.path.dirname(package_dir)
+    os.chdir(root_dir)
+
+    try:
+        args.append('cluster')
+        args.append('list')
+        result, output = cli_run(cmd, *args)
+        assert result == 0
+        for line in output.splitlines():
+            assert len(line.split()) >= 4
+    except Exception as err:
+        raise Exception(f"test_cli_4 failed: unexpected output: {err}")
+
