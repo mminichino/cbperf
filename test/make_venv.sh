@@ -3,7 +3,7 @@
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 REQUIREMENTS="requirements.txt"
 
-while getopts "p:r:" opt
+while getopts "p:r:c" opt
 do
   case $opt in
     p)
@@ -11,6 +11,14 @@ do
       ;;
     r)
       REQUIREMENTS=$OPTARG
+      ;;
+    c)
+      for dirname in $(find . -maxdepth 1 -name 'venv[0-9]*')
+      do
+        echo "Removing $dirname"
+        [ -n "$dirname" ] && [ "$dirname" != "." ] && [ "$dirname" != ".." ] && rm -rf $dirname
+      done
+      exit
       ;;
     \?)
       echo "Invalid Argument"
