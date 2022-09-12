@@ -29,6 +29,10 @@ test_fail_*.log
 *.iws
 venv/
 venv36/
+venv37/
+venv38/
+venv39/
+venv310/
 venv.OLD/
 venv.HOLD/
 cbvenv/
