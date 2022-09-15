@@ -258,3 +258,11 @@ class TestPauseError(cbUtilException):
 class BucketStatsError(cbUtilException):
     pass
 
+
+class BucketNotFound(cbUtilException):
+    pass
+
+
+class CollectionNotDefined(cbUtilException):
+    pass
+

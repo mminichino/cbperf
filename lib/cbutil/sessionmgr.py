@@ -163,8 +163,6 @@ class cb_session(object):
         self.restore_session = restore
         self.cloud_api = cloud
         self._session_cache = cb_session_cache()
-        # self.capella_target = False
-        # self.capella_session = None
 
         if self.ssl:
             self.prefix = "https://"
@@ -179,15 +177,6 @@ class cb_session(object):
             self.admin_port = "8091"
             self.node_port = "9102"
 
-        # self.session = requests.Session()
-        # retries = Retry(total=60,
-        #                 backoff_factor=0.1,
-        #                 status_forcelist=[500, 501, 503])
-        # self.session.mount('http://', HTTPAdapter(max_retries=retries))
-        # self.session.mount('https://', HTTPAdapter(max_retries=retries))
-
-        self.init_cluster()
-
     def check_status_code(self, code, endpoint):
         if code == 200:
             return True
@@ -200,11 +189,11 @@ class cb_session(object):
         else:
             raise Exception("Unknown API status code {}".format(code))
 
-    @retry_s(allow_list=(DNSLookupTimeout, NodeUnreachable))
+    @retry_s(retry_count=5)
     def is_reachable(self):
         resolver = dns.resolver.Resolver()
-        resolver.timeout = 15
-        resolver.lifetime = 25
+        resolver.timeout = 5
+        resolver.lifetime = 10
 
         try:
             answer = resolver.resolve(self.srv_prefix + self.rally_host_name, "SRV")
@@ -218,33 +207,33 @@ class cb_session(object):
         except dns.resolver.NXDOMAIN:
             pass
         except dns.exception.Timeout:
-            raise DNSLookupTimeout("{} lookup timeout".format(self.srv_prefix + self.rally_host_name))
+            raise DNSLookupTimeout(f"{self.srv_prefix + self.rally_host_name} lookup timeout")
         except Exception:
             raise
 
         try:
             self.check_node_connectivity(self.rally_cluster_node, self.admin_port)
         except (NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed) as err:
-            raise NodeUnreachable("can not connect to node {}: {}".format(self.rally_cluster_node, err))
+            raise NodeUnreachable(f"can not connect to node {self.rally_cluster_node}: {err}")
 
         return True
 
-    @retry_s(allow_list=(NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed))
+    @retry_s(retry_count=5)
     def check_node_connectivity(self, hostname, port):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(10)
+            sock.settimeout(1)
             result = sock.connect_ex((hostname, int(port)))
             sock.close()
         except socket.timeout:
-            raise NodeConnectionTimeout("timeout connecting to {}:{}".format(hostname, port))
+            raise NodeConnectionTimeout(f"timeout connecting to {hostname}:{port}")
         except socket.error as err:
-            raise NodeConnectionError("error connecting to {}:{}: {}".format(hostname, port, err))
+            raise NodeConnectionError(f"error connecting to {hostname}:{port}: {err}")
 
         if result == 0:
             return True
         else:
-            raise NodeConnectionFailed("node {}:{} unreachable".format(hostname, port))
+            raise NodeConnectionFailed(f"node {hostname}:{port} unreachable")
 
     @property
     def cb_parameters(self):
@@ -286,35 +275,6 @@ class cb_session(object):
     def node_hostnames(self):
         for node in self.all_hosts:
             yield self.prefix + node + ":" + self.node_port
-
-    # def admin_api_get(self, endpoint):
-    #     api_url = self.admin_hostname + endpoint
-    #     response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
-    #
-    #     try:
-    #         self.check_status_code(response.status_code, endpoint)
-    #     except Exception as err:
-    #         message = api_url + ": " + str(err)
-    #         raise AdminApiError(message)
-    #
-    #     response_json = json.loads(response.text)
-    #     return response_json
-
-    # def node_api_get(self, endpoint):
-    #     for node_name in list(self.node_hostnames()):
-    #         api_url = node_name + endpoint
-    #         response = self.session.get(api_url, auth=(self.username, self.password), verify=False, timeout=15)
-    #
-    #         try:
-    #             self.check_status_code(response.status_code, endpoint)
-    #         except NotFoundError:
-    #             continue
-    #         except Exception as err:
-    #             message = api_url + ": " + str(err)
-    #             raise NodeApiError(message)
-    #
-    #         response_json = json.loads(response.text)
-    #         yield response_json
 
     @retry_s(retry_count=10)
     def init_cluster(self):

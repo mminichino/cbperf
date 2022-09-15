@@ -1,4 +1,4 @@
-couchbase==4.0.3
+couchbase==4.0.4
 dnspython==2.1.0
 Jinja2==3.0.3
 psutil==5.8.0

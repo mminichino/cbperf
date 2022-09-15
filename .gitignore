@@ -14,6 +14,7 @@ cb_debug.log
 test_output.out
 test_fail_*.out
 test_fail_*.log
+test/requirements.txt
 .pytest_cache/
 
 # ignore standard Eclipse files
