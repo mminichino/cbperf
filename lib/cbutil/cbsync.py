@@ -20,18 +20,20 @@ except ImportError:
 from couchbase.cluster import Cluster
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
+from couchbase.diagnostics import ServiceType
 import couchbase.subdocument as SD
-from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException,
+from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException, UnAmbiguousTimeoutException,
                                   DocumentNotFoundException, DocumentExistsException, QueryIndexAlreadyExistsException,
                                   BucketAlreadyExistsException,
                                   BucketNotFoundException, WatchQueryIndexTimeoutException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException)
 from itertools import cycle
+import json
 try:
-    from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions
+    from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions, WaitUntilReadyOptions
 except ImportError:
-    from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions
+    from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions, WaitUntilReadyOptions
     from couchbase.options import LockMode
 try:
     from couchbase.management.options import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions, DropPrimaryQueryIndexOptions, DropQueryIndexOptions
@@ -49,50 +51,35 @@ class cb_connect_s(cb_common):
     def init(self):
         try:
             self.is_reachable()
-            self.cluster_health_check(restrict=False)
+            self.connect()
+            self._cluster.wait_until_ready(timedelta(seconds=3),
+                                           WaitUntilReadyOptions(
+                                               service_types=[ServiceType.KeyValue,
+                                                              ServiceType.Query,
+                                                              ServiceType.Management]))
 
             s = api_session(self.username, self.password)
             s.set_host(self.rally_cluster_node, self.ssl, self.admin_port)
-            results = s.api_get('/pools/default').json()
+            self.cluster_info = s.api_get('/pools/default').json()
 
-            if 'nodes' not in results:
-                raise ClusterInitError("Can not get node list from {}.".format(self.rally_host_name))
+            ping_result = self._cluster.ping()
+            result_json = ping_result.as_json()
+            result_dict = json.loads(result_json)
 
-            for i in range(len(results['nodes'])):
-                record = {}
+            for item in result_dict["services"]["mgmt"]:
+                remote = item["remote"].split(":")[0]
+                self.all_hosts.append(remote)
 
-                if 'alternateAddresses' in results['nodes'][i]:
-                    ext_host_name = results['nodes'][i]['alternateAddresses']['external']['hostname']
-                    record['external_name'] = ext_host_name
-                    record['external_ports'] = results['nodes'][i]['alternateAddresses']['external']['ports']
-                    self.external_network_present = True
+            info_result = self._cluster.cluster_info()
 
-                host_name = results['nodes'][i]['configuredHostname']
-                host_name = host_name.split(':')[0]
-
-                record['host_name'] = host_name
-                record['version'] = results['nodes'][i]['version']
-                record['ostype'] = results['nodes'][i]['os']
-                record['services'] = ','.join(results['nodes'][i]['services'])
-                self.cluster_services = list(results['nodes'][i]['services'])
-
-                self.node_list.append(record)
-
-            self.cluster_info = results
-            self.memory_quota = results['memoryQuota']
-            self.sw_version = self.node_list[0]['version']
-
-            if self.use_external_network:
-                self.all_hosts = list(self.node_list[i]['external_name'] for i, item in enumerate(self.node_list))
-            else:
-                self.all_hosts = list(self.node_list[i]['host_name'] for i, item in enumerate(self.node_list))
+            self.sw_version = info_result.server_version
+            self.memory_quota = self.cluster_info['memoryQuota']
 
             self.node_cycle = cycle(self.all_hosts)
 
-
-            self.connect()
-
             return self
+        except UnAmbiguousTimeoutException as err:
+            print(f"Cluster not ready: {err}")
         except Exception as err:
             raise ClusterInitError(f"cluster not reachable at {self.rally_host_name}: {err}")
 
