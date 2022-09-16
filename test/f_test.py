@@ -11,7 +11,7 @@ parent = os.path.dirname(current)
 sys.path.append(parent)
 
 from lib import system
-from lib.cbutil import cbconnect
+from lib.cbutil import cbconnect, cbsync, cbasync
 from lib.cbutil import cbindex
 from lib.cbutil.randomize import randomize
 from lib.cbutil.cbdebug import cb_debug
@@ -400,7 +400,7 @@ async def async_test_step(check, fun, *args, **kwargs):
 
 def cb_connect_test_set_s(host, username, password, bucket, scope, collection, tls):
     global replica_count
-    db = cbconnect.cb_connect(host, username, password, ssl=tls).sync().init()
+    db = cbsync.cb_connect_s(host, username, password, ssl=tls).sync().init()
 
     test_step(None, db.create_bucket, bucket)
     test_step(None, db.bucket_wait, bucket)
@@ -446,48 +446,48 @@ def cb_connect_test_set_s(host, username, password, bucket, scope, collection, t
 
 def cb_connect_test_set_a(host, username, password, bucket, scope, collection, tls):
     global replica_count
-    db = cbconnect.cb_connect(host, username, password, ssl=tls).a_sync().init()
+    db = cbasync.cb_connect_a(host, username, password, ssl=tls).a_sync().init()
     loop = asyncio.get_event_loop()
     loop.set_exception_handler(test_unhandled_exception)
 
-    test_step(None, db.create_bucket, bucket)
-    test_step(None, db.bucket_wait, bucket)
+    loop.run_until_complete(async_test_step(None, db.create_bucket, bucket))
+    loop.run_until_complete(async_test_step(None, db.bucket_wait, bucket))
     if scope == '_default':
-        test_step(None, db.scope)
+        loop.run_until_complete(async_test_step(None, db.scope))
     else:
-        test_step(None, db.create_scope, scope)
-        test_step(None, db.scope_wait, scope)
+        loop.run_until_complete(async_test_step(None, db.create_scope, scope))
+        loop.run_until_complete(async_test_step(None, db.scope_wait, scope))
     if collection == '_default':
-        test_step(None, db.collection)
+        loop.run_until_complete(async_test_step(None, db.collection))
     else:
-        test_step(None, db.create_collection, collection)
-        test_step(None, db.collection_wait, collection)
-    test_step(True, db.is_bucket, bucket)
-    test_step(True, db.is_scope, scope)
-    test_step(True, db.is_collection, collection)
-    test_step(None, db.cb_create_primary_index, replica=replica_count)
-    test_step(None, db.cb_create_index, field="data", replica=replica_count)
-    test_step(None, db.index_wait)
-    test_step(None, db.index_wait, field="data")
-    test_step(True, db.is_index)
-    test_step(True, db.is_index, field="data")
+        loop.run_until_complete(async_test_step(None, db.create_collection, collection))
+        loop.run_until_complete(async_test_step(None, db.collection_wait, collection))
+    loop.run_until_complete(async_test_step(True, db.is_bucket, bucket))
+    loop.run_until_complete(async_test_step(True, db.is_scope, scope))
+    loop.run_until_complete(async_test_step(True, db.is_collection, collection))
+    loop.run_until_complete(async_test_step(None, db.cb_create_primary_index, replica=replica_count))
+    loop.run_until_complete(async_test_step(None, db.cb_create_index, field="data", replica=replica_count))
+    loop.run_until_complete(async_test_step(None, db.index_wait))
+    loop.run_until_complete(async_test_step(None, db.index_wait, field="data"))
+    loop.run_until_complete(async_test_step(True, db.is_index))
+    loop.run_until_complete(async_test_step(True, db.is_index, field="data"))
     loop.run_until_complete(async_test_step(None, db.cb_upsert, "test::1", document))
-    test_step(None, db.bucket_wait, bucket, count=1)
+    loop.run_until_complete(async_test_step(None, db.bucket_wait, bucket, count=1))
     loop.run_until_complete(async_test_step(document, db.cb_get, "test::1"))
-    test_step(1, db.collection_count, expect_count=1)
+    loop.run_until_complete(async_test_step(1, db.collection_count, expect_count=1))
     loop.run_until_complete(async_test_step(query_result, db.cb_query, field="data", empty_retry=True))
     loop.run_until_complete(async_test_step(None, db.cb_upsert, "test::2", document))
-    test_step(None, db.cb_subdoc_multi_upsert, ["test::1", "test::2"], "data", ["new", "new"])
+    loop.run_until_complete(async_test_step(None, db.cb_subdoc_multi_upsert, ["test::1", "test::2"], "data", ["new", "new"]))
     loop.run_until_complete(async_test_step(new_document, db.cb_get, "test::1"))
-    test_step(2, db.collection_count, expect_count=2)
+    loop.run_until_complete(async_test_step(2, db.collection_count, expect_count=2))
     loop.run_until_complete(async_test_step(None, db.cb_upsert, "test::3", document))
     loop.run_until_complete(async_test_step(None, db.cb_subdoc_upsert, "test::3", "data", "new"))
     loop.run_until_complete(async_test_step(new_document, db.cb_get, "test::3"))
-    test_step(None, db.cb_drop_primary_index)
-    test_step(None, db.cb_drop_index, field="data")
-    test_step(None, db.delete_wait)
-    test_step(None, db.delete_wait, field="data")
-    test_step(None, db.drop_bucket, bucket)
+    loop.run_until_complete(async_test_step(None, db.cb_drop_primary_index))
+    loop.run_until_complete(async_test_step(None, db.cb_drop_index, field="data"))
+    loop.run_until_complete(async_test_step(None, db.delete_wait))
+    loop.run_until_complete(async_test_step(None, db.delete_wait, field="data"))
+    loop.run_until_complete(async_test_step(None, db.drop_bucket, bucket))
     check_open_files()
 
 

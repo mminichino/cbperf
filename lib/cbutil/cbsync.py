@@ -399,7 +399,8 @@ class cb_connect_s(cb_common):
             pass
 
     @retry()
-    def cb_drop_index(self, index_name, timeout=120):
+    def cb_drop_index(self, field, timeout=120):
+        index_name = self.effective_index_name(field)
         if self._collection.name != '_default':
             index_options = DropQueryIndexOptions(timeout=timedelta(seconds=timeout),
                                                   collection_name=self._collection.name,
