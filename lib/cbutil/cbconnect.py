@@ -1,13 +1,13 @@
 ##
 ##
 
-from .sessionmgr import cb_session
-from .exceptions import (ClusterConnectException, IsCollectionException, CollectionWaitException, ScopeWaitException, BucketWaitException, BucketNotFound,
-                         CollectionNotDefined, IndexNotReady, IndexNotFoundError, CollectionRemoveError, CollectionCountException, CollectionNameNotFound,
-                         CollectionCountError, CollectionGetError, CollectionUpsertError, CollectionSubdocUpsertError, CollectionSubdocGetError, QueryArgumentsError,
-                         IndexExistsError, QueryEmptyException, decode_error_code, IndexStatError, BucketStatsError, ClusterInitError)
+from .exceptions import (DNSLookupTimeout, IsCollectionException, CollectionWaitException, ScopeWaitException, BucketWaitException, BucketNotFound,
+                         CollectionNotDefined, IndexNotReady, IndexNotFoundError, NodeUnreachable, CollectionCountException, CollectionNameNotFound,
+                         CollectionCountError, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed, CollectionSubdocUpsertError, QueryArgumentsError,
+                         IndexExistsError, QueryEmptyException, decode_error_code, IndexStatError, BucketStatsError,
+                         ClusterKVServiceError, ClusterHealthCheckError, ClusterInitError, ClusterQueryServiceError, ClusterViewServiceError)
 from .httpexceptions import HTTPNotImplemented
-from .retries import RunMode, retry_a, retry_s, retry, MODE_SYNC, MODE_ASYNC
+from .retries import RunMode, retry_s, retry
 from .dbinstance import db_instance
 from .cbdebug import cb_debug
 from .httpsessionmgr import api_session
@@ -22,6 +22,7 @@ from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
 from couchbase.auth import PasswordAuthenticator
 import couchbase.subdocument as SD
+from couchbase.diagnostics import ServiceType, PingState
 from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException,
                                   DocumentNotFoundException, DocumentExistsException, QueryIndexAlreadyExistsException,
                                   BucketAlreadyExistsException, HTTPException,
@@ -31,40 +32,63 @@ from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundExceptio
 import asyncio
 import logging
 import re
-from typing import Callable
-from functools import wraps, partial
-import time
-import os
+import socket
+import dns.resolver
+import sys
+from itertools import cycle
 try:
     from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions
 except ImportError:
     from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions
     from couchbase.options import LockMode
 try:
-    from couchbase.management.options import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions
+    from couchbase.management.options import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions, DropPrimaryQueryIndexOptions, DropQueryIndexOptions
 except ModuleNotFoundError:
-    from couchbase.management.queries import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions
+    from couchbase.management.queries import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions, DropPrimaryQueryIndexOptions, DropQueryIndexOptions
 
 
-class cb_connect(cb_session):
+class cb_connect(object):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, hostname: str, username: str, password: str, ssl=False, external=False):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.loop = asyncio.get_event_loop()
         self.loop.set_exception_handler(self.unhandled_exception)
         self.db = db_instance()
         self._mode = RunMode.Sync.value
-        self._cluster_a = None
-        self._cluster_s = None
         self._cluster = None
-        self._bucket_a = None
-        self._bucket_s = None
         self._bucket = None
         self._scope = None
         self._collection = None
+        self.username = username
+        self.password = password
+        self.ssl = ssl
+        self.rally_host_name = hostname
+        self.rally_cluster_node = self.rally_host_name
+        self.use_external_network = external
+        self.external_network_present = False
+        self.node_list = []
+        self.srv_host_list = []
+        self.all_hosts = []
+        self.node_cycle = None
+        self.cluster_info = None
+        self.sw_version = None
+        self.memory_quota = None
+        self.cluster_services = []
         self.auth = PasswordAuthenticator(self.username, self.password)
         self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=360), kv_timeout=timedelta(seconds=360))
+
+        if self.ssl:
+            self.prefix = "https://"
+            self.cb_prefix = "couchbases://"
+            self.srv_prefix = "_couchbases._tcp."
+            self.admin_port = "18091"
+            self.node_port = "19102"
+        else:
+            self.prefix = "http://"
+            self.cb_prefix = "couchbase://"
+            self.srv_prefix = "_couchbase._tcp."
+            self.admin_port = "8091"
+            self.node_port = "9102"
 
     def construct_key(self, key):
         if type(key) == int or str(key).isdigit():
@@ -121,6 +145,45 @@ class cb_connect(cb_session):
         try:
             self.is_reachable()
             self.cluster_health_check(restrict=False)
+
+            s = api_session(self.username, self.password)
+            s.set_host(self.rally_cluster_node, self.ssl, self.admin_port)
+            results = s.api_get('/pools/default').json()
+
+            if 'nodes' not in results:
+                raise ClusterInitError("Can not get node list from {}.".format(self.rally_host_name))
+
+            for i in range(len(results['nodes'])):
+                record = {}
+
+                if 'alternateAddresses' in results['nodes'][i]:
+                    ext_host_name = results['nodes'][i]['alternateAddresses']['external']['hostname']
+                    record['external_name'] = ext_host_name
+                    record['external_ports'] = results['nodes'][i]['alternateAddresses']['external']['ports']
+                    self.external_network_present = True
+
+                host_name = results['nodes'][i]['configuredHostname']
+                host_name = host_name.split(':')[0]
+
+                record['host_name'] = host_name
+                record['version'] = results['nodes'][i]['version']
+                record['ostype'] = results['nodes'][i]['os']
+                record['services'] = ','.join(results['nodes'][i]['services'])
+                self.cluster_services = list(results['nodes'][i]['services'])
+
+                self.node_list.append(record)
+
+            self.cluster_info = results
+            self.memory_quota = results['memoryQuota']
+            self.sw_version = self.node_list[0]['version']
+
+            if self.use_external_network:
+                self.all_hosts = list(self.node_list[i]['external_name'] for i, item in enumerate(self.node_list))
+            else:
+                self.all_hosts = list(self.node_list[i]['host_name'] for i, item in enumerate(self.node_list))
+
+            self.node_cycle = cycle(self.all_hosts)
+
             if self._mode == 0:
                 self.connect_s()
             else:
@@ -128,6 +191,143 @@ class cb_connect(cb_session):
             return self
         except Exception as err:
             raise ClusterInitError(f"cluster not reachable at {self.rally_host_name}: {err}")
+
+    @property
+    def cb_parameters(self):
+        if self.ssl:
+            return "?ssl=no_verify&network=" + self.cb_network
+        else:
+            return "?network=" + self.cb_network
+
+    @property
+    def cb_connect_string(self):
+        return self.cb_prefix + self.rally_host_name + self.cb_parameters
+
+    @property
+    def cb_network(self):
+        if self.use_external_network:
+            return 'external'
+        else:
+            return 'default'
+
+    @retry(retry_count=5)
+    def is_reachable(self):
+        resolver = dns.resolver.Resolver()
+        resolver.timeout = 5
+        resolver.lifetime = 10
+
+        try:
+            answer = resolver.resolve(self.srv_prefix + self.rally_host_name, "SRV")
+            for srv in answer:
+                record = {'hostname': str(srv.target).rstrip('.')}
+                host_answer = resolver.resolve(record['hostname'], 'A')
+                record['address'] = host_answer[0].address
+                self.srv_host_list.append(record)
+            self.rally_cluster_node = self.srv_host_list[0]['hostname']
+            self.rally_dns_domain = True
+        except dns.resolver.NXDOMAIN:
+            pass
+        except dns.exception.Timeout:
+            raise DNSLookupTimeout(f"{self.srv_prefix + self.rally_host_name} lookup timeout")
+        except Exception:
+            raise
+
+        try:
+            self.check_node_connectivity(self.rally_cluster_node, self.admin_port)
+        except (NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed) as err:
+            raise NodeUnreachable(f"can not connect to node {self.rally_cluster_node}: {err}")
+
+        return True
+
+    @retry(retry_count=5)
+    def check_node_connectivity(self, hostname, port):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((hostname, int(port)))
+            sock.close()
+        except socket.timeout:
+            raise NodeConnectionTimeout(f"timeout connecting to {hostname}:{port}")
+        except socket.error as err:
+            raise NodeConnectionError(f"error connecting to {hostname}:{port}: {err}")
+
+        if result == 0:
+            return True
+        else:
+            raise NodeConnectionFailed(f"node {hostname}:{port} unreachable")
+
+    @retry()
+    def cluster_health_check(self, output=False, restrict=True, noraise=False, extended=False):
+        cb_auth = PasswordAuthenticator(self.username, self.password)
+        cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
+
+        try:
+            cluster = Cluster.connect(self.cb_connect_string, ClusterOptions(cb_auth, timeout_options=cb_timeouts))
+            result = cluster.ping()
+        except SystemError as err:
+            if isinstance(err.__cause__, HTTPException) and err.__cause__.error_code == 1049:
+                self.use_external_network = not self.use_external_network
+                raise ClusterHealthCheckError("HTTP unknown host: {}".format(err.__cause__))
+            else:
+                raise ClusterHealthCheckError("HTTP error: {}".format(err))
+        except Exception as err:
+            raise ClusterHealthCheckError("cluster health check error: {}".format(err))
+
+        endpoint: ServiceType
+        for endpoint, reports in result.endpoints.items():
+            for report in reports:
+                if restrict and endpoint != ServiceType.KeyValue:
+                    continue
+                report_string = " {0}: {1} took {2} {3}".format(
+                    endpoint.value,
+                    report.remote,
+                    report.latency,
+                    report.state.value)
+                if output:
+                    print(report_string)
+                    continue
+                if not report.state == PingState.OK:
+                    if noraise:
+                        print(f"{endpoint.value} service not ok: {report.state}")
+                        sys.exit(2)
+                    else:
+                        if endpoint == ServiceType.KeyValue:
+                            raise ClusterKVServiceError("{} KV service not ok".format(self.cb_connect_string))
+                        elif endpoint == ServiceType.Query:
+                            raise ClusterQueryServiceError("{} query service not ok".format(self.cb_connect_string))
+                        elif endpoint == ServiceType.View:
+                            raise ClusterViewServiceError("{} view service not ok".format(self.cb_connect_string))
+                        else:
+                            raise ClusterHealthCheckError("{} service {} not ok".format(self.cb_connect_string, endpoint.value))
+
+        if output:
+            print("Cluster Diagnostics:")
+            diag_result = cluster.diagnostics()
+            for endpoint, reports in diag_result.endpoints.items():
+                for report in reports:
+                    report_string = " {0}: {1} last activity {2} {3}".format(
+                        endpoint.value,
+                        report.remote,
+                        report.last_activity,
+                        report.state.value)
+                    print(report_string)
+
+        if extended:
+            try:
+                if 'n1ql' in self.cluster_services:
+                    query = "select * from system:datastores ;"
+                    result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
+                    print(f"Datastore query ok: returned {sum(1 for i in result.rows())} records")
+                if 'index' in self.cluster_services:
+                    query = "select * from system:indexes ;"
+                    result = cluster.query(query, QueryOptions(metrics=False, adhoc=True))
+                    print(f"Index query ok: returned {sum(1 for i in result.rows())} records")
+            except Exception as err:
+                if noraise:
+                    print(f"query service not ready: {err}")
+                    sys.exit(3)
+                else:
+                    raise ClusterQueryServiceError(f"query service test error: {err}")
 
     def switch_mode(self, mode):
         self._mode = mode
@@ -156,7 +356,7 @@ class cb_connect(cb_session):
     async def bucket_a(self, name):
         if self._cluster:
             self._bucket = self._cluster.bucket(name)
-            await self._bucket.on_connect()
+            # await self._bucket.on_connect()
         else:
             self._bucket = None
 
@@ -212,27 +412,41 @@ class cb_connect(cb_session):
         else:
             self._collection = None
 
-    @retry_a(retry_count=10)
-    async def quick_connect_a(self, bucket, scope, collection):
-        try:
-            await self.connect_a()
-            await self.bucket_a(bucket)
-            await self.scope_a(scope)
-            await self.collection_a(collection)
-            return True
-        except Exception as err:
-            raise ClusterConnectException(f"quick connect error: {err}")
+    # @retry_a(retry_count=10)
+    # async def quick_connect_a(self, bucket, scope, collection):
+    #     try:
+    #         await self.connect_a()
+    #         await self.bucket_a(bucket)
+    #         await self.scope_a(scope)
+    #         await self.collection_a(collection)
+    #         return True
+    #     except Exception as err:
+    #         raise ClusterConnectException(f"quick connect error: {err}")
+    #
+    # @retry_s(retry_count=10)
+    # def quick_connect_s(self, bucket, scope, collection):
+    #     try:
+    #         self.connect_s()
+    #         self.bucket_s(bucket)
+    #         self.scope_s(scope)
+    #         self.collection_s(collection)
+    #         return True
+    #     except Exception as err:
+    #         raise ClusterConnectException(f"quick connect error: {err}")
 
-    @retry_s(retry_count=10)
-    def quick_connect_s(self, bucket, scope, collection):
-        try:
-            self.connect_s()
-            self.bucket_s(bucket)
-            self.scope_s(scope)
-            self.collection_s(collection)
-            return True
-        except Exception as err:
-            raise ClusterConnectException(f"quick connect error: {err}")
+    def scope_list_s(self):
+        cm = self._bucket.collections()
+        return cm.get_all_scopes()
+
+    async def scope_list_a(self):
+        cm = self._bucket.collections()
+        return await cm.get_all_scopes()
+
+    def scope_list(self):
+        if self._mode == 0:
+            return self.scope_list_s()
+        else:
+            return self.loop.run_until_complete(self.scope_list_a())
 
     @retry(factor=0.5)
     def is_bucket(self, bucket):
@@ -245,17 +459,17 @@ class cb_connect(cb_session):
         except HTTPNotImplemented:
             raise BucketNotFound(f"bucket {bucket} not found")
 
-    @retry_s(always_raise_list=(AttributeError,), retry_count=10)
+    @retry_s(always_raise_list=(AttributeError,))
     def is_scope(self, scope):
         try:
-            return next((s for s in self.db.cm_s.get_all_scopes() if s.name == scope), None)
+            return next((s for s in self.scope_list() if s.name == scope), None)
         except AttributeError:
             return None
 
-    @retry_s(always_raise_list=(AttributeError,), retry_count=10)
+    @retry_s(always_raise_list=(AttributeError,))
     def is_collection(self, collection):
         try:
-            scope_spec = next((s for s in self.db.cm_s.get_all_scopes() if s.name == self.db.scope_name), None)
+            scope_spec = next((s for s in self.scope_list() if s.name == self._scope.name), None)
             if not scope_spec:
                 raise IsCollectionException(f"is_collection: no scope configured")
             return next((c for c in scope_spec.collections if c.name == collection), None)
@@ -402,8 +616,7 @@ class cb_connect(cb_session):
         else:
             self.loop.run_until_complete(self.drop_collection_a(name))
 
-    @retry(factor=0.5)
-    def collection_count(self, expect_count: int = 0) -> int:
+    def collection_count_s(self, expect_count: int = 0) -> int:
         try:
             query = 'select count(*) as count from ' + self.keyspace + ';'
             result = self.cb_query(sql=query)
@@ -415,6 +628,27 @@ class cb_connect(cb_session):
         except Exception as err:
             self.logger.error(f"collection_count: error occurred: {err}")
             raise CollectionCountError(f"can not get item count for {self.keyspace}: {err}")
+
+    async def collection_count_a(self, expect_count: int = 0) -> int:
+        try:
+            query = 'select count(*) as count from ' + self.keyspace + ';'
+            result = await self.cb_query(sql=query)
+            count: int = int(result[0]['count'])
+            if expect_count > 0:
+                if count < expect_count:
+                    raise CollectionCountException(f"expect count {expect_count} but current count is {count}")
+            return count
+        except Exception as err:
+            self.logger.error(f"collection_count: error occurred: {err}")
+            raise CollectionCountError(f"can not get item count for {self.keyspace}: {err}")
+
+    @retry(factor=0.5)
+    def collection_count(self, expect_count: int = 0) -> int:
+        self.logger.debug(f"collection_count [{RunMode(self._mode).name}]: expect {expect_count}")
+        if self._mode == 0:
+            return self.collection_count_s(expect_count)
+        else:
+            return self.loop.run_until_complete(self.collection_count_a(expect_count))
 
     def cb_get_s(self, document_id):
         try:
@@ -498,7 +732,7 @@ class cb_connect(cb_session):
         tasks = set()
         executor = concurrent.futures.ThreadPoolExecutor()
         for n in range(len(key_list)):
-            tasks.add(executor.submit(self.cb_subdoc_upsert, key_list[n], field, value_list[n]))
+            tasks.add(executor.submit(self.cb_subdoc_upsert_s, key_list[n], field, value_list[n]))
         while tasks:
             done, tasks = concurrent.futures.wait(tasks, return_when=concurrent.futures.FIRST_COMPLETED)
             for task in done:
@@ -507,12 +741,11 @@ class cb_connect(cb_session):
                 except Exception as err:
                     raise CollectionSubdocUpsertError(f"multi upsert error: {err}")
 
-    async def cb_subdoc_multi_upsert_a(self, key_list, field, value_list):
-        loop = asyncio.get_event_loop()
+    def cb_subdoc_multi_upsert_a(self, key_list, field, value_list):
         tasks = []
         for n in range(len(key_list)):
-            tasks.append(loop.create_task(self.cb_subdoc_upsert(key_list[n], field, value_list[n])))
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+            tasks.append(self.loop.create_task(self.cb_subdoc_upsert_a(key_list[n], field, value_list[n])))
+        results = self.loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
         for result in results:
             if isinstance(result, Exception):
                 raise result
@@ -523,7 +756,7 @@ class cb_connect(cb_session):
         if self._mode == 0:
             self.cb_subdoc_multi_upsert_s(key_list, field, value_list)
         else:
-            self.loop.run_until_complete(self.cb_subdoc_multi_upsert_a(key_list, field, value_list))
+            self.cb_subdoc_multi_upsert_a(key_list, field, value_list)
 
     def cb_subdoc_get_s(self, document_id, field):
         result = self._collection.lookup_in(document_id, [SD.get(field)])
@@ -667,17 +900,17 @@ class cb_connect(cb_session):
             index_name = "#primary"
         return index_name
 
-    def cb_create_primary_index_s(self, replicas=0, timeout=120):
+    def cb_create_primary_index_s(self, replica=0, timeout=120):
         if self._collection.name != '_default':
             index_options = CreatePrimaryQueryIndexOptions(deferred=False,
                                                            timeout=timedelta(seconds=timeout),
-                                                           num_replicas=replicas,
+                                                           num_replicas=replica,
                                                            collection_name=self._collection.name,
                                                            scope_name=self._scope.name)
         else:
             index_options = CreatePrimaryQueryIndexOptions(deferred=False,
                                                            timeout=timedelta(seconds=timeout),
-                                                           num_replicas=replicas)
+                                                           num_replicas=replica)
         self.logger.debug(f"cb_create_primary_index [{RunMode(self._mode).name}]: creating primary index on {self._collection.name}")
         try:
             qim = self._cluster.query_indexes()
@@ -685,17 +918,17 @@ class cb_connect(cb_session):
         except QueryIndexAlreadyExistsException:
             pass
 
-    async def cb_create_primary_index_a(self, replicas=0, timeout=120):
+    async def cb_create_primary_index_a(self, replica=0, timeout=120):
         if self._collection.name != '_default':
             index_options = CreatePrimaryQueryIndexOptions(deferred=False,
                                                            timeout=timedelta(seconds=timeout),
-                                                           num_replicas=replicas,
+                                                           num_replicas=replica,
                                                            collection_name=self._collection.name,
                                                            scope_name=self._scope.name)
         else:
             index_options = CreatePrimaryQueryIndexOptions(deferred=False,
                                                            timeout=timedelta(seconds=timeout),
-                                                           num_replicas=replicas)
+                                                           num_replicas=replica)
         self.logger.debug(f"cb_create_primary_index [{RunMode(self._mode).name}]: creating primary index on {self._collection.name}")
         try:
             qim = self._cluster.query_indexes()
@@ -704,27 +937,27 @@ class cb_connect(cb_session):
             pass
 
     @retry()
-    def cb_create_primary_index(self, replicas=0, timeout=120):
+    def cb_create_primary_index(self, replica=0, timeout=120):
         self.logger.debug(f"cb_create_primary_index [{RunMode(self._mode).name}]: create primary index")
         if self._collection:
             if self._mode == 0:
-                return self.cb_create_primary_index_s(replicas, timeout)
+                return self.cb_create_primary_index_s(replica, timeout)
             else:
-                return self.loop.run_until_complete(self.cb_create_primary_index_a(replicas, timeout))
+                return self.loop.run_until_complete(self.cb_create_primary_index_a(replica, timeout))
         else:
             raise CollectionNotDefined(f"cb_create_primary_index: connect to collection first")
 
-    def cb_create_index_s(self, field, replicas=0, timeout=120):
+    def cb_create_index_s(self, field, replica=0, timeout=120):
         if self._collection.name != '_default':
             index_options = CreateQueryIndexOptions(deferred=False,
                                                     timeout=timedelta(seconds=timeout),
-                                                    num_replicas=replicas,
+                                                    num_replicas=replica,
                                                     collection_name=self._collection.name,
                                                     scope_name=self._scope.name)
         else:
             index_options = CreateQueryIndexOptions(deferred=False,
                                                     timeout=timedelta(seconds=timeout),
-                                                    num_replicas=replicas)
+                                                    num_replicas=replica)
         self.logger.debug(f"cb_create_primary_index [{RunMode(self._mode).name}]: creating index on {self._collection.name}")
         try:
             index_name = self.index_name(field)
@@ -733,17 +966,17 @@ class cb_connect(cb_session):
         except QueryIndexAlreadyExistsException:
             pass
 
-    async def cb_create_index_a(self, field, replicas=0, timeout=120):
+    async def cb_create_index_a(self, field, replica=0, timeout=120):
         if self._collection.name != '_default':
             index_options = CreateQueryIndexOptions(deferred=False,
                                                     timeout=timedelta(seconds=timeout),
-                                                    num_replicas=replicas,
+                                                    num_replicas=replica,
                                                     collection_name=self._collection.name,
                                                     scope_name=self._scope.name)
         else:
             index_options = CreateQueryIndexOptions(deferred=False,
                                                     timeout=timedelta(seconds=timeout),
-                                                    num_replicas=replicas)
+                                                    num_replicas=replica)
         self.logger.debug(f"cb_create_primary_index [{RunMode(self._mode).name}]: creating index on {self._collection.name}")
         try:
             index_name = self.index_name(field)
@@ -753,15 +986,94 @@ class cb_connect(cb_session):
             pass
 
     @retry()
-    def cb_create_index(self, field, replicas=0, timeout=120):
+    def cb_create_index(self, field, replica=0, timeout=120):
         self.logger.debug(f"cb_create_index [{RunMode(self._mode).name}]: create index on field {field}")
         if self._collection:
             if self._mode == 0:
-                return self.cb_create_index_s(field, replicas, timeout)
+                return self.cb_create_index_s(field, replica, timeout)
             else:
-                return self.loop.run_until_complete(self.cb_create_index_a(field, replicas, timeout))
+                return self.loop.run_until_complete(self.cb_create_index_a(field, replica, timeout))
         else:
             raise CollectionNotDefined(f"cb_create_index: connect to collection first")
+
+    def cb_drop_primary_index_s(self, timeout=120):
+        if self._collection.name != '_default':
+            index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout),
+                                                         collection_name=self._collection.name,
+                                                         scope_name=self._scope.name)
+        else:
+            index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout))
+        self.logger.debug(f"cb_drop_primary_index [{RunMode(self._mode).name}]: dropping primary index on {self.collection_name}")
+        try:
+            qim = self._cluster.query_indexes()
+            qim.drop_primary_index(self._bucket.name, index_options)
+        except QueryIndexNotFoundException:
+            pass
+
+    async def cb_drop_primary_index_a(self, timeout=120):
+        if self._collection.name != '_default':
+            index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout),
+                                                         collection_name=self._collection.name,
+                                                         scope_name=self._scope.name)
+        else:
+            index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout))
+        self.logger.debug(f"cb_drop_primary_index [{RunMode(self._mode).name}]: dropping primary index on {self.collection_name}")
+        try:
+            qim = self._cluster.query_indexes()
+            await qim.drop_primary_index(self._bucket.name, index_options)
+        except QueryIndexNotFoundException:
+            pass
+
+    @retry()
+    def cb_drop_primary_index(self, timeout=120):
+        self.logger.debug(f"cb_drop_primary_index [{RunMode(self._mode).name}]: dropping primary index")
+        if self._collection:
+            if self._mode == 0:
+                return self.cb_drop_primary_index_s(timeout)
+            else:
+                return self.loop.run_until_complete(self.cb_drop_primary_index_a(timeout))
+        else:
+            raise CollectionNotDefined(f"cb_drop_primary_index: connect to collection first")
+
+    def cb_drop_index_s(self, index_name, timeout=120):
+        if self._collection.name != '_default':
+            index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout),
+                                                         collection_name=self._collection.name,
+                                                         scope_name=self._scope.name)
+        else:
+            index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout))
+        self.logger.debug(f"cb_drop_index [{RunMode(self._mode).name}]: drop index {index_name}")
+        try:
+            qim = self._cluster.query_indexes()
+            qim.drop_index(self._bucket.name, index_name, index_options)
+        except QueryIndexNotFoundException:
+            pass
+
+    async def cb_drop_index_a(self, index_name, timeout=120):
+        if self._collection.name != '_default':
+            index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout),
+                                                         collection_name=self._collection.name,
+                                                         scope_name=self._scope.name)
+        else:
+            index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout))
+        self.logger.debug(f"cb_drop_index [{RunMode(self._mode).name}]: drop index {index_name}")
+        try:
+            qim = self._cluster.query_indexes()
+            await qim.drop_index(self._bucket.name, index_name, index_options)
+        except QueryIndexNotFoundException:
+            pass
+
+    @retry()
+    def cb_drop_index(self, field, timeout=120):
+        index_name = self.effective_index_name(field)
+        self.logger.debug(f"cb_drop_index [{RunMode(self._mode).name}]: drop index on field {field}")
+        if self._collection:
+            if self._mode == 0:
+                return self.cb_drop_index_s(index_name, timeout)
+            else:
+                return self.loop.run_until_complete(self.cb_drop_index_a(index_name, timeout))
+        else:
+            raise CollectionNotDefined(f"cb_drop_index: connect to collection first")
 
     def index_list_all_s(self):
         qim = self._cluster.query_indexes()
@@ -787,16 +1099,12 @@ class cb_connect(cb_session):
     def is_index(self, field=None):
         index_name = self.effective_index_name(field)
         try:
-            if self._collection.name == "_default":
-                collection_name = self._bucket.name
-            else:
-                collection_name = self._collection.name
             index_list = self.index_list_all()
-            for i in range(len(index_list)):
+            for item in index_list:
                 if index_name == '#primary':
-                    if index_list[i].collection_name == collection_name and index_list[i].name == '#primary':
+                    if (item.collection_name == self.collection_name or item.bucket_name == self.collection_name) and item.name == '#primary':
                         return True
-                elif index_list[i].name == index_name:
+                elif item.name == index_name:
                     return True
         except Exception as err:
             raise IndexStatError("Could not get index status: {}".format(err))
@@ -836,13 +1144,13 @@ class cb_connect(cb_session):
     #
     #     return index_data
 
-    def get_index_key(self, field=None):
+    def get_index_key_s(self, field=None):
         index_name = self.effective_index_name(field)
         doc_key_field = 'meta().id'
-        index_list = self.index_list_all()
+        index_list = self.index_list_all_s()
 
         for item in index_list:
-            if item.name == index_name and item.keyspace == self.collection_name:
+            if item.name == index_name and (item.collection_name == self.collection_name or item.bucket_name == self.collection_name):
                 if len(item.index_key) == 0:
                     return doc_key_field
                 else:
@@ -850,19 +1158,57 @@ class cb_connect(cb_session):
 
         raise IndexNotFoundError(f"index {index_name} not found")
 
-    def index_check(self, field=None, check_count=0):
+    async def get_index_key_a(self, field=None):
+        index_name = self.effective_index_name(field)
+        doc_key_field = 'meta().id'
+        index_list = await self.index_list_all_a()
+
+        for item in index_list:
+            if item.name == index_name and (item.collection_name == self.collection_name or item.bucket_name == self.collection_name):
+                if len(item.index_key) == 0:
+                    return doc_key_field
+                else:
+                    return item.index_key[0]
+
+        raise IndexNotFoundError(f"index {index_name} not found")
+
+    def index_check_s(self, field=None, check_count=0):
         try:
-            query_field = self.get_index_key(field)
+            query_field = self.get_index_key_s(field)
         except Exception:
             raise
 
         query_text = f"SELECT {query_field} FROM {self.keyspace} WHERE TOSTRING({query_field}) LIKE \"%\" ;"
         result = self.cb_query(sql=query_text)
 
-        if len(result) >= check_count and len(result) > 0:
+        if len(result) >= check_count:
             return True
         else:
-            raise IndexNotReady(f"index_check: index not ready")
+            raise IndexNotReady(f"index_check: field: {field} count {check_count} len {len(result)}: index not ready")
+
+    async def index_check_a(self, field=None, check_count=0):
+        try:
+            query_field = await self.get_index_key_a(field)
+        except Exception:
+            raise
+
+        query_text = f"SELECT {query_field} FROM {self.keyspace} WHERE TOSTRING({query_field}) LIKE \"%\" ;"
+        result = await self.cb_query(sql=query_text)
+
+        if len(result) >= check_count:
+            return True
+        else:
+            raise IndexNotReady(f"index_check: field: {field} count {check_count} len {len(result)}: index not ready")
+
+    def index_check(self, field=None, check_count=0):
+        self.logger.debug(f"index_check [{RunMode(self._mode).name}]: field: {field} count {check_count}")
+        if self._collection:
+            if self._mode == 0:
+                return self.index_check_s(field, check_count)
+            else:
+                return self.loop.run_until_complete(self.index_check_a(field, check_count))
+        else:
+            raise CollectionNotDefined(f"index_check: connect to collection first")
 
     def index_online_s(self, name=None, primary=False, timeout=120):
         if primary:
@@ -906,7 +1252,7 @@ class cb_connect(cb_session):
         try:
             index_list = self.index_list_all()
             for item in index_list:
-                if item.keyspace == self.collection_name:
+                if item.collection_name == self.collection_name or item.bucket_name == self.collection_name:
                     index_list[item.id] = item.name
             return index_list
         except Exception as err:

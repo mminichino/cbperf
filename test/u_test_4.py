@@ -36,7 +36,7 @@ current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
 sys.path.append(parent)
 
-from lib.cbutil import cbconnect
+from lib.cbutil import cbconnect, cbsync, cbasync
 from lib.cbutil.retries import RunMode
 
 error_count = 0
@@ -230,36 +230,41 @@ class cbdb(object):
             "two": "two",
             "three": "tree"
         }
+        loop = asyncio.get_event_loop()
 
         tasks = []
-        db_s = cbconnect.cb_connect(self.host, self.username, self.password, ssl=self.ssl).sync().init()
-        db_a = cbconnect.cb_connect(self.host, self.username, self.password, ssl=self.ssl).a_sync().init()
+        db_s = cbsync.cb_connect_s(self.host, self.username, self.password, ssl=self.ssl).sync().init()
+        db_a = cbasync.cb_connect_a(self.host, self.username, self.password, ssl=self.ssl).a_sync().init()
         db_s.create_bucket(bucket)
-        db_a.create_bucket(bucket)
+        loop.run_until_complete(db_a.create_bucket(bucket))
         if scope:
             db_s.create_scope(scope)
-            db_a.create_scope(scope)
+            loop.run_until_complete(db_a.create_scope(scope))
         else:
             db_s.scope()
-            db_a.scope()
+            loop.run_until_complete(db_a.scope())
         if collection:
             db_s.create_collection(collection)
-            db_a.create_collection(collection)
+            loop.run_until_complete(db_a.create_collection(collection))
         else:
             db_s.collection()
-            db_a.collection()
+            loop.run_until_complete(db_a.collection())
         db_s.cb_create_primary_index()
         db_s.cb_create_index("data")
+        db_s.index_wait()
+        db_s.index_wait("data")
+        loop.run_until_complete(db_a.index_wait())
+        loop.run_until_complete(db_a.index_wait("data"))
         db_s.cb_upsert(1, document)
         db_s.cb_get(1)
         db_s.cb_query(field="data", empty_retry=True)
-        tasks.append(self.loop.create_task(db_a.cb_upsert(1, document)))
-        tasks.append(self.loop.create_task(db_a.cb_get(1)))
-        tasks.append(self.loop.create_task(db_a.cb_query(field="data", empty_retry=True)))
-        results = self.loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-        for result in results:
-            if isinstance(result, Exception):
-                raise result
+        loop.run_until_complete(db_a.cb_upsert(1, document))
+        loop.run_until_complete(db_a.cb_get(1))
+        loop.run_until_complete(db_a.cb_query(field="data", empty_retry=True))
+        # results = self.loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+        # for result in results:
+        #     if isinstance(result, Exception):
+        #         raise result
         # try:
         #     print("Creating bucket")
         #     self.bm.create_bucket(CreateBucketSettings(name=self.bucket,
@@ -330,6 +335,7 @@ try:
 except Exception as e:
     print("test: error: %s" % str(e))
     error_count += 1
+    raise
 
 if error_count > 0:
     print(f"Error count: {error_count}")
