@@ -400,7 +400,7 @@ async def async_test_step(check, fun, *args, **kwargs):
 
 def cb_connect_test_set_s(host, username, password, bucket, scope, collection, tls):
     global replica_count
-    db = cbsync.cb_connect_s(host, username, password, ssl=tls).sync().init()
+    db = cbsync.cb_connect_s(host, username, password, ssl=tls).init()
 
     test_step(None, db.create_bucket, bucket)
     test_step(None, db.bucket_wait, bucket)
@@ -446,9 +446,9 @@ def cb_connect_test_set_s(host, username, password, bucket, scope, collection, t
 
 def cb_connect_test_set_a(host, username, password, bucket, scope, collection, tls):
     global replica_count
-    db = cbasync.cb_connect_a(host, username, password, ssl=tls).a_sync().init()
     loop = asyncio.get_event_loop()
     loop.set_exception_handler(test_unhandled_exception)
+    db = loop.run_until_complete(cbasync.cb_connect_a(host, username, password, ssl=tls).init())
 
     loop.run_until_complete(async_test_step(None, db.create_bucket, bucket))
     loop.run_until_complete(async_test_step(None, db.bucket_wait, bucket))

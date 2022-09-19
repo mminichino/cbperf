@@ -36,9 +36,11 @@ except ImportError:
     from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions, WaitUntilReadyOptions
     from couchbase.options import LockMode
 try:
-    from couchbase.management.options import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions, DropPrimaryQueryIndexOptions, DropQueryIndexOptions
+    from couchbase.management.options import (CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions,
+                                              DropPrimaryQueryIndexOptions, DropQueryIndexOptions)
 except ModuleNotFoundError:
-    from couchbase.management.queries import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions, DropPrimaryQueryIndexOptions, DropQueryIndexOptions
+    from couchbase.management.queries import (CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions,
+                                              DropPrimaryQueryIndexOptions, DropQueryIndexOptions)
 
 
 class cb_connect_s(cb_common):
@@ -453,7 +455,7 @@ class cb_connect_s(cb_common):
         query_text = f"SELECT {query_field} FROM {self.keyspace} WHERE TOSTRING({query_field}) LIKE \"%\" ;"
         result = self.cb_query(sql=query_text)
 
-        if len(result) >= check_count:
+        if check_count >= len(result):
             return True
         else:
             raise IndexNotReady(f"index_check: field: {field} count {check_count} len {len(result)}: index not ready")
@@ -473,12 +475,13 @@ class cb_connect_s(cb_common):
 
     @retry(factor=0.5, allow_list=(IndexNotReady,))
     def index_list(self):
+        return_list = {}
         try:
             index_list = self.index_list_all()
             for item in index_list:
                 if item.collection_name == self.collection_name or item.bucket_name == self.collection_name:
-                    index_list[item.id] = item.name
-            return index_list
+                    return_list[item.name] = item.state
+            return return_list
         except Exception as err:
             raise IndexNotReady(f"index_list: bucket {self._bucket.name} error: {err}")
 

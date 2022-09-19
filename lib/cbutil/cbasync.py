@@ -35,9 +35,11 @@ except ImportError:
     from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions, WaitUntilReadyOptions
     from couchbase.options import LockMode
 try:
-    from couchbase.management.options import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions, DropPrimaryQueryIndexOptions, DropQueryIndexOptions
+    from couchbase.management.options import (CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions,
+                                              DropPrimaryQueryIndexOptions, DropQueryIndexOptions)
 except ModuleNotFoundError:
-    from couchbase.management.queries import CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions, DropPrimaryQueryIndexOptions, DropQueryIndexOptions
+    from couchbase.management.queries import (CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions,
+                                              DropPrimaryQueryIndexOptions, DropQueryIndexOptions)
 
 
 class cb_connect_a(cb_common):
@@ -47,21 +49,21 @@ class cb_connect_a(cb_common):
         self._mode = RunMode.Async.value
         self._mode_str = RunMode(self._mode).name
 
-    def init(self):
+    async def init(self):
         try:
             self.is_reachable()
-            self.loop.run_until_complete(self.connect())
-            self.loop.run_until_complete(self._cluster.wait_until_ready(timedelta(seconds=3),
-                                                                        WaitUntilReadyOptions(
-                                                                        service_types=[ServiceType.KeyValue,
-                                                                                       ServiceType.Query,
-                                                                                       ServiceType.Management])))
+            await self.connect()
+            await self._cluster.wait_until_ready(timedelta(seconds=3),
+                                                 WaitUntilReadyOptions(
+                                                 service_types=[ServiceType.KeyValue,
+                                                                ServiceType.Query,
+                                                                ServiceType.Management]))
 
             s = api_session(self.username, self.password)
             s.set_host(self.rally_cluster_node, self.ssl, self.admin_port)
             self.cluster_info = s.api_get('/pools/default').json()
 
-            ping_result = self.loop.run_until_complete(self._cluster.ping())
+            ping_result = await self._cluster.ping()
             result_json = ping_result.as_json()
             result_dict = json.loads(result_json)
 
@@ -69,7 +71,7 @@ class cb_connect_a(cb_common):
                 remote = item["remote"].split(":")[0]
                 self.all_hosts.append(remote)
 
-            info_result = self.loop.run_until_complete(self._cluster.cluster_info())
+            info_result = await self._cluster.cluster_info()
 
             self.sw_version = info_result.server_version
             self.memory_quota = self.cluster_info['memoryQuota']
@@ -95,6 +97,7 @@ class cb_connect_a(cb_common):
         self.logger.debug(f"bucket [{self._mode_str}]: connecting bucket {name}")
         if self._cluster:
             self._bucket = self._cluster.bucket(name)
+            await self._bucket.on_connect()
         else:
             self._bucket = None
 
@@ -454,7 +457,7 @@ class cb_connect_a(cb_common):
         query_text = f"SELECT {query_field} FROM {self.keyspace} WHERE TOSTRING({query_field}) LIKE \"%\" ;"
         result = await self.cb_query(sql=query_text)
 
-        if len(result) >= check_count:
+        if check_count >= len(result):
             return True
         else:
             raise IndexNotReady(f"index_check: field: {field} count {check_count} len {len(result)}: index not ready")
@@ -474,12 +477,13 @@ class cb_connect_a(cb_common):
 
     @retry(factor=0.5, allow_list=(IndexNotReady,))
     async def index_list(self):
+        return_list = {}
         try:
             index_list = await self.index_list_all()
             for item in index_list:
                 if item.collection_name == self.collection_name or item.bucket_name == self.collection_name:
-                    index_list[item.id] = item.name
-            return index_list
+                    return_list[item.name] = item.state
+            return return_list
         except Exception as err:
             raise IndexNotReady(f"index_list: bucket {self._bucket.name} error: {err}")
 

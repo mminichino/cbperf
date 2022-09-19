@@ -5,12 +5,13 @@ from lib.cbutil.cbdebug import cb_debug
 from lib.cbutil.randomize import randomize, fastRandom
 from lib.constants import *
 from lib.cbutil.cbconnect import cb_connect
+from lib.cbutil.cbsync import cb_connect_s
+from lib.cbutil.cbasync import cb_connect_a
 from queue import Empty
 import asyncio
 import time
 import numpy as np
 import sys
-import threading
 import concurrent.futures
 
 
@@ -255,9 +256,11 @@ class test_mods(object):
             return
 
         try:
-            logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            await db.quick_connect_a(coll_obj.bucket, coll_obj.scope, coll_obj.name)
+            logger.info(f"test_thread_{n:03d}: connecting to {self.host} keyspace {coll_obj.bucket}.{coll_obj.scope}.{coll_obj.name}")
+            db = await cb_connect_a(self.host, self.username, self.password, ssl=self.tls).init()
+            await db.bucket(coll_obj.bucket)
+            await db.scope(coll_obj.scope)
+            await db.collection(coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
@@ -298,14 +301,14 @@ class test_mods(object):
                     if op_select.write(record_number):
                         document = r.processTemplate()
                         document[self.id_field] = record_number
-                        tasks.append(loop.create_task(db.cb_upsert_a(record_number, document, name=coll_obj.name)))
+                        tasks.append(loop.create_task(db.cb_upsert(record_number, document)))
                     else:
                         if mode == REMOVE_DATA:
-                            tasks.append(loop.create_task(db.cb_remove_a(record_number, name=coll_obj.name)))
+                            tasks.append(loop.create_task(db.cb_remove(record_number)))
                         elif mode == QUERY_TEST:
-                            tasks.append(loop.create_task(db.cb_query_a(field=query_field, name=coll_obj.name, where=id_field, value=record_number)))
+                            tasks.append(loop.create_task(db.cb_query(field=query_field, where=id_field, value=record_number)))
                         else:
-                            tasks.append(loop.create_task(db.cb_get_a(record_number, name=coll_obj.name)))
+                            tasks.append(loop.create_task(db.cb_get(record_number)))
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
@@ -313,6 +316,7 @@ class test_mods(object):
             if len(tasks) > 0:
                 await asyncio.sleep(0)
                 results = await asyncio.gather(*tasks, return_exceptions=True)
+                logger.debug(f"test_thread_{n:03d}: {len(results)} results")
                 for result in results:
                     if isinstance(result, Exception):
                         status_vector[0] = 1
@@ -335,6 +339,7 @@ class test_mods(object):
             else:
                 break
 
+        logger.info(f"test_thread_{n:03d}: task complete, exiting.")
         debugger.close()
 
     def test_run_s(self, *args, **kwargs):
@@ -372,8 +377,10 @@ class test_mods(object):
 
         try:
             logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache)
-            db.quick_connect_s(coll_obj.bucket, coll_obj.scope, coll_obj.name)
+            db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls).init()
+            db.bucket(coll_obj.bucket)
+            db.scope(coll_obj.scope)
+            db.collection(coll_obj.name)
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
@@ -414,14 +421,14 @@ class test_mods(object):
                     if op_select.write(record_number):
                         document = r.processTemplate()
                         document[self.id_field] = record_number
-                        tasks.add(executor.submit(db.cb_upsert_s, record_number, document, name=coll_obj.name))
+                        tasks.add(executor.submit(db.cb_upsert, record_number, document))
                     else:
                         if mode == REMOVE_DATA:
-                            tasks.add(executor.submit(db.cb_remove_s, record_number, name=coll_obj.name))
+                            tasks.add(executor.submit(db.cb_remove, record_number))
                         elif mode == QUERY_TEST:
-                            tasks.add(executor.submit(db.cb_query_s, field=query_field, name=coll_obj.name, where=id_field, value=record_number))
+                            tasks.add(executor.submit(db.cb_query, field=query_field, where=id_field, value=record_number))
                         else:
-                            tasks.add(executor.submit(db.cb_get_s, record_number, name=coll_obj.name))
+                            tasks.add(executor.submit(db.cb_get, record_number))
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1

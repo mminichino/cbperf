@@ -5,6 +5,8 @@ import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
 from lib.cbutil.cbconnect import cb_connect
+from lib.cbutil.cbsync import cb_connect_s
+from lib.cbutil.cbasync import cb_connect_a
 from lib.cbutil.cbindex import cb_index
 from lib.cbutil.randomize import randomize
 from lib.inventorymgr import inventoryManager
@@ -202,7 +204,7 @@ class print_host_map(cbPerfBase):
             self.test_mode = False
 
     def run(self):
-        db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, cloud=self.cloud_api)
+        db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls).init()
         db.print_host_map()
         if self.cluster_ping:
             if self.test_mode:
@@ -282,10 +284,7 @@ class test_exec(cbPerfBase):
         try:
             self.loop = asyncio.get_event_loop()
             self.loop.set_exception_handler(self.test_unhandled_exception)
-            self.db = self.write_cache()
-            self.db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache, cloud=self.cloud_api)
-            self.db.connect_s()
-            self.db_index.connect()
+            self.db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls).init()
         except Exception as err:
             raise TestExecError(f"test_exec init: {err}")
 
@@ -417,13 +416,13 @@ class test_exec(cbPerfBase):
 
         debugger.close()
 
-    def write_cache(self):
-        try:
-            db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, cloud=self.cloud_api)
-            self.session_cache = db.session_cache
-            return db
-        except Exception as err:
-            raise TestExecError(f"can not initialize db connection: {err}")
+    # def write_cache(self):
+    #     try:
+    #         db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, cloud=self.cloud_api)
+    #         self.session_cache = db.session_cache
+    #         return db
+    #     except Exception as err:
+    #         raise TestExecError(f"can not initialize db connection: {err}")
 
     def test_bandwidth(self):
         key = 1
@@ -435,8 +434,8 @@ class test_exec(cbPerfBase):
         collection = self.collection_list[0]
 
         try:
-            self.db.bucket_s(collection.bucket)
-            self.db.scope_s('_default')
+            self.db.bucket(collection.bucket)
+            self.db.scope('_default')
             self.db.create_collection('bandwidth')
         except Exception as err:
             raise TestExecError(f"bandwidth test: can not connect to cluster: {err}")
@@ -449,9 +448,9 @@ class test_exec(cbPerfBase):
             while True:
                 test_a['data1'] = r._randomHash(doc_size)
                 data_size = len(json.dumps(test_a))
-                self.db.cb_upsert_s(key, test_a, name='bandwidth')
+                self.db.cb_upsert(key, test_a)
                 begin_time = time.time()
-                self.db.cb_get_s(key, name='bandwidth')
+                self.db.cb_get(key)
                 end_time = time.time()
                 time_diff = end_time - begin_time
 
@@ -488,8 +487,8 @@ class test_exec(cbPerfBase):
         collection = self.collection_list[0]
 
         try:
-            self.db.bucket_s(collection.bucket)
-            self.db.scope_s('_default')
+            self.db.bucket(collection.bucket)
+            self.db.scope('_default')
             self.db.create_collection('bandwidth')
         except Exception as err:
             raise TestExecError(f"latency test: can not connect to cluster: {err}")
@@ -501,12 +500,12 @@ class test_exec(cbPerfBase):
             test_a['data1'] = r._randomHash(doc_size)
 
             begin_time = time.time()
-            self.db.cb_upsert_s(key, test_a, name='bandwidth')
+            self.db.cb_upsert(key, test_a, name='bandwidth')
             end_time = time.time()
             upsert_time_diff = end_time - begin_time
 
             begin_time = time.time()
-            self.db.cb_get_s(key, name='bandwidth')
+            self.db.cb_get(key, name='bandwidth')
             end_time = time.time()
             get_time_diff = end_time - begin_time
 
@@ -546,8 +545,6 @@ class test_exec(cbPerfBase):
         tasks = set()
         end_char = '\r'
         executor = concurrent.futures.ThreadPoolExecutor()
-        db_index = cb_index(self.host, self.username, self.password, self.tls, self.external_network, restore=self.session_cache, cloud=self.cloud_api)
-        db_index.connect()
 
         cluster_memory = self.db.get_memory_quota
         if cluster_memory < self.bucket_memory:
@@ -568,30 +565,27 @@ class test_exec(cbPerfBase):
                         print("Creating bucket {}".format(bucket.name))
                         self.db.create_bucket(bucket.name, quota=self.bucket_memory)
                         self.db.bucket_wait(bucket.name)
-                        db_index.connect_bucket(bucket.name)
                     for scope in self.inventory.nextScope(bucket):
                         if scope.name != '_default' and not bypass:
                             print("Creating scope {}".format(scope.name))
                             self.db.create_scope(scope.name)
                             self.db.scope_wait(scope.name)
-                            db_index.connect_scope(scope.name)
                         elif not bypass:
-                            db_index.connect_scope('_default')
+                            self.db.scope()
                         for collection in self.inventory.nextCollection(scope):
                             if collection.name != '_default' and not bypass:
                                 print("Creating collection {}".format(collection.name))
                                 self.db.create_collection(collection.name)
                                 self.db.collection_wait(collection.name)
-                                db_index.connect_collection(collection.name)
                             elif not bypass:
-                                db_index.connect_collection('_default')
+                                self.db.collection()
                             if self.inventory.hasPrimaryIndex(collection) and not bypass:
                                 print(f"Creating primary index on {collection.name} with {self.replica_count} replica(s)")
-                                tasks.add(executor.submit(db_index.create_index, collection.name, replica=self.replica_count))
+                                tasks.add(executor.submit(self.db.cb_create_primary_index, replica=self.replica_count))
                             if self.inventory.hasIndexes(collection) and not bypass:
                                 for index_field, index_name in self.inventory.nextIndex(collection):
                                     print(f"Creating index {index_name} on {index_field} with {self.replica_count} replica(s)")
-                                    tasks.add(executor.submit(db_index.create_index, collection.name, field=index_field, index_name=index_name, replica=self.replica_count))
+                                    tasks.add(executor.submit(self.db.cb_create_index, field=index_field, replica=self.replica_count))
                             collection_list.append(collection)
                 print("Waiting for index tasks to complete ... ")
                 task_count = len(tasks)
@@ -643,23 +637,31 @@ class test_exec(cbPerfBase):
             raise RulesError("cross scope linking is not supported")
 
         try:
-            logger.debug(f"run_link_rule: connecting to bucket and collections {foreign_collection} {primary_collection}")
-            self.db.bucket_s(primary_bucket)
-            self.db.scope_s(primary_scope)
-            self.db.collection_s(foreign_collection)
-            self.db.collection_s(primary_collection)
+            logger.debug(f"run_link_rule: connecting to primary collection {primary_collection}")
+            self.db.bucket(primary_bucket)
+            self.db.scope(primary_scope)
+            self.db.collection(primary_collection)
             logger.debug(f"run_link_rule: bucket and collections connected")
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")
 
         print(f" [1] Building primary key list")
 
-        result = self.db.cb_query_s(field=primary_field, name=primary_collection)
+        result = self.db.cb_query(field=primary_field)
 
         for row in result:
             primary_key_list.append(row[primary_field])
 
-        foreign_record_count = self.db.collection_count_s(foreign_collection)
+        try:
+            logger.debug(f"run_link_rule: connecting to foreign collection {foreign_collection}")
+            self.db.bucket(foreign_bucket)
+            self.db.scope(foreign_scope)
+            self.db.collection(foreign_collection)
+            logger.debug(f"run_link_rule: bucket and collections connected")
+        except Exception as err:
+            raise RulesError(f"link: can not connect to database: {err}")
+
+        foreign_record_count = self.db.collection_count()
 
         if foreign_record_count != len(primary_key_list):
             raise RulesError("runLinkRule: primary and foreign record counts are unequal")
@@ -670,7 +672,7 @@ class test_exec(cbPerfBase):
             total_inserted += len(sub_list)
             progress = round((total_inserted / foreign_record_count) * 100)
             print(f"     {progress}%", end=end_char)
-            self.db.cb_subdoc_multi_upsert_s(sub_list, foreign_field, sub_list, name=foreign_collection)
+            self.db.cb_subdoc_multi_upsert(sub_list, foreign_field, sub_list)
         sys.stdout.write("\033[K")
         print("Done.")
 
@@ -728,26 +730,26 @@ class test_exec(cbPerfBase):
     def check_indexes(self, check_count=True):
         try:
             for bucket, scope, collection, keyspace_id in self.primary_index_walk():
-                self.db_index.connect_bucket(bucket)
-                self.db_index.connect_scope(scope)
-                self.db_index.connect_collection(collection)
+                self.db.bucket(bucket)
+                self.db.scope(scope)
+                self.db.collection(collection)
                 self.print_partial(f"Waiting for primary index on {collection} ... ")
-                self.db_index.index_online(keyspace_id, primary=True)
+                self.db.index_online(primary=True)
                 self.print_partial("online ")
                 if check_count:
-                    self.db_index.index_wait(name=collection)
+                    self.db.index_wait()
                     self.print_partial("current ")
                 print("done.")
 
             for bucket, scope, collection, keyspace_id, index_field, index_name in self.secondary_index_walk():
-                self.db_index.connect_bucket(bucket)
-                self.db_index.connect_scope(scope)
-                self.db_index.connect_collection(collection)
+                self.db.bucket(bucket)
+                self.db.scope(scope)
+                self.db.collection(collection)
                 self.print_partial(f"Waiting for index {index_name} on {collection} ... ")
-                self.db_index.index_online(keyspace_id, field=index_field)
+                self.db.index_online(name=self.db.index_name(index_field))
                 self.print_partial("online ")
                 if check_count:
-                    self.db_index.index_wait(name=collection, field=index_field, index_name=index_name)
+                    self.db.index_wait(field=index_field)
                     self.print_partial("current ")
                 print("done.")
         except Exception as err:
@@ -756,23 +758,23 @@ class test_exec(cbPerfBase):
     def index_delete_wait(self):
         try:
             for bucket, scope, collection, keyspace_id in self.primary_index_walk():
-                self.db_index.connect_bucket(bucket)
-                self.db_index.connect_scope(scope)
-                self.db_index.connect_collection(collection)
+                self.db.bucket(bucket)
+                self.db.scope(scope)
+                self.db.collection(collection)
                 self.print_partial(f"Waiting for primary index to delete on {collection} ... ")
-                if self.db_index.is_index(name=collection):
-                    self.db_index.drop_index(name=collection)
-                self.db_index.delete_wait(name=collection)
+                if self.db.is_index():
+                    self.db.cb_drop_primary_index()
+                self.db.delete_wait()
                 print("done.")
 
             for bucket, scope, collection, keyspace_id, index_field, index_name in self.secondary_index_walk():
-                self.db_index.connect_bucket(bucket)
-                self.db_index.connect_scope(scope)
-                self.db_index.connect_collection(collection)
+                self.db.bucket(bucket)
+                self.db.scope(scope)
+                self.db.collection(collection)
                 self.print_partial(f"Waiting for index {index_name} to delete on {collection} ... ")
-                if self.db_index.is_index(name=collection, field=index_field, index_name=index_name):
-                    self.db_index.drop_index(name=collection, field=index_field, index_name=index_name)
-                self.db_index.delete_wait(name=collection, field=index_field, index_name=index_name)
+                if self.db.is_index(field=index_field):
+                    self.db.cb_drop_index(index_field)
+                self.db.delete_wait(field=index_field)
                 print("done.")
         except Exception as err:
             raise TestExecError("index_delete_wait: failed: {}".format(err))
@@ -822,9 +824,12 @@ class test_exec(cbPerfBase):
 
     def debug_dump(self, coll_obj):
         try:
+            self.db.bucket(coll_obj.bucket)
+            self.db.scope(coll_obj.scope)
+            self.db.collection(coll_obj.name)
             basic_stats = self.db.bucket_stats(coll_obj.bucket)
             self.write_dict_log(basic_stats, cb_debug.DEBUG)
-            index_stats = self.db_index.index_list(coll_obj.bucket)
+            index_stats = self.db.index_list()
             self.write_dict_log(index_stats, cb_debug.DEBUG)
         except Exception as err:
             raise TestExecError(f"can not get bucket {coll_obj.bucket} stats: {err}")

@@ -42,6 +42,7 @@ class cb_common(object):
         self.ssl = ssl
         self.rally_host_name = hostname
         self.rally_cluster_node = self.rally_host_name
+        self.rally_dns_domain = False
         self.use_external_network = external
         self.external_network_present = False
         self.node_list = []
@@ -98,20 +99,20 @@ class cb_common(object):
         else:
             self.logger.error(f"unhandled error: {err}")
 
-    def sync(self):
-        self._mode = RunMode.Sync.value
-        return self
-
-    def a_sync(self):
-        self._mode = RunMode.Async.value
-        return self
+    # def sync(self):
+    #     self._mode = RunMode.Sync.value
+    #     return self
+    #
+    # def a_sync(self):
+    #     self._mode = RunMode.Async.value
+    #     return self
 
     @property
     def cb_parameters(self):
         if self.ssl:
-            return "?ssl=no_verify&network=" + self.cb_network
+            return "?ssl=no_verify"
         else:
-            return "?network=" + self.cb_network
+            return ""
 
     @property
     def cb_connect_string(self):
@@ -123,6 +124,10 @@ class cb_common(object):
             return 'external'
         else:
             return 'default'
+
+    @property
+    def get_memory_quota(self):
+        return self.memory_quota
 
     @retry(retry_count=5)
     def is_reachable(self):
@@ -260,3 +265,29 @@ class cb_common(object):
                     sys.exit(3)
                 else:
                     raise ClusterQueryServiceError(f"query service test error: {err}")
+
+    def print_host_map(self):
+        if self.rally_dns_domain:
+            print("Name %s is a domain with SRV records:" % self.rally_host_name)
+            for record in self.srv_host_list:
+                print(" => %s (%s)" % (record['hostname'], record['address']))
+
+        print("Cluster Host List:")
+        for i, record in enumerate(self.cluster_info['nodes']):
+            if 'alternateAddresses' in record:
+                ext_host_name = record['alternateAddresses']['external']['hostname']
+                ext_port_list = record['alternateAddresses']['external']['ports']
+            else:
+                ext_host_name = None
+                ext_port_list = None
+            host_name = record['configuredHostname']
+            version = record['version']
+            ostype = record['os']
+            services = ','.join(record['services'])
+            print(" [%02d] %s" % (i+1, host_name), end=' ')
+            if ext_host_name:
+                print("[external]> %s" % ext_host_name, end=' ')
+            if ext_port_list:
+                for key in ext_port_list:
+                    print("%s:%s" % (key, ext_port_list[key]), end=' ')
+            print("[Services] %s [version] %s [platform] %s" % (services, version, ostype))

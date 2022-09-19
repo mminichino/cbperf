@@ -233,8 +233,9 @@ class cbdb(object):
         loop = asyncio.get_event_loop()
 
         tasks = []
-        db_s = cbsync.cb_connect_s(self.host, self.username, self.password, ssl=self.ssl).sync().init()
-        db_a = cbasync.cb_connect_a(self.host, self.username, self.password, ssl=self.ssl).a_sync().init()
+        db_s = cbsync.cb_connect_s(self.host, self.username, self.password, ssl=self.ssl).init()
+        db_a = loop.run_until_complete(cbasync.cb_connect_a(self.host, self.username, self.password, ssl=self.ssl).init())
+        db_s.print_host_map()
         db_s.create_bucket(bucket)
         loop.run_until_complete(db_a.create_bucket(bucket))
         if scope:
