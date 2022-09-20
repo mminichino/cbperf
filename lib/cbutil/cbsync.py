@@ -128,7 +128,7 @@ class cb_connect_s(cb_common):
             results = s.api_get(f"/pools/default/buckets/{bucket}")
             return True
         except HTTPNotImplemented:
-            raise BucketNotFound(f"bucket {bucket} not found")
+            return False
 
     @retry(always_raise_list=(AttributeError,))
     def is_scope(self, scope):
@@ -462,13 +462,15 @@ class cb_connect_s(cb_common):
 
     def index_online(self, name=None, primary=False, timeout=120):
         if primary:
+            indexes = []
             watch_options = WatchQueryIndexOptions(timeout=timedelta(seconds=timeout), watch_primary=True)
         else:
+            indexes = [name]
             watch_options = WatchQueryIndexOptions(timeout=timedelta(seconds=timeout))
         try:
             qim = self._cluster.query_indexes()
             qim.watch_indexes(self._bucket.name,
-                              [name],
+                              indexes,
                               watch_options)
         except WatchQueryIndexTimeoutException:
             raise IndexNotReady(f"Indexes not build within {timeout} seconds...")

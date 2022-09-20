@@ -135,7 +135,7 @@ class test_mods(object):
         if out_file:
             sys.stdout = open(out_file, "a")
 
-        self.logger.error(f"status thread start: expected count {total_count}")
+        self.logger.debug(f"status thread start: expected count {total_count}")
 
         while loop_run or queue_start_wait:
             if total_count > 0:

@@ -25,6 +25,12 @@ from shutil import copyfile
 import subprocess
 import warnings
 import traceback
+from collections import Counter
+import logging
+from concurrent.futures import ProcessPoolExecutor
+import concurrent.futures
+import multiprocessing
+import signal
 
 document = {
     "id": 1,
@@ -45,11 +51,14 @@ query_result = [
         'data': 'data'
     }
 ]
-failed = 0
+failed = multiprocessing.Value('i')
+failed.value = 0
+executor = ProcessPoolExecutor()
 tests_run = 0
 replica_count = 1
 VERSION = "2.0"
 warnings.filterwarnings("ignore")
+logger = logging.getLogger()
 
 
 class CheckCompare(object):
@@ -115,6 +124,17 @@ class CheckCompare(object):
                 return True
             else:
                 return False
+
+
+def break_signal_handler(signum, frame):
+    if 'CB_PERF_DEBUG_LEVEL' in os.environ:
+        if int(os.environ['CB_PERF_DEBUG_LEVEL']) == 0:
+            tb = traceback.format_exc()
+            print(tb)
+    print("")
+    print("Break received, aborting.")
+    executor.shutdown(cancel_futures=True)
+    sys.exit(1)
 
 
 def check_host_map():
@@ -244,7 +264,7 @@ def check_list(a, b):
     return True
 
 
-def check_open_files(dump=False):
+def check_open_files():
     p = psutil.Process()
     open_files = p.open_files()
     open_count = len(open_files)
@@ -253,21 +273,15 @@ def check_open_files(dump=False):
     num_fds = p.num_fds()
     children = p.children(recursive=True)
     num_children = len(children)
-    if dump:
-        with open("test_output.out", "a") as out_file:
-            out_file.write(f"Open files:\n")
-            for item in open_files:
-                out_file.write(f"{item}\n")
-            out_file.write(f"Connections:\n")
-            for item in connections:
-                out_file.write(f"{item}\n")
-            out_file.write(f"Child processes:\n")
-            for item in children:
-                out_file.write(f"{item}\n")
-            out_file.write("\n")
-            out_file.close()
-    else:
-        print(f"open: {open_count} connections: {con_count} fds: {num_fds} children: {num_children}")
+    print(f"open: {open_count} connections: {con_count} fds: {num_fds} children: {num_children} ", end="")
+    status_list = []
+    for c in connections:
+        status_list.append(c.status)
+    status_values = Counter(status_list).keys()
+    status_count = Counter(status_list).values()
+    for state, count in zip(status_values, status_count):
+        print(f"{state}: {count} ", end="")
+    print("")
 
 
 def truncate_output_file():
@@ -338,11 +352,10 @@ def test_step(check, fun, *args, __name=None, **kwargs):
             out_file.write(tb)
             out_file.write("\n")
             out_file.close()
-        check_open_files(dump=True)
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
         copyfile("cb_debug.log", f"test_fail_{fun_name}.log")
         print(f"Step failed: function {fun_name}: {err}")
-        failed += 1
+        failed.value += 1
 
 
 async def async_test_step(check, fun, *args, **kwargs):
@@ -390,11 +403,10 @@ async def async_test_step(check, fun, *args, **kwargs):
             out_file.write(tb)
             out_file.write("\n")
             out_file.close()
-        check_open_files(dump=True)
         copyfile("test_output.out", f"test_fail_{fun_name}.out")
         copyfile("cb_debug.log", f"test_fail_{fun_name}.log")
         print(f"Step failed: function {fun_name}: {err}")
-        failed += 1
+        failed.value += 1
 
 
 def cb_connect_test_set_s(host, username, password, bucket, scope, collection, tls):
@@ -784,6 +796,8 @@ def test_cli(hostname, username, password, schema):
     cmd = './cb_perf'
     args = []
 
+    print(f"Running test on schema {schema}")
+    print(f"Testing schema {schema} load")
     truncate_output_file()
     args.append('load')
     args.append('--host')
@@ -794,11 +808,15 @@ def test_cli(hostname, username, password, schema):
     args.append(password)
     args.append('--count')
     args.append('50')
+    args.append('--ops')
+    args.append('50')
     args.append('--schema')
     args.append(schema)
     args.append('--replica')
     args.append('0')
     test_step(check_status_output, cli_run, cmd, *args)
+
+    print(f"Testing schema {schema} clear")
     truncate_output_file()
     args.clear()
     args.append('clean')
@@ -812,6 +830,24 @@ def test_cli(hostname, username, password, schema):
     args.append(schema)
     test_step(check_clean, cli_run, cmd, *args)
     check_open_files()
+
+
+def test_modules(args, schema):
+    if schema == 'custom_file':
+        filetest = True
+    else:
+        filetest = False
+    print(f"Running tests on schema {schema}")
+    print(f"Main Async Tests - {schema}")
+    test_map(args)
+    test_load(args, sync=False, schema=schema, filetest=filetest)
+    test_run(args, sync=False, schema=schema, filetest=filetest)
+    test_ramp(args, sync=False, schema=schema, filetest=filetest)
+    print(f"Main Sync Tests - {schema}")
+    test_map(args)
+    test_load(args, sync=True, schema=schema, filetest=filetest)
+    test_run(args, sync=True, schema=schema, filetest=filetest)
+    test_ramp(args, sync=True, schema=schema, filetest=filetest)
 
 
 def directory_cleanup():
@@ -831,6 +867,8 @@ def directory_cleanup():
 
 
 def main():
+    global logger, executor
+    signal.signal(signal.SIGINT, break_signal_handler)
     p = psutil.Process()
     pid = p.pid
     parser = argparse.ArgumentParser(add_help=False)
@@ -855,10 +893,39 @@ def main():
     parser.add_argument('--safe', action='store_true', help="Do not overwrite data")
     args = parser.parse_args()
 
+    default_debug_file = 'cb_debug.log'
+    debug_file = os.environ.get("CB_PERF_DEBUG_FILE", default_debug_file)
+
+    try:
+        open(debug_file, 'w').close()
+    except Exception as err:
+        print(f"[!] Warning: can not clear log file {debug_file}: {err}")
+
+    handler = logging.FileHandler(debug_file)
+    formatter = logging.Formatter(logging.BASIC_FORMAT)
+    handler.setFormatter(formatter)
+
+    try:
+        debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
+    except (ValueError, KeyError):
+        debug_level = 2
+
+    if debug_level == 0:
+        logger.setLevel(logging.DEBUG)
+    elif debug_level == 1:
+        logger.setLevel(logging.INFO)
+    elif debug_level == 2:
+        logger.setLevel(logging.ERROR)
+    else:
+        logger.setLevel(logging.CRITICAL)
+
+    logger.addHandler(handler)
+
     schema_list = [
         'default',
         'profile_demo',
-        'employee_demo'
+        'employee_demo',
+        # 'custom_file'
     ]
 
     username = args.user
@@ -880,9 +947,6 @@ def main():
     print(sys.version)
 
     directory_cleanup()
-    debugger = cb_debug(os.path.basename(__file__))
-    debugger.clear()
-    debugger.close()
 
     print("No SSL Tests")
     cb_connect_test(hostname, username, password, bucket, False, external, cloud_api)
@@ -893,37 +957,27 @@ def main():
     print("Randomize Tests")
     randomize_test()
 
-    for schema in schema_list:
-        print(f"Running tests on schema {schema}")
-        print(f"Main Async Tests - {schema}")
-        test_map(args)
-        test_load(args, sync=False, schema=schema)
-        test_run(args, sync=False, schema=schema)
-        test_ramp(args, sync=False, schema=schema)
-        print(f"Main Sync Tests - {schema}")
-        test_map(args)
-        test_load(args, sync=True, schema=schema)
-        test_run(args, sync=True, schema=schema)
-        test_ramp(args, sync=True, schema=schema)
+    # for schema in schema_list:
+    #     test_modules(args, schema)
 
-    print("External file async test")
-    test_map(args)
-    test_load(args, sync=False, filetest=True)
-    test_run(args, sync=False, filetest=True)
-    test_ramp(args, sync=False, filetest=True)
-    print("External file sync test")
-    test_map(args)
-    test_load(args, sync=True, filetest=True)
-    test_run(args, sync=True, filetest=True)
-    test_ramp(args, sync=True, filetest=True)
+    # print("External file async test")
+    # test_map(args)
+    # test_load(args, sync=False, filetest=True)
+    # test_run(args, sync=False, filetest=True)
+    # test_ramp(args, sync=False, filetest=True)
+    # print("External file sync test")
+    # test_map(args)
+    # test_load(args, sync=True, filetest=True)
+    # test_run(args, sync=True, filetest=True)
+    # test_ramp(args, sync=True, filetest=True)
 
     print("CLI Invoke Tests")
     for schema in schema_list:
         test_cli(hostname, username, password, schema)
 
     print(f"{tests_run} test(s) run")
-    if failed > 0:
-        print(f"[!] Not all tests were successful. {failed} test(s) resulted in errors.")
+    if failed.value > 0:
+        print(f"[!] Not all tests were successful. {failed.value} test(s) resulted in errors.")
         sys.exit(1)
     else:
         print("All tests were successful")

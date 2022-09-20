@@ -735,24 +735,26 @@ class test_exec(cbPerfBase):
     def index_delete_wait(self):
         try:
             for bucket, scope, collection, keyspace_id in self.primary_index_walk():
-                self.db.bucket(bucket)
-                self.db.scope(scope)
-                self.db.collection(collection)
-                self.print_partial(f"Waiting for primary index to delete on {collection} ... ")
-                if self.db.is_index():
-                    self.db.cb_drop_primary_index()
-                self.db.delete_wait()
-                print("done.")
+                if self.db.is_bucket(bucket):
+                    self.db.bucket(bucket)
+                    self.db.scope(scope)
+                    self.db.collection(collection)
+                    self.print_partial(f"Waiting for primary index to delete on {collection} ... ")
+                    if self.db.is_index():
+                        self.db.cb_drop_primary_index()
+                    self.db.delete_wait()
+                    print("done.")
 
             for bucket, scope, collection, keyspace_id, index_field, index_name in self.secondary_index_walk():
-                self.db.bucket(bucket)
-                self.db.scope(scope)
-                self.db.collection(collection)
-                self.print_partial(f"Waiting for index {index_name} to delete on {collection} ... ")
-                if self.db.is_index(field=index_field):
-                    self.db.cb_drop_index(index_field)
-                self.db.delete_wait(field=index_field)
-                print("done.")
+                if self.db.is_bucket(bucket):
+                    self.db.bucket(bucket)
+                    self.db.scope(scope)
+                    self.db.collection(collection)
+                    self.print_partial(f"Waiting for index {index_name} to delete on {collection} ... ")
+                    if self.db.is_index(field=index_field):
+                        self.db.cb_drop_index(index_field)
+                    self.db.delete_wait(field=index_field)
+                    print("done.")
         except Exception as err:
             raise TestExecError("index_delete_wait: failed: {}".format(err))
 
