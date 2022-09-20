@@ -124,7 +124,7 @@ class cb_connect_a(cb_common):
         return await cm.get_all_scopes()
 
     @retry(factor=0.5)
-    async def is_bucket(self, bucket):
+    async def is_bucket(self, bucket: str) -> bool:
         try:
             hostname = next(self.node_cycle)
             s = api_session(self.username, self.password)

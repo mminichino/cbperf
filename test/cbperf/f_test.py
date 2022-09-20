@@ -5,6 +5,7 @@ import sys
 import psutil
 
 import couchbase.result
+from couchbase.management.logic.collections_logic import ScopeSpec, CollectionSpec
 
 current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
@@ -12,10 +13,8 @@ project_dir = os.path.dirname(parent)
 sys.path.append(project_dir)
 
 from lib import system
-from lib.cbutil import cbconnect
-from lib.cbutil import cbindex
+from lib.cbutil import cbsync, cbasync
 from lib.cbutil.randomize import randomize
-from lib.cbutil.cbdebug import cb_debug
 from lib.executive import print_host_map, test_exec, schema_admin
 import pytest
 import asyncio
@@ -28,6 +27,7 @@ from shutil import copyfile
 import subprocess
 import warnings
 import traceback
+from collections import Counter
 
 document = {
     "id": 1,
@@ -125,7 +125,7 @@ def check_host_map():
     p = re.compile("^.*Cluster Host List.*$")
     if not p.match(line):
         return False
-    p = re.compile("^ \[[0-9]+\] .*$")
+    p = re.compile(r"^ \[[0-9]+\] .*$")
     for line in out_file.readlines():
         if not p.match(line):
             print(f"Unexpected output: {line}")
@@ -246,7 +246,7 @@ def check_list(a, b):
     return True
 
 
-def check_open_files(dump=False):
+def check_open_files():
     p = psutil.Process()
     open_files = p.open_files()
     open_count = len(open_files)
@@ -255,21 +255,15 @@ def check_open_files(dump=False):
     num_fds = p.num_fds()
     children = p.children(recursive=True)
     num_children = len(children)
-    if dump:
-        with open("test_output.out", "a") as out_file:
-            out_file.write(f"Open files:\n")
-            for item in open_files:
-                out_file.write(f"{item}\n")
-            out_file.write(f"Connections:\n")
-            for item in connections:
-                out_file.write(f"{item}\n")
-            out_file.write(f"Child processes:\n")
-            for item in children:
-                out_file.write(f"{item}\n")
-            out_file.write("\n")
-            out_file.close()
-    else:
-        print(f"open: {open_count} connections: {con_count} fds: {num_fds} children: {num_children}")
+    print(f"open: {open_count} connections: {con_count} fds: {num_fds} children: {num_children} ", end="")
+    status_list = []
+    for c in connections:
+        status_list.append(c.status)
+    status_values = Counter(status_list).keys()
+    status_count = Counter(status_list).values()
+    for state, count in zip(status_values, status_count):
+        print(f"{state}: {count} ", end="")
+    print("")
 
 
 def truncate_output_file():
@@ -399,19 +393,123 @@ def unhandled_exception(loop, context):
 #         failed += 1
 
 
+@pytest.mark.parametrize("scope, collection", [("_default", "_default"), ("testscope", "testcollection")])
 @pytest.mark.parametrize("tls", [False, True])
-def test_sync_1(hostname, username, password, bucket, tls, external):
+def test_sync_1(hostname, username, password, bucket, tls, scope, collection):
+    warnings.filterwarnings("ignore")
     global replica_count
-    db = cbconnect.cb_connect(hostname, username, password, ssl=tls, external=external).init()
+    db = cbsync.cb_connect_s(hostname, username, password, ssl=tls).init()
+
+    db.create_bucket(bucket)
+    db.bucket_wait(bucket)
+    if scope == '_default':
+        db.scope()
+    else:
+        db.create_scope(scope)
+        db.scope_wait(scope)
+    if collection == '_default':
+        db.collection()
+    else:
+        db.create_collection(collection)
+        db.collection_wait(collection)
+    result = db.is_bucket(bucket)
+    assert result is True
+    result = db.is_scope(scope)
+    assert result is not None
+    result = db.is_collection(collection)
+    assert result is not None
+    db.cb_create_primary_index(replica=replica_count)
+    db.cb_create_index(field="data", replica=replica_count)
+    db.index_wait()
+    db.index_wait(field="data")
+    result = db.is_index()
+    assert result is True
+    result = db.is_index(field="data")
+    assert result is True
+    db.cb_upsert("test::1", document)
+    db.bucket_wait(bucket, count=1)
+    result = db.cb_get("test::1")
+    assert result == document
+    result = db.collection_count(expect_count=1)
+    assert result == 1
+    result = db.cb_query(field="data", empty_retry=True)
+    assert result == query_result
+    db.cb_upsert("test::2", document)
+    db.cb_subdoc_multi_upsert(["test::1", "test::2"], "data", ["new", "new"])
+    result = db.cb_get("test::1")
+    assert result == new_document
+    result = db.collection_count(expect_count=2)
+    assert result == 2
+    db.cb_upsert("test::3", document)
+    db.cb_subdoc_upsert("test::3", "data", "new")
+    result = db.cb_get("test::3")
+    assert result == new_document
+    db.cb_drop_primary_index()
+    db.cb_drop_index(field="data")
+    db.delete_wait()
+    db.delete_wait(field="data")
+    db.drop_bucket(bucket)
     check_open_files()
 
 
+@pytest.mark.parametrize("scope, collection", [("_default", "_default"), ("testscope", "testcollection")])
 @pytest.mark.parametrize("tls", [False, True])
-def test_async_1(hostname, username, password, bucket, tls, external):
+def test_async_1(hostname, username, password, bucket, tls, scope, collection):
+    warnings.filterwarnings("ignore")
     global replica_count
     loop = asyncio.get_event_loop()
     loop.set_exception_handler(unhandled_exception)
-    db = cbconnect.cb_connect(hostname, username, password, ssl=tls, external=external).init()
+    db = loop.run_until_complete(cbasync.cb_connect_a(hostname, username, password, ssl=tls).init())
+
+    loop.run_until_complete(db.create_bucket(bucket))
+    loop.run_until_complete(db.bucket_wait(bucket))
+    if scope == '_default':
+        loop.run_until_complete(db.scope())
+    else:
+        loop.run_until_complete(db.create_scope(scope))
+        loop.run_until_complete(db.scope_wait(scope))
+    if collection == '_default':
+        loop.run_until_complete(db.collection())
+    else:
+        loop.run_until_complete(db.create_collection(collection))
+        loop.run_until_complete(db.collection_wait(collection))
+    result = loop.run_until_complete(db.is_bucket(bucket))
+    assert result is True
+    result = loop.run_until_complete(db.is_scope(scope))
+    assert result is not None
+    result = loop.run_until_complete(db.is_collection(collection))
+    assert result is not None
+    loop.run_until_complete(db.cb_create_primary_index(replica=replica_count))
+    loop.run_until_complete(db.cb_create_index(field="data", replica=replica_count))
+    loop.run_until_complete(db.index_wait())
+    loop.run_until_complete(db.index_wait(field="data"))
+    result = loop.run_until_complete(db.is_index())
+    assert result is True
+    result = loop.run_until_complete(db.is_index(field="data"))
+    assert result is True
+    loop.run_until_complete(db.cb_upsert("test::1", document))
+    loop.run_until_complete(db.bucket_wait(bucket, count=1))
+    result = loop.run_until_complete(db.cb_get("test::1"))
+    assert result == document
+    result = loop.run_until_complete(db.collection_count(expect_count=1))
+    assert result == 1
+    result = loop.run_until_complete(db.cb_query(field="data", empty_retry=True))
+    assert result == query_result
+    loop.run_until_complete(db.cb_upsert("test::2", document))
+    loop.run_until_complete(db.cb_subdoc_multi_upsert(["test::1", "test::2"], "data", ["new", "new"]))
+    result = loop.run_until_complete(db.cb_get("test::1"))
+    assert result == new_document
+    result = loop.run_until_complete(db.collection_count(expect_count=2))
+    assert result == 2
+    loop.run_until_complete(db.cb_upsert("test::3", document))
+    loop.run_until_complete(db.cb_subdoc_upsert("test::3", "data", "new"))
+    result = loop.run_until_complete(db.cb_get("test::3"))
+    assert result == new_document
+    loop.run_until_complete(db.cb_drop_primary_index())
+    loop.run_until_complete(db.cb_drop_index(field="data"))
+    loop.run_until_complete(db.delete_wait())
+    loop.run_until_complete(db.delete_wait(field="data"))
+    loop.run_until_complete(db.drop_bucket(bucket))
     check_open_files()
 
 
@@ -744,9 +842,9 @@ def directory_cleanup():
     package_dir = os.path.dirname(current_dir)
     print("Pruning old test files ... ")
     for file_name in os.listdir(package_dir):
-        p1 = re.compile("test_fail_.*\.out")
-        p2 = re.compile("test_fail_.*\.log")
-        p3 = re.compile("test_output.out")
+        p1 = re.compile(r"test_fail_.*\.out")
+        p2 = re.compile(r"test_fail_.*\.log")
+        p3 = re.compile(r"test_output.out")
         if p1.match(file_name) or p2.match(file_name) or p3.match(file_name):
             if file_name == "." or file_name == ".." or file_name == "*" or len(file_name) == 0:
                 continue
