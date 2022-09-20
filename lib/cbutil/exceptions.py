@@ -5,7 +5,7 @@ import sys
 import os
 import re
 import inspect
-from .cbdebug import cb_debug
+import logging
 
 
 def decode_error_code(code, message):
@@ -35,15 +35,12 @@ class cbUtilError(Exception):
 class cbUtilException(Exception):
 
     def __init__(self, message):
-        debug = cb_debug(self.__class__.__name__)
+        logger = logging.getLogger(self.__class__.__name__)
         frame = inspect.currentframe().f_back
         (filename, line, function, lines, index) = inspect.getframeinfo(frame)
         filename = os.path.basename(filename)
         self.message = "Error: {} in {} {} at line {}: {}".format(type(self).__name__, filename, function, line, message)
-        if debug.do_debug:
-            logger = debug.logger
-            logger.debug(self.message)
-        debug.close()
+        logger.debug(f"Caught exception: {self.message}")
         super().__init__(self.message)
 
 

@@ -4,7 +4,6 @@
 from lib.cbutil.cbdebug import cb_debug
 from lib.cbutil.randomize import randomize, fastRandom
 from lib.constants import *
-from lib.cbutil.cbconnect import cb_connect
 from lib.cbutil.cbsync import cb_connect_s
 from lib.cbutil.cbasync import cb_connect_a
 from queue import Empty
@@ -13,6 +12,7 @@ import time
 import numpy as np
 import sys
 import concurrent.futures
+import logging
 
 
 class rwMixer(object):
@@ -48,6 +48,7 @@ class rwMixer(object):
 class test_mods(object):
 
     def __init__(self,  hostname: str, username: str, password: str, ssl, external, restore, batch_size, id_field, run_t, max_t):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.host = hostname
         self.username = username
         self.password = password
@@ -89,14 +90,11 @@ class test_mods(object):
         debugger.close()
 
     def mod_unhandled_exception(self, loop, context):
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
         err = context.get("exception", context['message'])
         if isinstance(err, Exception):
-            logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
+            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
         else:
-            logger.error(f"unhandled error: {err}")
-        debugger.close()
+            self.logger.error(f"unhandled error: {err}")
 
     def status_output(self, total_count, run_flag, telemetry_queue, status_vector, out_file=None):
         max_threads = self.thread_max if total_count == 0 else self.run_threads
@@ -137,7 +135,7 @@ class test_mods(object):
         if out_file:
             sys.stdout = open(out_file, "a")
 
-        self.write_log(f"status thread start: expected count {total_count}", cb_debug.DEBUG)
+        self.logger.error(f"status thread start: expected count {total_count}")
 
         while loop_run or queue_start_wait:
             if total_count > 0:
@@ -156,7 +154,7 @@ class test_mods(object):
                 queue_start_wait = False
             except Empty:
                 if queue_wait == 100:
-                    self.write_log(f"status thread: data wait timeout: total count {total_count} op count {total_ops}", cb_debug.ERROR)
+                    self.logger.error(f"status thread: data wait timeout: total count {total_count} op count {total_ops}")
                     loop_run = False
                     queue_start_wait = False
                 else:
@@ -220,15 +218,12 @@ class test_mods(object):
         print(f"{max_time:.6f} maximum time")
 
     def test_run_a(self, *args, **kwargs):
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(self.mod_unhandled_exception)
         try:
             loop.run_until_complete(self.async_test_run(*args, **kwargs))
         except Exception as err:
-            logger.error(f"async test process error: {err}")
-        debugger.close()
+            self.logger.error(f"async test process error: {err}")
 
     async def async_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
         loop = asyncio.get_event_loop()
@@ -239,11 +234,9 @@ class test_mods(object):
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
         time_threshold = 5
-        debugger = cb_debug('async_test_run')
-        logger = debugger.logger
         begin_time = time.time()
 
-        logger.info(f"beginning async test instance {n}")
+        self.logger.info(f"beginning async test instance {n}")
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
@@ -251,12 +244,11 @@ class test_mods(object):
         run_batch_size = self.batch_size
 
         if status_vector[0] == 1:
-            logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
-            debugger.close()
+            self.logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
             return
 
         try:
-            logger.info(f"test_thread_{n:03d}: connecting to {self.host} keyspace {coll_obj.bucket}.{coll_obj.scope}.{coll_obj.name}")
+            self.logger.info(f"test_thread_{n:03d}: connecting to {self.host} keyspace {coll_obj.bucket}.{coll_obj.scope}.{coll_obj.name}")
             db = await cb_connect_a(self.host, self.username, self.password, ssl=self.tls).init()
             await db.bucket(coll_obj.bucket)
             await db.scope(coll_obj.scope)
@@ -264,8 +256,7 @@ class test_mods(object):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.error(f"test_thread_{n:03d}: db connection error: {err}")
-            debugger.close()
+            self.logger.error(f"test_thread_{n:03d}: db connection error: {err}")
             return
 
         try:
@@ -274,17 +265,15 @@ class test_mods(object):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.error(f"test_thread_{n:03d}: randomizer error: {err}")
-            debugger.close()
+            self.logger.error(f"test_thread_{n:03d}: randomizer error: {err}")
             return
 
         if status_vector[0] == 1:
-            logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
-            debugger.close()
+            self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
             return
 
         status_vector[3] += 1
-        logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size} mode {mode}")
+        self.logger.info(f"test_thread_{n:03d}: commencing run, collection {coll_obj.name} batch size {run_batch_size} mode {mode}")
         while True:
             try:
                 tasks.clear()
@@ -312,16 +301,16 @@ class test_mods(object):
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
-                logger.error(f"test_thread_{n:03d}: execution error: {err}")
+                self.logger.error(f"test_thread_{n:03d}: execution error: {err}")
             if len(tasks) > 0:
                 await asyncio.sleep(0)
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                logger.debug(f"test_thread_{n:03d}: {len(results)} results")
+                self.logger.debug(f"test_thread_{n:03d}: {len(results)} results")
                 for result in results:
                     if isinstance(result, Exception):
                         status_vector[0] = 1
                         status_vector[2] += 1
-                        logger.error(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
+                        self.logger.error(f"test_thread_{n:03d}: task error #{status_vector[2]}: {result}")
                 if status_vector[0] == 1:
                     await asyncio.sleep(0)
                     break
@@ -334,21 +323,18 @@ class test_mods(object):
                 telemetry_queue.put(telemetry_packet)
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
-                    logger.error(f"test_thread_{n:03d}: max latency exceeded")
+                    self.logger.error(f"test_thread_{n:03d}: max latency exceeded")
                     break
             else:
                 break
 
-        logger.info(f"test_thread_{n:03d}: task complete, exiting.")
-        debugger.close()
+        self.logger.info(f"test_thread_{n:03d}: task complete, exiting.")
 
     def test_run_s(self, *args, **kwargs):
-        debugger = cb_debug(f"test_run_s")
-        logger = debugger.logger
         try:
             self.sync_test_run(*args, **kwargs)
         except Exception as err:
-            logger.debug(f"sync test process returned: {err}")
+            self.logger.debug(f"sync test process returned: {err}")
 
     def sync_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
         tasks = []
@@ -358,11 +344,9 @@ class test_mods(object):
         op_select = rwMixer(write_p)
         telemetry = [0 for n in range(3)]
         time_threshold = 5
-        debugger = cb_debug('sync_test_run')
-        logger = debugger.logger
         begin_time = time.time()
 
-        logger.info(f"beginning test instance {n}")
+        self.logger.info(f"beginning test instance {n}")
 
         mode = self.test_mask(mask)
         is_random = self.is_random_mask(mask)
@@ -371,12 +355,11 @@ class test_mods(object):
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=run_batch_size)
 
         if status_vector[0] == 1:
-            logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
-            debugger.close()
+            self.logger.info(f"test_thread_{n:03d}: aborting startup due to stop signal")
             return
 
         try:
-            logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
+            self.logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
             db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls).init()
             db.bucket(coll_obj.bucket)
             db.scope(coll_obj.scope)
@@ -384,8 +367,7 @@ class test_mods(object):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.info(f"test_thread_{n:03d}: db connection error: {err}")
-            debugger.close()
+            self.logger.info(f"test_thread_{n:03d}: db connection error: {err}")
             return
 
         try:
@@ -394,17 +376,15 @@ class test_mods(object):
         except Exception as err:
             status_vector[0] = 1
             status_vector[2] += 1
-            logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
-            debugger.close()
+            self.logger.info(f"test_thread_{n:03d}: randomizer error: {err}")
             return
 
         if status_vector[0] == 1:
-            logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
-            debugger.close()
+            self.logger.info(f"test_thread_{n:03d}: aborting run due to stop signal")
             return
 
         status_vector[3] += 1
-        logger.info(f"test_thread_{n:03d}: commencing run")
+        self.logger.info(f"test_thread_{n:03d}: commencing run")
         while True:
             try:
                 tasks = set()
@@ -432,7 +412,7 @@ class test_mods(object):
             except Exception as err:
                 status_vector[0] = 1
                 status_vector[2] += 1
-                logger.error(f"test_thread_{n:03d}: task error #{status_vector[2]}: {err}")
+                self.logger.error(f"test_thread_{n:03d}: task error #{status_vector[2]}: {err}")
             if len(tasks) > 0:
                 task_count = len(tasks)
                 while tasks:
@@ -441,7 +421,7 @@ class test_mods(object):
                         try:
                             result = task.result()
                         except Exception as err:
-                            logger.error(f"test_thread_{n:03d}: task error: {err}")
+                            self.logger.error(f"test_thread_{n:03d}: task error: {err}")
                 end_time = time.time()
                 loop_total_time = end_time - begin_time
                 telemetry[0] = n
@@ -451,8 +431,6 @@ class test_mods(object):
                 telemetry_queue.put(telemetry_packet)
                 if loop_total_time >= time_threshold:
                     status_vector[0] = 1
-                    logger.error(f"test_thread_{n:03d}: max latency exceeded")
+                    self.logger.error(f"test_thread_{n:03d}: max latency exceeded")
             else:
                 break
-
-        debugger.close()

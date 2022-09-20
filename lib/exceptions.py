@@ -4,7 +4,7 @@
 import sys
 import os
 import inspect
-from lib.cbutil.cbconnect import cb_debug
+import logging
 
 
 class cbPerfFatal(Exception):
@@ -20,16 +20,13 @@ class cbPerfFatal(Exception):
 class cbPerfException(Exception):
 
     def __init__(self, message):
-        debug = cb_debug(self.__class__.__name__)
+        logger = logging.getLogger(self.__class__.__name__)
         frame = inspect.currentframe().f_back
         (filename, line, function, lines, index) = inspect.getframeinfo(frame)
         filename = os.path.basename(filename)
         self.message = "Error: {} in {} {} at line {}: {}".format(
             type(self).__name__, filename, function, line, message)
-        if debug.do_debug:
-            logger = debug.logger
-            logger.debug(self.message)
-        debug.close()
+        logger.debug(f"Caught exception: {self.message}")
         super().__init__(self.message)
 
 
@@ -67,4 +64,3 @@ class TestRunError(cbPerfFatal):
 
 class TestRunException(cbPerfException):
     pass
-

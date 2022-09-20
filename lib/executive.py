@@ -4,10 +4,7 @@
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
-from lib.cbutil.cbconnect import cb_connect
 from lib.cbutil.cbsync import cb_connect_s
-from lib.cbutil.cbasync import cb_connect_a
-from lib.cbutil.cbindex import cb_index
 from lib.cbutil.randomize import randomize
 from lib.inventorymgr import inventoryManager
 from lib.cbutil.exceptions import *
@@ -21,6 +18,7 @@ import os
 import asyncio
 import time
 import warnings
+import logging
 
 VERSION = '1.0'
 warnings.filterwarnings("ignore")
@@ -29,6 +27,7 @@ warnings.filterwarnings("ignore")
 class cbPerfBase(object):
 
     def __init__(self, parameters):
+        self.logger = logging.getLogger(self.__class__.__name__)
         config_file, schema_file = self.locate_config_files()
         self.debug = None
         self.settings = {}
@@ -351,27 +350,19 @@ class test_exec(cbPerfBase):
         print(message, end=end_char)
         sys.stdout.flush()
 
-    def write_log(self, message: str, level: int = 2) -> None:
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
-        if level == 0:
-            logger.debug(message)
-        elif level == 1:
-            logger.info(message)
-        elif level == 2:
-            logger.error(message)
-        else:
-            logger.critical(message)
-        debugger.close()
-
     def write_dict_log(self, message: dict, level: int = 2) -> None:
         for key, value in message.items():
             message = f"{key}: {value}"
-            self.write_log(message, level)
+            if level == 0:
+                self.logger.debug(message)
+            elif level == 1:
+                self.logger.info(message)
+            elif level == 2:
+                self.logger.error(message)
+            else:
+                self.logger.critical(message)
 
     def run(self):
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
         for index, element in enumerate(self.get_next_task()):
             step = element[0]
             step_config = element[1]
@@ -404,7 +395,7 @@ class test_exec(cbPerfBase):
                         self.test_launch_s(read_p=read_p, write_p=write_p, mode=test_type)
                 self.check_indexes()
             except Exception as err:
-                logger.error(f"test launch error: {err}")
+                self.logger.error(f"test launch error: {err}")
 
             if test_pause:
                 self.pause_test()
@@ -413,16 +404,6 @@ class test_exec(cbPerfBase):
                 if self.run_rules:
                     self.process_rules()
                 self.check_indexes()
-
-        debugger.close()
-
-    # def write_cache(self):
-    #     try:
-    #         db = cb_connect(self.host, self.username, self.password, self.tls, self.external_network, cloud=self.cloud_api)
-    #         self.session_cache = db.session_cache
-    #         return db
-    #     except Exception as err:
-    #         raise TestExecError(f"can not initialize db connection: {err}")
 
     def test_bandwidth(self):
         key = 1
@@ -617,12 +598,10 @@ class test_exec(cbPerfBase):
             yield list_data[i:i + count]
 
     def run_link_rule(self, foreign_keyspace, primary_keyspace):
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
         primary_key_list = []
         end_char = '\r'
 
-        logger.info("run_link_rule: startup")
+        self.logger.info("run_link_rule: startup")
 
         if len(foreign_keyspace) != 4 and len(primary_keyspace) != 4:
             raise RulesError("runLinkRule: link rule key syntax incorrect")
@@ -637,11 +616,11 @@ class test_exec(cbPerfBase):
             raise RulesError("cross scope linking is not supported")
 
         try:
-            logger.debug(f"run_link_rule: connecting to primary collection {primary_collection}")
+            self.logger.debug(f"run_link_rule: connecting to primary collection {primary_collection}")
             self.db.bucket(primary_bucket)
             self.db.scope(primary_scope)
             self.db.collection(primary_collection)
-            logger.debug(f"run_link_rule: bucket and collections connected")
+            self.logger.debug(f"run_link_rule: bucket and collections connected")
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")
 
@@ -653,11 +632,11 @@ class test_exec(cbPerfBase):
             primary_key_list.append(row[primary_field])
 
         try:
-            logger.debug(f"run_link_rule: connecting to foreign collection {foreign_collection}")
+            self.logger.debug(f"run_link_rule: connecting to foreign collection {foreign_collection}")
             self.db.bucket(foreign_bucket)
             self.db.scope(foreign_scope)
             self.db.collection(foreign_collection)
-            logger.debug(f"run_link_rule: bucket and collections connected")
+            self.logger.debug(f"run_link_rule: bucket and collections connected")
         except Exception as err:
             raise RulesError(f"link: can not connect to database: {err}")
 
@@ -675,8 +654,6 @@ class test_exec(cbPerfBase):
             self.db.cb_subdoc_multi_upsert(sub_list, foreign_field, sub_list)
         sys.stdout.write("\033[K")
         print("Done.")
-
-        debugger.close()
 
     def process_rules(self):
         print("[i] Processing rules.")
@@ -778,39 +755,6 @@ class test_exec(cbPerfBase):
                 print("done.")
         except Exception as err:
             raise TestExecError("index_delete_wait: failed: {}".format(err))
-
-    def check_indexes_old(self, check_count=True):
-        print("Waiting for indexes to settle")
-        try:
-            schema = self.inventory.getSchema(self.schema)
-            if schema:
-                for bucket in self.inventory.nextBucket(schema):
-                    self.db_index.connect_bucket(bucket.name)
-                    for scope in self.inventory.nextScope(bucket):
-                        self.db_index.connect_scope(scope.name)
-                        for collection in self.inventory.nextCollection(scope):
-                            self.db_index.connect_collection(collection.name)
-                            if self.inventory.hasPrimaryIndex(collection):
-                                self.print_partial(f"Waiting for primary index on {collection.name} ... ")
-                                self.db_index.index_online(collection.key_prefix, primary=True)
-                                self.print_partial("online ")
-                                if check_count:
-                                    self.db_index.index_wait(name=collection.name)
-                                    self.print_partial("current ")
-                                print("done.")
-                            if self.inventory.hasIndexes(collection):
-                                for index_field, index_name in self.inventory.nextIndex(collection):
-                                    self.print_partial(f"Waiting for index {index_name} on field {index_field} in keyspace {self.db_index.db.keyspace_s(collection.name)} ... ")
-                                    self.db_index.index_online(collection.key_prefix, field=index_field)
-                                    self.print_partial("online ")
-                                    if check_count:
-                                        self.db_index.index_wait(name=collection.name, field=index_field, index_name=index_name)
-                                        self.print_partial("current ")
-                                    print("done.")
-            else:
-                raise ParameterError("Schema {} not found".format(self.schema))
-        except Exception as err:
-            raise TestExecError("index check failed: {}".format(err))
 
     def pause_test(self):
         end_char = ''
@@ -922,10 +866,7 @@ class test_exec(cbPerfBase):
             for result in results:
                 if isinstance(result, Exception):
                     status_vector[2] += 1
-                    debugger = cb_debug(self.__class__.__name__)
-                    logger = debugger.logger
-                    logger.error(f"test_launch_a: instance error: {result}")
-                    debugger.close()
+                    self.logger.error(f"test_launch_a: instance error: {result}")
 
             run_flag.value = 0
             status_thread.join()
@@ -942,8 +883,6 @@ class test_exec(cbPerfBase):
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
     def test_launch_s(self, read_p=100, write_p=0, mode=KV_TEST):
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
         if not self.collection_list:
             raise TestRunError("test not initialized")
 
@@ -994,7 +933,7 @@ class test_exec(cbPerfBase):
                 if status_vector[3] < status_vector[1]:
                     if throttle_count == 30:
                         break
-                    logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
                     throttle_count += 1
                     time.sleep(0.5)
                     continue
@@ -1023,11 +962,7 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
-        debugger.close()
-
     def ramp_launch(self, read_p=100, write_p=0, mode=KV_TEST):
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
         scale = []
 
         if not self.collection_list:
@@ -1090,7 +1025,7 @@ class test_exec(cbPerfBase):
                     if throttle_count == 30:
                         status_vector[0] = 1
                         break
-                    logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
+                    self.logger.info(f"throttling: {status_vector[1]} requested {status_vector[3]} connected")
                     throttle_count += 1
                     time.sleep(0.5)
                     continue
@@ -1129,14 +1064,9 @@ class test_exec(cbPerfBase):
             print("Test completed in {}".format(
                 time.strftime("%H hours %M minutes %S seconds.", time.gmtime(end_time - start_time))))
 
-        debugger.close()
-
     def test_unhandled_exception(self, loop, context):
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
         err = context.get("exception", context['message'])
         if isinstance(err, Exception):
-            logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
+            self.logger.error(f"unhandled exception: type: {err.__class__.__name__} msg: {err} cause: {err.__cause__}")
         else:
-            logger.error(f"unhandled error: {err}")
-        debugger.close()
+            self.logger.error(f"unhandled error: {err}")

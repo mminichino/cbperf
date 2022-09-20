@@ -8,9 +8,9 @@ import argparse
 import signal
 import warnings
 import traceback
+import logging
 from lib.executive import print_host_map, test_exec, schema_admin
 from lib.exceptions import *
-from lib.cbutil.cbdebug import cb_debug
 
 
 LOAD_DATA = 0x0000
@@ -20,9 +20,10 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '1.1'
+VERSION = '2.0'
 
 warnings.filterwarnings("ignore")
+logger = logging.getLogger()
 
 
 def break_signal_handler(signum, frame):
@@ -119,13 +120,37 @@ class cbPerf(object):
 
 
 def main():
+    global logger
     arg_parser = params()
     parameters = arg_parser.parser.parse_args()
     signal.signal(signal.SIGINT, break_signal_handler)
+    default_debug_file = 'cb_debug.log'
+    debug_file = os.environ.get("CB_PERF_DEBUG_FILE", default_debug_file)
 
-    debugger = cb_debug(os.path.basename(__file__))
-    debugger.clear()
-    debugger.close()
+    try:
+        open(debug_file, 'w').close()
+    except Exception as err:
+        print(f"[!] Warning: can not clear log file {debug_file}: {err}")
+
+    handler = logging.FileHandler(debug_file)
+    formatter = logging.Formatter(logging.BASIC_FORMAT)
+    handler.setFormatter(formatter)
+
+    try:
+        debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
+    except (ValueError, KeyError):
+        debug_level = 2
+
+    if debug_level == 0:
+        logger.setLevel(logging.DEBUG)
+    elif debug_level == 1:
+        logger.setLevel(logging.INFO)
+    elif debug_level == 2:
+        logger.setLevel(logging.ERROR)
+    else:
+        logger.setLevel(logging.CRITICAL)
+
+    logger.addHandler(handler)
 
     test_run = cbPerf(parameters)
     test_run.run()

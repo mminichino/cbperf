@@ -3,34 +3,9 @@
 
 import time
 import asyncio
-import functools
 import logging
-from enum import Enum
 from typing import Callable
 from functools import wraps
-
-
-class RunMode(Enum):
-    Sync = 0
-    Async = 1
-
-
-MODE_SYNC = 0
-MODE_ASYNC = 1
-RUN_MODE = 0
-
-
-def selector(func):
-    if asyncio.iscoroutinefunction(func):
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
-            return await func(*args, **kwargs)
-    else:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-    return wrapper
 
 
 def retry_s(retry_count=5,
@@ -94,6 +69,8 @@ def retry(retry_count=10,
           allow_list=None,
           always_raise_list=None
           ) -> Callable:
+    logger = logging.getLogger(retry.__name__)
+
     def retry_handler(func):
         if not asyncio.iscoroutinefunction(func):
             @wraps(func)
@@ -109,8 +86,10 @@ def retry(retry_count=10,
                             raise
 
                         if retry_number == retry_count:
+                            logger.debug(f"{func.__name__} retry limit exceeded")
                             raise
 
+                        logger.debug(f"{func.__name__} [sync] will retry, number {retry_number + 1}")
                         wait = factor
                         wait *= (2 ** (retry_number + 1))
                         time.sleep(wait)
@@ -130,8 +109,10 @@ def retry(retry_count=10,
                             raise
 
                         if retry_number == retry_count:
+                            logger.debug(f"{func.__name__} retry limit exceeded")
                             raise
 
+                        logger.debug(f"{func.__name__} [async] will retry, number {retry_number + 1}")
                         wait = factor
                         wait *= (2 ** (retry_number + 1))
                         time.sleep(wait)

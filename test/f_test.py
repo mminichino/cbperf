@@ -10,12 +10,10 @@ current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
 sys.path.append(parent)
 
-from lib import system
-from lib.cbutil import cbconnect, cbsync, cbasync
-from lib.cbutil import cbindex
+from lib.cbutil import cbsync, cbasync
 from lib.cbutil.randomize import randomize
 from lib.cbutil.cbdebug import cb_debug
-from lib.executive import print_host_map, test_exec, schema_admin
+from lib.executive import print_host_map, test_exec
 import argparse
 import asyncio
 import re
@@ -50,8 +48,9 @@ query_result = [
 failed = 0
 tests_run = 0
 replica_count = 1
-VERSION = "1.0"
+VERSION = "2.0"
 warnings.filterwarnings("ignore")
+
 
 class CheckCompare(object):
 
@@ -894,33 +893,33 @@ def main():
     print("Randomize Tests")
     randomize_test()
 
-    # for schema in schema_list:
-    #     print(f"Running tests on schema {schema}")
-    #     print(f"Main Async Tests - {schema}")
-    #     test_map(args)
-    #     test_load(args, sync=False, schema=schema)
-    #     test_run(args, sync=False, schema=schema)
-    #     test_ramp(args, sync=False, schema=schema)
-    #     print(f"Main Sync Tests - {schema}")
-    #     test_map(args)
-    #     test_load(args, sync=True, schema=schema)
-    #     test_run(args, sync=True, schema=schema)
-    #     test_ramp(args, sync=True, schema=schema)
-    #
-    # print("External file async test")
-    # test_map(args)
-    # test_load(args, sync=False, filetest=True)
-    # test_run(args, sync=False, filetest=True)
-    # test_ramp(args, sync=False, filetest=True)
-    # print("External file sync test")
-    # test_map(args)
-    # test_load(args, sync=True, filetest=True)
-    # test_run(args, sync=True, filetest=True)
-    # test_ramp(args, sync=True, filetest=True)
-    #
-    # print("CLI Invoke Tests")
-    # for schema in schema_list:
-    #     test_cli(hostname, username, password, schema)
+    for schema in schema_list:
+        print(f"Running tests on schema {schema}")
+        print(f"Main Async Tests - {schema}")
+        test_map(args)
+        test_load(args, sync=False, schema=schema)
+        test_run(args, sync=False, schema=schema)
+        test_ramp(args, sync=False, schema=schema)
+        print(f"Main Sync Tests - {schema}")
+        test_map(args)
+        test_load(args, sync=True, schema=schema)
+        test_run(args, sync=True, schema=schema)
+        test_ramp(args, sync=True, schema=schema)
+
+    print("External file async test")
+    test_map(args)
+    test_load(args, sync=False, filetest=True)
+    test_run(args, sync=False, filetest=True)
+    test_ramp(args, sync=False, filetest=True)
+    print("External file sync test")
+    test_map(args)
+    test_load(args, sync=True, filetest=True)
+    test_run(args, sync=True, filetest=True)
+    test_ramp(args, sync=True, filetest=True)
+
+    print("CLI Invoke Tests")
+    for schema in schema_list:
+        test_cli(hostname, username, password, schema)
 
     print(f"{tests_run} test(s) run")
     if failed > 0:

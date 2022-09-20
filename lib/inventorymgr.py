@@ -6,10 +6,9 @@ import json
 import re
 from json.decoder import JSONDecodeError
 import jinja2
-from jinja2.meta import find_undeclared_variables
+import logging
 from distutils.util import strtobool
-from .exceptions import *
-from lib.cbutil.cbdebug import cb_debug
+from .exceptions import InventoryConfigError
 from lib.cbutil.randomize import randomize
 
 
@@ -60,8 +59,7 @@ class collectionElement(object):
 class inventoryManager(object):
 
     def __init__(self, inventory, args, by_reference=False):
-        debugger = cb_debug(self.__class__.__name__)
-        logger = debugger.logger
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.inventory_json = inventory
         self.args = args
         self.file_schema_json = None
@@ -76,7 +74,7 @@ class inventoryManager(object):
                     if key != self.args.schema:
                         continue
 
-                    logger.info(f"adding schema {key} to inventory")
+                    self.logger.info(f"adding schema {key} to inventory")
                     node = schemaElement(key)
                     self.schemas.insert(0, node)
 
@@ -85,12 +83,12 @@ class inventoryManager(object):
                         if len(bucket_name) == 0:
                             raise InventoryConfigError(f"schema {key}: bucket name can not be null")
 
-                        logger.info(f"adding bucket {bucket_name} to inventory")
+                        self.logger.info(f"adding bucket {bucket_name} to inventory")
                         node = bucketElement(bucket_name)
                         self.schemas[0].buckets.insert(0, node)
 
                         for y, scope in enumerate(value['buckets'][x]['scopes']):
-                            logger.info("adding scope %s to inventory" % scope['name'])
+                            self.logger.info("adding scope %s to inventory" % scope['name'])
                             node = scopeElement(scope['name'])
                             self.schemas[0].buckets[0].scopes.insert(0, node)
 
@@ -99,7 +97,7 @@ class inventoryManager(object):
                                 if len(id_key_name) == 0:
                                     raise InventoryConfigError(f"schema {key}: id field can not be null")
 
-                                logger.info("adding collection %s to inventory" % collection['name'])
+                                self.logger.info("adding collection %s to inventory" % collection['name'])
                                 node = collectionElement(collection['name'], bucket_name, scope['name'])
                                 self.schemas[0].buckets[0].scopes[0].collections.insert(0, node)
                                 self.schemas[0].buckets[0].scopes[0].collections[0].id = id_key_name
@@ -142,7 +140,7 @@ class inventoryManager(object):
                                         if len(index_field_name) == 0:
                                             raise InventoryConfigError(f"schema {key}: index name can not be null")
 
-                                        logger.info(f"adding index for field {index_field_name} to inventory")
+                                        self.logger.info(f"adding index for field {index_field_name} to inventory")
                                         index_data = {}
                                         index_data['field'] = index_field_name
                                         index_data['name'] = self.indexName(self.schemas[0].buckets[0].scopes[0].collections[0], index_field_name)
@@ -150,14 +148,11 @@ class inventoryManager(object):
 
                     if 'rules' in value:
                         for r, rule in enumerate(value['rules']):
-                            logger.info("adding rule %s to inventory" % rule['name'])
+                            self.logger.info("adding rule %s to inventory" % rule['name'])
                             self.schemas[0].rules.append(rule)
         except Exception as err:
-            print(traceback.format_exc())
-            debugger.close()
+            self.logger.debug(traceback.format_exc())
             raise InventoryConfigError("inventory syntax error: {}".format(err))
-
-        debugger.close()
 
     def get_document_size(self, document, key):
         try:
