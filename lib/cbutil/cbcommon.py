@@ -54,7 +54,11 @@ class cb_common(object):
         self.memory_quota = None
         self.cluster_services = []
         self.auth = PasswordAuthenticator(self.username, self.password)
-        self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=360), kv_timeout=timedelta(seconds=360))
+        self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=30),
+                                              kv_timeout=timedelta(seconds=30),
+                                              connect_timeout=timedelta(seconds=5),
+                                              management_timeout=timedelta(seconds=5),
+                                              resolve_timeout=timedelta(seconds=5))
 
         if self.ssl:
             self.prefix = "https://"
@@ -107,16 +111,16 @@ class cb_common(object):
     #     self._mode = RunMode.Async.value
     #     return self
 
-    @property
-    def cb_parameters(self):
-        if self.ssl:
-            return "?ssl=no_verify"
-        else:
-            return ""
+    # @property
+    # def cb_parameters(self):
+    #     if self.ssl:
+    #         return "?ssl=no_verify"
+    #     else:
+    #         return ""
 
     @property
     def cb_connect_string(self):
-        return self.cb_prefix + self.rally_host_name + self.cb_parameters
+        return self.cb_prefix + self.rally_host_name
 
     @property
     def cb_network(self):

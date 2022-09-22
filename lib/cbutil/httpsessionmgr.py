@@ -10,6 +10,7 @@ import os
 import datetime
 import hmac
 import hashlib
+import warnings
 from urllib.parse import urlparse
 from requests.auth import AuthBase
 from .httpexceptions import NotAuthorized, HTTPForbidden, HTTPNotImplemented, RequestValidationError, InternalServerError, PaginationDataNotFound
@@ -73,6 +74,7 @@ class api_session(object):
     AUTH_CAPELLA = 1
 
     def __init__(self, username=None, password=None, auth_type=0):
+        warnings.filterwarnings("ignore")
         self.username = username
         self.password = password
         self.logger = logging.getLogger(self.__class__.__name__)

@@ -261,6 +261,7 @@ class test_exec(cbPerfBase):
             self.safe_mode = True
         if self.parameters.output:
             self.output_file = self.parameters.output
+            sys.stdout = open(self.output_file, "a")
         if self.parameters.max:
             self.thread_max = self.parameters.max
 

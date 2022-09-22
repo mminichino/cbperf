@@ -30,10 +30,10 @@ import asyncio
 from itertools import cycle
 import json
 try:
-    from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions, WaitUntilReadyOptions
+    from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions, WaitUntilReadyOptions, TLSVerifyMode
 except ImportError:
     from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions, WaitUntilReadyOptions
-    from couchbase.options import LockMode
+    from couchbase.options import LockMode, TLSVerifyMode
 try:
     from couchbase.management.options import (CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions,
                                               DropPrimaryQueryIndexOptions, DropQueryIndexOptions)
@@ -87,7 +87,10 @@ class cb_connect_a(cb_common):
     @retry()
     async def connect(self):
         self.logger.debug(f"connect [{self._mode_str}]: connect string {self.cb_connect_string}")
-        cluster = AsyncCluster(self.cb_connect_string, ClusterOptions(self.auth, timeout_options=self.timeouts, lockmode=LockMode.WAIT))
+        cluster = AsyncCluster(self.cb_connect_string, ClusterOptions(self.auth,
+                                                                      timeout_options=self.timeouts,
+                                                                      lockmode=LockMode.WAIT,
+                                                                      tls_verify=TLSVerifyMode.NO_VERIFY))
         result = await cluster.on_connect()
         self._cluster = cluster
         return True
@@ -334,7 +337,7 @@ class cb_connect_a(cb_common):
             raise BucketStatsError(f"can not get bucket {bucket} stats: {err}")
 
     @retry()
-    async def cb_create_primary_index(self, replica=0, timeout=120):
+    async def cb_create_primary_index(self, replica=0, timeout=480):
         if self._collection.name != '_default':
             index_options = CreatePrimaryQueryIndexOptions(deferred=False,
                                                            timeout=timedelta(seconds=timeout),
@@ -353,7 +356,7 @@ class cb_connect_a(cb_common):
             pass
 
     @retry()
-    async def cb_create_index(self, field, replica=0, timeout=120):
+    async def cb_create_index(self, field, replica=0, timeout=480):
         if self._collection.name != '_default':
             index_options = CreateQueryIndexOptions(deferred=False,
                                                     timeout=timedelta(seconds=timeout),
@@ -462,7 +465,7 @@ class cb_connect_a(cb_common):
         else:
             raise IndexNotReady(f"index_check: field: {field} count {check_count} len {len(result)}: index not ready")
 
-    async def index_online(self, name=None, primary=False, timeout=120):
+    async def index_online(self, name=None, primary=False, timeout=480):
         if primary:
             indexes = []
             watch_options = WatchQueryIndexOptions(timeout=timedelta(seconds=timeout), watch_primary=True)
