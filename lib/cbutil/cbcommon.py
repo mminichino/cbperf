@@ -16,7 +16,7 @@ import re
 from enum import Enum
 from datetime import timedelta
 from couchbase.auth import PasswordAuthenticator
-from couchbase.options import ClusterTimeoutOptions, QueryOptions, ClusterOptions
+from couchbase.options import ClusterTimeoutOptions, QueryOptions, ClusterOptions, LockMode, TLSVerifyMode
 from couchbase.cluster import Cluster
 from couchbase.diagnostics import ServiceType, PingState
 from couchbase.exceptions import HTTPException
@@ -199,11 +199,11 @@ class cb_common(object):
 
     @retry()
     def cluster_health_check(self, output=False, restrict=True, noraise=False, extended=False):
-        cb_auth = PasswordAuthenticator(self.username, self.password)
-        cb_timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=60), kv_timeout=timedelta(seconds=60))
-
         try:
-            cluster = Cluster.connect(self.cb_connect_string, ClusterOptions(cb_auth, timeout_options=cb_timeouts))
+            cluster = Cluster(self.cb_connect_string, ClusterOptions(self.auth,
+                                                                     timeout_options=self.timeouts,
+                                                                     lockmode=LockMode.WAIT,
+                                                                     tls_verify=TLSVerifyMode.NO_VERIFY))
             result = cluster.ping()
         except SystemError as err:
             if isinstance(err.__cause__, HTTPException) and err.__cause__.error_code == 1049:

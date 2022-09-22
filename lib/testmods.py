@@ -6,6 +6,7 @@ from lib.cbutil.randomize import randomize, fastRandom
 from lib.constants import *
 from lib.cbutil.cbsync import cb_connect_s
 from lib.cbutil.cbasync import cb_connect_a
+from lib.exceptions import TestRunException
 from queue import Empty
 import asyncio
 import time
@@ -13,6 +14,17 @@ import numpy as np
 import sys
 import concurrent.futures
 import logging
+import signal
+import os
+import traceback
+
+
+def signal_handler(signum, frame):
+    logger = logging.getLogger(signal_handler.__name__)
+    tb = traceback.format_exc()
+    logger.debug(tb)
+    logger.error(f"received signal {signum}")
+    raise TestRunException("signal received")
 
 
 class rwMixer(object):
@@ -226,6 +238,8 @@ class test_mods(object):
             self.logger.error(f"async test process error: {err}")
 
     async def async_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGSEGV, signal_handler)
         loop = asyncio.get_event_loop()
         tasks = []
         rand_gen = fastRandom(record_count)
@@ -337,6 +351,8 @@ class test_mods(object):
             self.logger.debug(f"sync test process returned: {err}")
 
     def sync_test_run(self, mask, input_json, count, coll_obj, record_count, telemetry_queue, write_p, n, status_vector):
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGSEGV, signal_handler)
         tasks = []
         rand_gen = fastRandom(record_count)
         id_field = coll_obj.id
