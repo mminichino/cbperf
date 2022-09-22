@@ -1,14 +1,12 @@
 #!/usr/bin/env -S python3
 
 import argparse
-import json
-import re
 import sys
 import signal
 import warnings
-from lib.cbutil.capsessionmgr import capella_session
+from datetime import datetime, timezone
 from lib.cbutil.httpsessionmgr import api_session
-from lib.cbutil.httpexceptions import HTTPForbidden, HTTPNotImplemented
+from lib.cbutil.httpexceptions import HTTPNotImplemented
 
 
 def break_signal_handler(signum, frame):
@@ -47,27 +45,35 @@ class cluster_mgr(object):
         print("Type   "
               "Name                                     "
               "ID                                   "
-              "Project                              "
-              "Cloud Region               "
+              "Project                  "
+              "Cloud "
+              "Region               "
               "#   "
               "Stor  "
               "Ver   "
-              "MDS Services                                    "
+              "MDS "
+              "Age        "
+              "Services                                    "
               "Nodes")
         print("====== "
               "======================================== "
               "==================================== "
-              "==================================== "
+              "======================== "
               "===== "
               "==================== "
               "=== "
               "===== "
               "===== "
               "=== "
+              "========== "
               "=========================================== "
               "=======================================")
         for item in clusters:
-            print(f"{item['environment'].ljust(6)} {item['name'].ljust(40)} {item['id']} {item['projectId']} ", end='')
+            project_info = self.api.api_get(f"/v2/projects/{item['projectId']}").json()
+            print(f"{item['environment'].ljust(6)} "
+                  f"{item['name'].ljust(40)} "
+                  f"{item['id']} "
+                  f"{project_info['name'].ljust(24)} ", end='')
             try:
                 node_total = 0
                 storage_total = 0
@@ -89,11 +95,19 @@ class cluster_mgr(object):
                     last_list = current_list
                 service_list = self.service_sort([*set(service_list)])
                 type_list = [*set(type_list)]
+                created = cluster_info['createdAt']
+                created = created[:-4]+created[-1]
+                create_time = datetime.strptime(created, '%Y-%m-%dT%H:%M:%S.%f%z')
+                now = datetime.now(timezone.utc)
+                delta = now - create_time
+                d_days = str(delta.days)
+                d_hours = str(round(delta.seconds / 3600))
                 print(f"{cluster_info['place']['provider'].ljust(5)} "
                       f"{cluster_info['place']['region'].ljust(20)} "
                       f"{str(node_total).ljust(3)} {str(storage_total).ljust(5)} "
                       f"{cluster_info['version']['components']['cbServerVersion']} "
                       f"{mds.ljust(3)} "
+                      f"{d_days.rjust(5)}d {d_hours.rjust(2)}h "
                       f"{','.join(service_list).ljust(43)} "
                       f"{','.join(type_list)}")
             except HTTPNotImplemented:
@@ -108,8 +122,6 @@ def main():
     parser.add_argument('-e', action='store')
     parser.add_argument('-g', action='store_true')
     parser.add_argument('-c', action='store_true')
-    # main_parser = argparse.ArgumentParser(add_help=False)
-    # main_parser.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS, help='Show help message')
     command_parser = parser.add_subparsers(dest='command')
     cluster_parser = command_parser.add_parser('cluster', help="Cluster Operations", parents=[], add_help=False)
     cluster_command_parser = cluster_parser.add_subparsers(dest='cluster_command')
