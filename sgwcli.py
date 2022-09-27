@@ -23,6 +23,8 @@ class sg_database(api_session):
 
     def create(self, bucket, name, replicas=0):
         data = {
+            "import_docs": True,
+            "enable_shared_bucket_access": True,
             "bucket": bucket,
             "name": name,
             "num_index_replicas": replicas
@@ -47,6 +49,20 @@ class sg_database(api_session):
         except Exception as err:
             print(f"Database delete failed for {name}: {err}")
             sys.exit(1)
+
+    def sync_fun(self, name, filename):
+        with open(filename, "r") as file:
+            data = file.read()
+            file.close()
+            try:
+                response = self.api_put_data(f"/{name}/_config/sync", data, 'application/javascript')
+                print(f"Sync function created for database {name}.")
+            except HTTPForbidden:
+                print(f"Database {name} does not exist.")
+                sys.exit(1)
+            except Exception as err:
+                print(f"Sync function create failed for database {name}: {err}")
+                sys.exit(1)
 
     def list(self, name):
         try:
@@ -145,11 +161,12 @@ def main():
     db_parser = argparse.ArgumentParser(add_help=False)
     db_parser.add_argument('-b', '--bucket', action='store', help='Bucket name')
     db_parser.add_argument('-n', '--name', action='store', help='Database name')
+    db_parser.add_argument('-f', '--function', action='store', help='Sync Function')
     db_parser.add_argument('-r', '--replicas', action='store', help='Replica count', type=int, default=0)
     user_parser = argparse.ArgumentParser(add_help=False)
     user_parser.add_argument('-n', '--name', action='store', help='Database name')
-    user_parser.add_argument('--dbuser', action='store', help='Database user')
-    user_parser.add_argument('--dbpass', action='store',  help='Database user password')
+    user_parser.add_argument('-U', '--dbuser', action='store', help='Database user')
+    user_parser.add_argument('-P', '--dbpass', action='store',  help='Database user password')
     main_parser = argparse.ArgumentParser(add_help=False)
     main_parser.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS, help='Show help message')
     subparser = main_parser.add_subparsers(dest='command')
@@ -157,6 +174,7 @@ def main():
     db_sub_mode = db_mode.add_subparsers(dest='db_command')
     db_sub_mode.add_parser('create', help="Create Database", parents=[parent_parser, db_parser], add_help=False)
     db_sub_mode.add_parser('delete', help="Delete Database", parents=[parent_parser, db_parser], add_help=False)
+    db_sub_mode.add_parser('sync', help="Add Sync Function", parents=[parent_parser, db_parser], add_help=False)
     db_sub_mode.add_parser('list', help="List Databases", parents=[parent_parser, db_parser], add_help=False)
     db_sub_mode.add_parser('dump', help="Dump Databases", parents=[parent_parser, db_parser], add_help=False)
     user_mode = subparser.add_parser('user', help="User Operations", parents=[parent_parser, user_parser], add_help=False)
@@ -174,6 +192,8 @@ def main():
             sgdb.create(parameters.bucket, parameters.name, parameters.replicas)
         elif parameters.db_command == "delete":
             sgdb.delete(parameters.name)
+        elif parameters.db_command == "sync":
+            sgdb.sync_fun(parameters.name, parameters.function)
         elif parameters.db_command == "list":
             sgdb.list(parameters.name)
         elif parameters.db_command == "dump":

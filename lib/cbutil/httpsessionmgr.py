@@ -120,6 +120,8 @@ class api_session(object):
             raise HTTPForbidden("API: Forbidden: Insufficient privileges")
         elif code == 404:
             raise HTTPNotImplemented("API: Not Found")
+        elif code == 415:
+            raise RequestValidationError("API: invalid body contents")
         elif code == 422:
             raise RequestValidationError("API: Request Validation Error")
         elif code == 500:
@@ -220,6 +222,19 @@ class api_session(object):
 
     def api_put(self, endpoint, body):
         response = self.session.put(self.url_prefix + endpoint, auth=self.auth_class, json=body, verify=False, timeout=15)
+
+        try:
+            self.check_status_code(response.status_code)
+        except Exception:
+            raise
+
+        self._response = response.text
+        return self
+
+    def api_put_data(self, endpoint, body, content_type):
+        headers = {'Content-Type': content_type}
+
+        response = self.session.put(self.url_prefix + endpoint, auth=self.auth_class, data=body, verify=False, timeout=15, headers=headers)
 
         try:
             self.check_status_code(response.status_code)
