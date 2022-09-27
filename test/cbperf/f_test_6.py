@@ -402,7 +402,7 @@ def unhandled_exception(loop, context):
 # @pytest.mark.parametrize("syncmode", [False, ])
 # @pytest.mark.parametrize("schema", ["default", ])
 # @pytest.mark.parametrize("tls", [False, ])
-def test_modules_run_1(hostname, username, password, tls, schema, syncmode, mocker):
+def test_modules_ramp_1(hostname, username, password, tls, schema, syncmode, mocker):
     warnings.filterwarnings("ignore")
     mocker.patch(
         "sys.argv",
