@@ -181,6 +181,7 @@
                       "zip_code": "{{ rand_zip_code }}",
                       "phone": "{{ rand_phone }}",
                       "date_of_birth": "{{ rand_dob_1 }}",
+                      "password": "{{ rand_password }}",
                       "timecards": []
                     },
                     "idkey": "record_id",

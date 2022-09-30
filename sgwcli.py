@@ -6,12 +6,23 @@ import signal
 import json
 from lib.cbutil.httpsessionmgr import api_session
 from lib.cbutil.httpexceptions import HTTPForbidden, HTTPNotImplemented
+from lib.cbutil.cbsync import cb_connect_s
 
 
 def break_signal_handler(signum, frame):
     print("")
     print("Break received, aborting.")
     sys.exit(1)
+
+
+class cb_interface(object):
+
+    def __init__(self, hostname, username, password, ssl=True):
+        self.host = hostname
+        self.username = username
+        self.password = password
+        self.ssl = ssl
+        self.db = cb_connect_s(self.host, self.username, self.password, ssl=self.ssl).init()
 
 
 class sg_database(api_session):
@@ -165,8 +176,9 @@ def main():
     db_parser.add_argument('-r', '--replicas', action='store', help='Replica count', type=int, default=0)
     user_parser = argparse.ArgumentParser(add_help=False)
     user_parser.add_argument('-n', '--name', action='store', help='Database name')
-    user_parser.add_argument('-U', '--dbuser', action='store', help='Database user')
-    user_parser.add_argument('-P', '--dbpass', action='store',  help='Database user password')
+    user_parser.add_argument('-U', '--dbuser', action='store', help='SGW user name or CBS login name')
+    user_parser.add_argument('-P', '--dbpass', action='store',  help='SGW user password or CBS login password')
+    user_parser.add_argument('-H', '--dbhost', action='store', help='Couchbase hostname')
     main_parser = argparse.ArgumentParser(add_help=False)
     main_parser.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS, help='Show help message')
     subparser = main_parser.add_subparsers(dest='command')

@@ -13,6 +13,15 @@ from jinja2.environment import Environment
 from jinja2.runtime import DebugUndefined
 from jinja2.meta import find_undeclared_variables
 import multiprocessing
+import hashlib
+from enum import Enum
+
+
+class HashMode(Enum):
+    sha1 = 0
+    sha256 = 1
+    sha512 = 2
+    md5 = 3
 
 
 class fastRandom(object):
@@ -76,6 +85,7 @@ class randomize(object):
         self.datetimestr = self.nowTime.strftime("%Y-%m-%d %H:%M:%S")
         self.incrementor = mpAtomicIncrement()
         self.incrementor_block = mpAtomicIncrement(s=10)
+        self.password_hash = HashMode.sha1.value
 
     def _randomNumber(self, n):
         min_lc = ord(b'0')
@@ -423,6 +433,18 @@ class randomize(object):
         encoded = encoded.decode('utf-8')
         return encoded
 
+    def randPassword(self):
+        password = "password"
+        if self.password_hash == HashMode.sha1.value:
+            digest = hashlib.sha1(password.encode('utf-8')).digest()
+        elif self.password_hash == HashMode.sha256.value:
+            digest = hashlib.sha256(password.encode('utf-8')).digest()
+        elif self.password_hash == HashMode.sha512.value:
+            digest = hashlib.sha512(password.encode('utf-8')).digest()
+        else:
+            digest = hashlib.md5(password.encode('utf-8')).digest()
+        return base64.b64encode(digest).decode('utf-8')
+
     def testAll(self):
         past_date = self.pastDate
         dob_date = self.dobDate
@@ -508,6 +530,7 @@ class randomize(object):
                                               rand_dob_2=self.dobHyphen(dob_date),
                                               rand_dob_3=self.dobText(dob_date),
                                               rand_image=random_image,
+                                              rand_password=self.randPassword(),
                                               )
         finished = formattedBlock.encode('ascii')
         jsonBlock = json.loads(finished)
