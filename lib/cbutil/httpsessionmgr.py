@@ -13,7 +13,7 @@ import hashlib
 import warnings
 from urllib.parse import urlparse
 from requests.auth import AuthBase
-from .httpexceptions import NotAuthorized, HTTPForbidden, HTTPNotImplemented, RequestValidationError, InternalServerError, PaginationDataNotFound
+from .httpexceptions import NotAuthorized, HTTPForbidden, HTTPNotImplemented, RequestValidationError, InternalServerError, PaginationDataNotFound, SyncGatewayOperationException
 
 
 class capella_auth(AuthBase):
@@ -126,6 +126,8 @@ class api_session(object):
             raise RequestValidationError("API: Request Validation Error")
         elif code == 500:
             raise InternalServerError("API: Server Error")
+        elif code == 503:
+            raise SyncGatewayOperationException("API: Operation error code")
         else:
             raise Exception("Unknown API status code {}".format(code))
 
@@ -203,7 +205,7 @@ class api_session(object):
                 ep_path = urlparse(endpoint).path
                 self.api_get(f"{ep_path}?page={next_page}&perPage={per_page}", items)
             response_text = json.dumps(items)
-        except PaginationDataNotFound:
+        except (PaginationDataNotFound, json.decoder.JSONDecodeError):
             response_text = response.text
 
         self._response = response_text

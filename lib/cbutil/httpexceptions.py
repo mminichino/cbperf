@@ -78,3 +78,7 @@ class HTTPNotImplemented(httpException):
 class PaginationDataNotFound(httpException):
     pass
 
+
+class SyncGatewayOperationException(httpException):
+    pass
+
