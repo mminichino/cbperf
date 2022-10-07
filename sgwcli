@@ -1,0 +1,11 @@
+#!/bin/sh
+#
+SCRIPTDIR=$(cd $(dirname $0) && pwd)
+
+if [ ! -d $SCRIPTDIR/venv ]; then
+  echo "Please run setup.sh first."
+  exit 1
+fi
+
+. $SCRIPTDIR/venv/bin/activate
+python3 -W ignore $SCRIPTDIR/sgwcli.py $@

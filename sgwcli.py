@@ -132,6 +132,10 @@ class sg_database(api_session):
             print(f"Database list failed for {name}: {err}")
             sys.exit(1)
 
+    @retry(factor=0.5, retry_count=20)
+    def ready_wait(self, name):
+        response = self.api_get(f"/{name}/_config").json()
+
     def dump(self, name):
         try:
             response = self.api_get(f"/{name}/_all_docs").json()
@@ -244,6 +248,7 @@ def main():
     db_sub_mode.add_parser('resync', help="Sync Documents", parents=[parent_parser, db_parser], add_help=False)
     db_sub_mode.add_parser('list', help="List Databases", parents=[parent_parser, db_parser], add_help=False)
     db_sub_mode.add_parser('dump', help="Dump Databases", parents=[parent_parser, db_parser], add_help=False)
+    db_sub_mode.add_parser('wait', help="Wait For Database Online", parents=[parent_parser, db_parser], add_help=False)
     user_mode = subparser.add_parser('user', help="User Operations", parents=[parent_parser, user_parser], add_help=False)
     user_sub_mode = user_mode.add_subparsers(dest='user_command')
     user_sub_mode.add_parser('create', help="Add User", parents=[parent_parser, user_parser], add_help=False)
@@ -272,6 +277,8 @@ def main():
             sgdb.list(parameters.name)
         elif parameters.db_command == "dump":
             sgdb.dump(parameters.name)
+        elif parameters.db_command == "wait":
+            sgdb.ready_wait(parameters.name)
     elif parameters.command == 'user':
         sguser = sg_user(parameters.host, parameters.user, parameters.password)
         if parameters.user_command == "create":
