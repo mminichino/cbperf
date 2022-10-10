@@ -5,8 +5,6 @@ import json
 import psutil
 import traceback
 import warnings
-from typing import Callable
-from functools import wraps
 from collections import Counter
 import queue
 from queue import Empty
@@ -15,18 +13,17 @@ import concurrent.futures
 from couchbase.auth import PasswordAuthenticator
 import couchbase.cluster
 try:
-    from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions
+    from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions, TLSVerifyMode
 except ImportError:
     from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions
-    from couchbase.options import LockMode
-from couchbase.exceptions import QueryIndexAlreadyExistsException, BucketAlreadyExistsException
+    from couchbase.options import LockMode, TLSVerifyMode
+from couchbase.exceptions import QueryIndexAlreadyExistsException, BucketAlreadyExistsException, RequestCanceledException
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 try:
     from couchbase.management.options import CreateQueryIndexOptions
 except ModuleNotFoundError:
     from couchbase.management.queries import CreateQueryIndexOptions
 from datetime import timedelta
-import time
 import argparse
 
 error_count = 0
@@ -52,40 +49,12 @@ def check_open_files():
     print("")
 
 
-def retry_f(retry_count=10,
-            factor=0.01,
-            allow_list=None,
-            always_raise_list=None
-            ) -> Callable:
-    def retry_handler(func):
-        @wraps(func)
-        def f_wrapper(*args, **kwargs):
-            for retry_number in range(retry_count + 1):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as err:
-                    if always_raise_list and isinstance(err, always_raise_list):
-                        raise
-
-                    if allow_list and not isinstance(err, allow_list):
-                        raise
-
-                    if retry_number == retry_count:
-                        raise
-
-                    wait = factor
-                    wait *= (2**(retry_number+1))
-                    time.sleep(wait)
-        return f_wrapper
-    return retry_handler
-
-
 class params(object):
 
     def __init__(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument('--ssl', action='store_true')
-        parser.add_argument('--host', action='store', default="127.0.0.1")
+        parser.add_argument('--ssl', action='store_true', help="Use SSL")
+        parser.add_argument('--host', action='store', help="Hostname or IP address", default="127.0.0.1")
         parser.add_argument('--user', action='store', help="User Name", default="Administrator")
         parser.add_argument('--password', action='store', help="User Password", default="password")
         parser.add_argument('--bucket', action='store', help="Test Bucket", default="testrun")
@@ -103,12 +72,8 @@ class cbdb(object):
         self.cluster_services = ["n1ql", "index", "data"]
         if ssl:
             self.connectType = "couchbases://"
-            self.urlOptions = "?ssl=no_verify"
-            self.adminPort = "18091"
         else:
             self.connectType = "couchbase://"
-            self.urlOptions = ""
-            self.adminPort = "8091"
         self.username = username
         self.password = password
         self.host = hostname
@@ -121,21 +86,30 @@ class cbdb(object):
         self.control = Event()
         self.lock = Lock()
 
-    @retry_f()
+    def __exit__(self):
+        self.cluster_disconnect()
+
     def cluster_connect(self):
         auth = PasswordAuthenticator(self.username, self.password)
-        timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=4800), kv_timeout=timedelta(seconds=4800))
+        timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=30),
+                                         kv_timeout=timedelta(seconds=30),
+                                         connect_timeout=timedelta(seconds=5),
+                                         management_timeout=timedelta(seconds=5),
+                                         resolve_timeout=timedelta(seconds=5))
         try:
-            cluster = couchbase.cluster.Cluster.connect(self.connectType + self.host + self.urlOptions, ClusterOptions(auth, timeout_options=timeouts, lockmode=LockMode.WAIT))
-            self.bm = cluster.buckets()
-            self.qim = cluster.query_indexes()
-            self.cluster = cluster
-            return cluster
+            self.cluster = couchbase.cluster.Cluster.connect(self.connectType + self.host, ClusterOptions(auth,
+                                                                                                          timeout_options=timeouts,
+                                                                                                          lockmode=LockMode.WAIT,
+                                                                                                          tls_verify=TLSVerifyMode.NO_VERIFY))
+            self.bm = self.cluster.buckets()
+            self.qim = self.cluster.query_indexes()
         except Exception as err:
             raise Exception(f"can not connect to cluster at {self.host}: {err}")
 
     def cluster_disconnect(self):
-        self.cluster.close()
+        if self.cluster:
+            self.cluster.close()
+            self.cluster = None
 
     def doc_feed(self, document, doc_count):
         for n in range(doc_count):
@@ -153,13 +127,27 @@ class cbdb(object):
         self.q.join()
         self.control.set()
 
-    @retry_f()
+    def do_upsert(self, doc_id, doc):
+        while True:
+            try:
+                self.collection.upsert(doc_id, doc)
+                break
+            except RequestCanceledException:
+                continue
+
+    def do_get(self, doc_id):
+        while True:
+            try:
+                return self.collection.get(doc_id)
+            except RequestCanceledException:
+                continue
+
     def doc_upsert_worker(self):
         while True:
             try:
                 doc_id, document = self.q.get(block=False)
                 document_id = f"{self.bucket}:{doc_id}"
-                self.collection.upsert(document_id, json.loads(document))
+                self.do_upsert(document_id, json.loads(document))
                 self.q.task_done()
             except Empty:
                 if self.control.is_set():
@@ -169,13 +157,12 @@ class cbdb(object):
             except Exception:
                 raise
 
-    @retry_f()
     def doc_get_worker(self):
         while True:
             try:
                 doc_id = self.q.get(block=False)
                 document_id = f"{self.bucket}:{doc_id}"
-                result = self.collection.get(document_id)
+                result = self.do_get(document_id)
                 self.q.task_done()
                 return result.content_as[dict]
             except Empty:
@@ -186,12 +173,6 @@ class cbdb(object):
             except Exception:
                 raise
 
-    @retry_f()
-    def doc_query_worker(self, query):
-        result = self.cluster.query(query, QueryOptions(metrics=False, adhoc=True))
-        result_list = list(result.rows())
-        return result_list
-
     def task_wait(self, tasks):
         result_set = []
         while tasks:
@@ -201,8 +182,9 @@ class cbdb(object):
                     result = task.result()
                     if type(result) == dict:
                         result_set.append(result)
-                except Exception:
-                    pass
+                except Exception as err:
+                    print(f"task error: {type(err).__name__}: {err}")
+                    return
         return result_set
 
     def do_stuff(self):
@@ -211,8 +193,6 @@ class cbdb(object):
         tasks = set()
         sub_tasks = set()
         executor = concurrent.futures.ThreadPoolExecutor()
-        queryTextA = "select count(*) as count from " + self.bucket + ";"
-        queryTextB = "SELECT id FROM " + self.bucket + ";"
         document = {
             "id": 1,
             "data": "data",
@@ -259,12 +239,6 @@ class cbdb(object):
                 if run_count >= doc_count:
                     break
             self.task_wait(tasks)
-
-            print("Getting collection doc count")
-            result_list = self.doc_query_worker(queryTextA)
-
-            print("Getting field from test doc")
-            result_list = self.doc_query_worker(queryTextB)
 
         except AssertionError:
             _, _, tb = sys.exc_info()

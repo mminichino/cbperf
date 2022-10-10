@@ -36,8 +36,8 @@ current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
 sys.path.append(parent)
 
-from lib.cbutil import cbconnect, cbsync, cbasync
-from lib.cbutil.retries import RunMode
+from lib.cbutil import cbsync, cbasync
+from lib.cbutil.cbcommon import RunMode
 
 error_count = 0
 

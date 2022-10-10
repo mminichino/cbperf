@@ -49,6 +49,10 @@ class cb_connect_a(cb_common):
         self._mode = RunMode.Async.value
         self._mode_str = RunMode(self._mode).name
 
+    def __exit__(self):
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.disconnect())
+
     async def init(self):
         try:
             self.is_reachable()
@@ -496,3 +500,8 @@ class cb_connect_a(cb_common):
     async def delete_wait(self, field=None):
         if await self.is_index(field=field):
             raise IndexNotReady(f"delete_wait: index still exists")
+
+    async def disconnect(self):
+        if self._cluster:
+            await self._cluster.close()
+            self._cluster = None

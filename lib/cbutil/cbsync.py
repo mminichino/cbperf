@@ -50,6 +50,9 @@ class cb_connect_s(cb_common):
         self._mode = RunMode.Sync.value
         self._mode_str = RunMode(self._mode).name
 
+    def __exit__(self):
+        self.disconnect()
+
     def init(self):
         try:
             self.is_reachable()
@@ -494,3 +497,8 @@ class cb_connect_s(cb_common):
     def delete_wait(self, field=None):
         if self.is_index(field=field):
             raise IndexNotReady(f"delete_wait: index still exists")
+
+    def disconnect(self):
+        if self._cluster:
+            self._cluster.close()
+            self._cluster = None
