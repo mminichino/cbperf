@@ -198,6 +198,7 @@ class sg_user(api_session):
                 print(f"Name:           {response['name']}")
                 print(f"Admin channels: {response['admin_channels']}")
                 print(f"All channels:   {response['all_channels']}")
+                print(f"Roles:          {response['admin_roles']}")
                 print(f"Disabled:       {response['disabled']}")
             else:
                 response = self.api_get(f"/{name}/_user/").json()
