@@ -25,6 +25,7 @@ except ModuleNotFoundError:
     from couchbase.management.queries import CreateQueryIndexOptions
 from datetime import timedelta
 import argparse
+import logging
 
 error_count = 0
 
@@ -69,6 +70,7 @@ class params(object):
 class cbdb(object):
 
     def __init__(self, hostname, username, password, bucket, ssl=False):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.cluster_services = ["n1ql", "index", "data"]
         if ssl:
             self.connectType = "couchbases://"
@@ -250,6 +252,9 @@ class cbdb(object):
 
 
 warnings.filterwarnings("ignore")
+logging.basicConfig(filename='test_output.out', filemode='w', level=logging.DEBUG)
+logger = logging.getLogger()
+couchbase.configure_logging(logger.name, level=logger.level)
 p = params()
 options = p.parameters
 

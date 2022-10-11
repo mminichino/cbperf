@@ -139,6 +139,7 @@ class cb_common(object):
         resolver.timeout = 5
         resolver.lifetime = 10
 
+        self.logger.debug(f"checking if rally node is reachable: {self.rally_host_name}")
         try:
             answer = resolver.resolve(self.srv_prefix + self.rally_host_name, "SRV")
             for srv in answer:
@@ -148,7 +149,7 @@ class cb_common(object):
                 self.srv_host_list.append(record)
             self.rally_cluster_node = self.srv_host_list[0]['hostname']
             self.rally_dns_domain = True
-        except dns.resolver.NXDOMAIN:
+        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
             pass
         except dns.exception.Timeout:
             raise DNSLookupTimeout(f"{self.srv_prefix + self.rally_host_name} lookup timeout")
