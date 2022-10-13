@@ -53,7 +53,7 @@ query_result = [
 ]
 failed = 0
 tests_run = 0
-replica_count = 1
+replica_count = 0
 VERSION = "1.0"
 warnings.filterwarnings("ignore")
 
