@@ -1,6 +1,10 @@
 ##
 ##
 
+import os
+import attr
+from attr.validators import instance_of as io, optional
+from typing import Protocol, Iterable
 from .exceptions import (DNSLookupTimeout, IsCollectionException, CollectionWaitException, ScopeWaitException, BucketWaitException, BucketNotFound,
                          CollectionNotDefined, IndexNotReady, IndexNotFoundError, NodeUnreachable, CollectionCountException, CollectionNameNotFound,
                          CollectionCountError, NodeConnectionTimeout, NodeConnectionError, NodeConnectionFailed, CollectionSubdocUpsertError, QueryArgumentsError,
@@ -13,10 +17,15 @@ import socket
 import dns.resolver
 import sys
 import re
+import couchbase
 from enum import Enum
 from datetime import timedelta
 from couchbase.auth import PasswordAuthenticator
-from couchbase.options import ClusterTimeoutOptions, QueryOptions, ClusterOptions, LockMode, TLSVerifyMode
+try:
+    from couchbase.options import ClusterTimeoutOptions, QueryOptions, ClusterOptions, LockMode
+except ImportError:
+    from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions, PingOptions
+    from couchbase.options import LockMode
 from couchbase.cluster import Cluster
 from couchbase.diagnostics import ServiceType, PingState
 from couchbase.exceptions import HTTPException
@@ -25,6 +34,36 @@ from couchbase.exceptions import HTTPException
 class RunMode(Enum):
     Sync = 0
     Async = 1
+
+
+@attr.s
+class CBQueryIndex(Protocol):
+    name = attr.ib(validator=io(str))
+    is_primary = attr.ib(validator=io(bool))
+    state = attr.ib(validator=io(str))
+    namespace = attr.ib(validator=io(str))
+    keyspace = attr.ib(validator=io(str))
+    index_key = attr.ib(validator=io(Iterable))
+    condition = attr.ib(validator=io(str))
+    bucket_name = attr.ib(validator=optional(io(str)))
+    scope_name = attr.ib(validator=optional(io(str)))
+    collection_name = attr.ib(validator=optional(io(str)))
+    partition = attr.ib(validator=optional(validator=io(str)))
+
+    @classmethod
+    def from_server(cls, json_data):
+        return cls(json_data.get("name"),
+                   bool(json_data.get("is_primary")),
+                   json_data.get("state"),
+                   json_data.get("keyspace_id"),
+                   json_data.get("namespace_id"),
+                   json_data.get("index_key", []),
+                   json_data.get("condition", ""),
+                   json_data.get("bucket_id", json_data.get("keyspace_id", "")),
+                   json_data.get("scope_id", ""),
+                   json_data.get("keyspace_id", ""),
+                   json_data.get("partition", None)
+                   )
 
 
 class cb_common(object):
@@ -37,6 +76,8 @@ class cb_common(object):
         self._bucket = None
         self._scope = None
         self._collection = None
+        self._scope_name = "_default"
+        self._collection_name = "_default"
         self.username = username
         self.password = password
         self.ssl = ssl
@@ -55,10 +96,10 @@ class cb_common(object):
         self.cluster_services = []
         self.auth = PasswordAuthenticator(self.username, self.password)
         self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=30),
-                                              kv_timeout=timedelta(seconds=30),
-                                              connect_timeout=timedelta(seconds=5),
-                                              management_timeout=timedelta(seconds=5),
-                                              resolve_timeout=timedelta(seconds=5))
+                                              kv_timeout=timedelta(seconds=30))
+
+        if 'CB_PERF_DEBUG_LEVEL' in os.environ:
+            couchbase.enable_logging()
 
         if self.ssl:
             self.prefix = "https://"
@@ -66,12 +107,14 @@ class cb_common(object):
             self.srv_prefix = "_couchbases._tcp."
             self.admin_port = "18091"
             self.node_port = "19102"
+            self.options = "?ssl=no_verify"
         else:
             self.prefix = "http://"
             self.cb_prefix = "couchbase://"
             self.srv_prefix = "_couchbase._tcp."
             self.admin_port = "8091"
             self.node_port = "9102"
+            self.options = ""
 
     def construct_key(self, key):
         if type(key) == int or str(key).isdigit():
@@ -84,17 +127,17 @@ class cb_common(object):
 
     @property
     def keyspace(self):
-        if self._scope.name != "_default" or self._collection.name != "_default":
-            return self._bucket.name + '.' + self._scope.name + '.' + self._collection.name
+        if self._scope_name != "_default" or self._collection_name != "_default":
+            return self._bucket.name + '.' + self._scope_name + '.' + self._collection_name
         else:
             return self._bucket.name
 
     @property
     def collection_name(self):
-        if self._collection.name == "_default":
+        if self._collection_name == "_default":
             return self._bucket.name
         else:
-            return self._collection.name
+            return self._collection_name
 
     def unhandled_exception(self, loop, context):
         err = context.get("exception", context['message'])
@@ -103,24 +146,9 @@ class cb_common(object):
         else:
             self.logger.error(f"unhandled error: {err}")
 
-    # def sync(self):
-    #     self._mode = RunMode.Sync.value
-    #     return self
-    #
-    # def a_sync(self):
-    #     self._mode = RunMode.Async.value
-    #     return self
-
-    # @property
-    # def cb_parameters(self):
-    #     if self.ssl:
-    #         return "?ssl=no_verify"
-    #     else:
-    #         return ""
-
     @property
     def cb_connect_string(self):
-        return self.cb_prefix + self.rally_host_name
+        return self.cb_prefix + self.rally_host_name + self.options
 
     @property
     def cb_network(self):
@@ -180,6 +208,23 @@ class cb_common(object):
         else:
             raise NodeConnectionFailed(f"node {hostname}:{port} unreachable")
 
+    @retry(factor=0.5)
+    def wait_until_ready(self):
+        nodes = []
+        cluster = Cluster(self.cb_connect_string, ClusterOptions(self.auth,
+                                                                 timeout_options=self.timeouts,
+                                                                 lockmode=LockMode.WAIT))
+        ping_result = cluster.ping()
+        for endpoint, reports in ping_result.endpoints.items():
+            for report in reports:
+                remote = report.remote.split(":")[0]
+                nodes.append(remote)
+                if not report.state == PingState.OK:
+                    raise ClusterHealthCheckError(f"service {endpoint.value} not ok")
+
+        node_set = set(nodes)
+        return list(node_set)
+
     def index_name(self, field):
         field = field.replace('.', '_')
         field = re.sub('^_*', '', field)
@@ -203,17 +248,10 @@ class cb_common(object):
         try:
             cluster = Cluster(self.cb_connect_string, ClusterOptions(self.auth,
                                                                      timeout_options=self.timeouts,
-                                                                     lockmode=LockMode.WAIT,
-                                                                     tls_verify=TLSVerifyMode.NO_VERIFY))
+                                                                     lockmode=LockMode.WAIT))
             result = cluster.ping()
-        except SystemError as err:
-            if isinstance(err.__cause__, HTTPException) and err.__cause__.error_code == 1049:
-                self.use_external_network = not self.use_external_network
-                raise ClusterHealthCheckError("HTTP unknown host: {}".format(err.__cause__))
-            else:
-                raise ClusterHealthCheckError("HTTP error: {}".format(err))
         except Exception as err:
-            raise ClusterHealthCheckError("cluster health check error: {}".format(err))
+            raise ClusterHealthCheckError("cluster unhealthy: {}".format(err))
 
         endpoint: ServiceType
         for endpoint, reports in result.endpoints.items():

@@ -1,16 +1,16 @@
 ##
 ##
 
-from .exceptions import (IsCollectionException, CollectionWaitException, ScopeWaitException, BucketWaitException, BucketNotFound,
-                         IndexNotReady, IndexNotFoundError, CollectionCountException, CollectionNameNotFound,
-                         CollectionCountError, QueryArgumentsError,
+from .exceptions import (IsCollectionException, CollectionWaitException, ScopeWaitException, BucketWaitException,
+                         IndexNotReady, IndexNotFoundError, CollectionCountException, CollectionNameNotFound, IndexExistsError,
+                         CollectionCountError, QueryArgumentsError, ClusterHealthCheckError, IndexQueryError,
                          IndexExistsError, QueryEmptyException, decode_error_code, IndexStatError, BucketStatsError,
                          ClusterInitError)
 from .httpexceptions import HTTPNotImplemented
 from .retries import retry
 from .cbdebug import cb_debug
 from .httpsessionmgr import api_session
-from .cbcommon import cb_common, RunMode
+from .cbcommon import cb_common, RunMode, CBQueryIndex
 from datetime import timedelta
 try:
     from acouchbase.cluster import AsyncCluster
@@ -18,11 +18,10 @@ except ImportError:
     from acouchbase.cluster import Cluster as AsyncCluster
 from couchbase.management.buckets import CreateBucketSettings, BucketType
 from couchbase.management.collections import CollectionSpec
-from couchbase.diagnostics import ServiceType
 import couchbase.subdocument as SD
 from couchbase.exceptions import (CouchbaseException, QueryIndexNotFoundException,
                                   DocumentNotFoundException, DocumentExistsException, QueryIndexAlreadyExistsException,
-                                  BucketAlreadyExistsException, UnAmbiguousTimeoutException,
+                                  BucketAlreadyExistsException, TimeoutException,
                                   BucketNotFoundException, WatchQueryIndexTimeoutException,
                                   ScopeAlreadyExistsException, CollectionAlreadyExistsException,
                                   CollectionNotFoundException)
@@ -30,16 +29,12 @@ import asyncio
 from itertools import cycle
 import json
 try:
-    from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions, WaitUntilReadyOptions, TLSVerifyMode
+    from couchbase.options import ClusterTimeoutOptions, QueryOptions, LockMode, ClusterOptions, WaitUntilReadyOptions
 except ImportError:
-    from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions, WaitUntilReadyOptions
-    from couchbase.options import LockMode, TLSVerifyMode
-try:
-    from couchbase.management.options import (CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions,
-                                              DropPrimaryQueryIndexOptions, DropQueryIndexOptions)
-except ModuleNotFoundError:
-    from couchbase.management.queries import (CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions,
-                                              DropPrimaryQueryIndexOptions, DropQueryIndexOptions)
+    from couchbase.cluster import ClusterTimeoutOptions, QueryOptions, ClusterOptions
+    from couchbase.options import LockMode
+from couchbase.management.queries import (CreateQueryIndexOptions, CreatePrimaryQueryIndexOptions, WatchQueryIndexOptions,
+                                          DropPrimaryQueryIndexOptions, DropQueryIndexOptions)
 
 
 class cb_connect_a(cb_common):
@@ -57,33 +52,19 @@ class cb_connect_a(cb_common):
         try:
             self.is_reachable()
             await self.connect()
-            await self._cluster.wait_until_ready(timedelta(seconds=3),
-                                                 WaitUntilReadyOptions(
-                                                 service_types=[ServiceType.KeyValue,
-                                                                ServiceType.Query,
-                                                                ServiceType.Management]))
+            self.all_hosts = self.wait_until_ready()
 
             s = api_session(self.username, self.password)
             s.set_host(self.rally_cluster_node, self.ssl, self.admin_port)
             self.cluster_info = s.api_get('/pools/default').json()
 
-            ping_result = await self._cluster.ping()
-            result_json = ping_result.as_json()
-            result_dict = json.loads(result_json)
-
-            for item in result_dict["services"]["mgmt"]:
-                remote = item["remote"].split(":")[0]
-                self.all_hosts.append(remote)
-
-            info_result = await self._cluster.cluster_info()
-
-            self.sw_version = info_result.server_version
+            self.sw_version = self.cluster_info['nodes'][0]['version']
             self.memory_quota = self.cluster_info['memoryQuota']
 
             self.node_cycle = cycle(self.all_hosts)
 
             return self
-        except UnAmbiguousTimeoutException as err:
+        except ClusterHealthCheckError as err:
             print(f"Cluster not ready: {err}")
         except Exception as err:
             raise ClusterInitError(f"cluster not reachable at {self.rally_host_name}: {err}")
@@ -93,8 +74,7 @@ class cb_connect_a(cb_common):
         self.logger.debug(f"connect [{self._mode_str}]: connect string {self.cb_connect_string}")
         cluster = AsyncCluster(self.cb_connect_string, ClusterOptions(self.auth,
                                                                       timeout_options=self.timeouts,
-                                                                      lockmode=LockMode.WAIT,
-                                                                      tls_verify=TLSVerifyMode.NO_VERIFY))
+                                                                      lockmode=LockMode.WAIT))
         result = await cluster.on_connect()
         self._cluster = cluster
         return True
@@ -114,6 +94,7 @@ class cb_connect_a(cb_common):
         if self._bucket:
             self.logger.debug(f"scope [{RunMode(self._mode).name}]: connecting scope {name}")
             self._scope = self._bucket.scope(name)
+            self._scope_name = name
         else:
             self._scope = None
 
@@ -123,6 +104,7 @@ class cb_connect_a(cb_common):
         if self._scope:
             self.logger.debug(f"collection [{RunMode(self._mode).name}]: connecting collection {name}")
             self._collection = self._scope.collection(name)
+            self._collection_name = name
         else:
             self._collection = None
 
@@ -311,6 +293,8 @@ class cb_connect_a(cb_common):
                 if len(contents) == 0:
                     raise QueryEmptyException(f"query did not return any results")
             return contents
+        except QueryIndexAlreadyExistsException:
+            pass
         except CouchbaseException as err:
             try:
                 error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
@@ -355,7 +339,7 @@ class cb_connect_a(cb_common):
         self.logger.debug(f"cb_create_primary_index [{self._mode_str}]: creating primary index on {self._collection.name}")
         try:
             qim = self._cluster.query_indexes()
-            await qim.create_primary_index(self._bucket.name, index_options)
+            await self._create_index(replica=replica)
         except QueryIndexAlreadyExistsException:
             pass
 
@@ -371,13 +355,29 @@ class cb_connect_a(cb_common):
             index_options = CreateQueryIndexOptions(deferred=False,
                                                     timeout=timedelta(seconds=timeout),
                                                     num_replicas=replica)
-        self.logger.debug(f"cb_create_primary_index [{self._mode_str}]: creating index on {self._collection.name}")
         try:
             index_name = self.index_name(field)
             qim = self._cluster.query_indexes()
-            await qim.create_index(self._bucket.name, index_name, [field], index_options)
+            self.logger.debug(f"cb_create_index [{self._mode_str}]: creating index {index_name} on {field} for {self.keyspace}")
+            await self._create_index(index_name=index_name, fields=[field], replica=replica)
         except QueryIndexAlreadyExistsException:
             pass
+
+    async def _create_index(self, fields=None, index_name=None, replica=1):
+        try:
+            if fields:
+                field_name_str = f"{', '.join(fields)}"
+                query_str = 'CREATE INDEX ' + index_name + ' ON ' + self.keyspace + '(' + field_name_str + ') WITH {"num_replica": ' + str(replica) + '};'
+            else:
+                query_str = 'CREATE PRIMARY INDEX ON ' + self.keyspace + ' WITH {"num_replica": ' + str(replica) + '};'
+            result = await self.cb_query(sql=query_str)
+            return result
+        except CollectionNameNotFound:
+            raise
+        except IndexExistsError:
+            pass
+        except Exception as err:
+            raise IndexQueryError(f"can not create index on {self.keyspace}: {err}")
 
     @retry()
     async def cb_drop_primary_index(self, timeout=120):
@@ -412,9 +412,16 @@ class cb_connect_a(cb_common):
 
     @retry()
     async def index_list_all(self):
-        qim = self._cluster.query_indexes()
-        index_list = await qim.get_all_indexes(self._bucket.name)
-        return index_list
+        all_list = []
+        query_str = r"SELECT * FROM system:indexes ;"
+        results = await self.cb_query(sql=query_str)
+
+        for row in results:
+            for key, value in row.items():
+                entry = CBQueryIndex.from_server(value)
+                all_list.append(entry)
+
+        return all_list
 
     @retry()
     async def is_index(self, field=None):
@@ -447,10 +454,10 @@ class cb_connect_a(cb_common):
 
         for item in index_list:
             if item.name == index_name and (item.collection_name == self.collection_name or item.bucket_name == self.collection_name):
-                if len(item.index_key) == 0:
+                if len(list(item.index_key)) == 0:
                     return doc_key_field
                 else:
-                    return item.index_key[0]
+                    return list(item.index_key)[0]
 
         raise IndexNotFoundError(f"index {index_name} not found")
 
@@ -469,6 +476,7 @@ class cb_connect_a(cb_common):
         else:
             raise IndexNotReady(f"index_check: field: {field} count {check_count} len {len(result)}: index not ready")
 
+    @retry(always_raise_list=(WatchQueryIndexTimeoutException,))
     async def index_online(self, name=None, primary=False, timeout=480):
         if primary:
             indexes = []
@@ -481,6 +489,8 @@ class cb_connect_a(cb_common):
             await qim.watch_indexes(self._bucket.name,
                                     indexes,
                                     watch_options)
+        except QueryIndexNotFoundException:
+            raise IndexNotReady("index does not exist")
         except WatchQueryIndexTimeoutException:
             raise IndexNotReady(f"Indexes not build within {timeout} seconds...")
 
