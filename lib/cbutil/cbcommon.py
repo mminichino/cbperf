@@ -229,8 +229,8 @@ class cb_common(object):
         field = field.replace('.', '_')
         field = re.sub('^_*', '', field)
 
-        if self._collection.name != '_default':
-            name = self._collection.name + '_' + field + '_ix'
+        if self._collection_name != '_default':
+            name = self._collection_name + '_' + field + '_ix'
         else:
             name = self._bucket.name + '_' + field + '_ix'
 

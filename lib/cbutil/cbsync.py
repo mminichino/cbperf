@@ -294,6 +294,8 @@ class cb_connect_s(cb_common):
             return contents
         except QueryIndexAlreadyExistsException:
             pass
+        except QueryIndexNotFoundException:
+            pass
         except CouchbaseException as err:
             try:
                 error_class = decode_error_code(err.context.first_error_code, err.context.first_error_message)
@@ -381,7 +383,7 @@ class cb_connect_s(cb_common):
 
     @retry()
     def cb_drop_primary_index(self, timeout=120):
-        if self._collection.name != '_default':
+        if self._collection_name != '_default':
             index_options = DropPrimaryQueryIndexOptions(timeout=timedelta(seconds=timeout),
                                                          collection_name=self._collection.name,
                                                          scope_name=self._scope.name)
@@ -390,25 +392,40 @@ class cb_connect_s(cb_common):
         self.logger.debug(f"cb_drop_primary_index [{self._mode_str}]: dropping primary index on {self.collection_name}")
         try:
             qim = self._cluster.query_indexes()
-            qim.drop_primary_index(self._bucket.name, index_options)
+            self._drop_index()
         except QueryIndexNotFoundException:
             pass
 
     @retry()
     def cb_drop_index(self, field, timeout=120):
-        index_name = self.effective_index_name(field)
-        if self._collection.name != '_default':
+        if self._collection_name != '_default':
             index_options = DropQueryIndexOptions(timeout=timedelta(seconds=timeout),
                                                   collection_name=self._collection.name,
                                                   scope_name=self._scope.name)
         else:
             index_options = DropQueryIndexOptions(timeout=timedelta(seconds=timeout))
-        self.logger.debug(f"cb_drop_index [{self._mode_str}]: drop index {index_name}")
         try:
+            index_name = self.index_name(field)
+            self.logger.debug(f"cb_drop_index [{self._mode_str}]: drop index {index_name}")
             qim = self._cluster.query_indexes()
-            qim.drop_index(self._bucket.name, index_name, index_options)
+            self._drop_index(index_name)
         except QueryIndexNotFoundException:
             pass
+
+    def _drop_index(self, index_name=None):
+        try:
+            if index_name:
+                query_str = 'DROP INDEX ' + index_name + ' ON ' + self.keyspace + ' USING GSI;'
+            else:
+                query_str = 'DROP PRIMARY INDEX ON ' + self.keyspace + ' USING GSI;'
+            result = self.cb_query(sql=query_str)
+            return result
+        except CollectionNameNotFound:
+            raise
+        except IndexNotFoundError:
+            pass
+        except Exception as err:
+            raise IndexQueryError(f"can not create index on {self.keyspace}: {err}")
 
     @retry()
     def index_list_all(self):
