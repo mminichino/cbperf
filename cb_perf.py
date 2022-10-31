@@ -36,6 +36,13 @@ def break_signal_handler(signum, frame):
     sys.exit(1)
 
 
+def int_arg(value):
+    try:
+        return int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("numeric argument expected")
+
+
 class params(object):
 
     def __init__(self):
@@ -46,7 +53,7 @@ class params(object):
         parent_parser.add_argument('-h', '--host', action='store', help="Cluster Node Name", default="localhost")
         parent_parser.add_argument('-b', '--bucket', action='store', help="Test Bucket", default="pillowfight")
         parent_parser.add_argument('--tls', action='store_true', help="Enable SSL")
-        parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int, default=3)
+        parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int_arg, default=3)
         parent_parser.add_argument('--limit', action='store_true', help="Limited Network Connectivity")
         parent_parser.add_argument('--noapi', action='store_true', help="Disable Capella API functionality")
         parent_parser.add_argument('--safe', action='store_true', help="Do not overwrite data")
@@ -63,18 +70,18 @@ class params(object):
         run_parser = argparse.ArgumentParser(add_help=False)
         # run_parser.add_argument('--schema', action='store', help="Test Schema", default="default")
         # run_parser.add_argument('--cluster', action='store', help="Couchbase Capella Cluster Name")
-        run_parser.add_argument('--count', action='store', help="Record Count", type=int)
-        run_parser.add_argument('--ops', action='store', help="Operation Count", type=int)
-        run_parser.add_argument('--threads', action='store', help="Threads for run", type=int)
-        run_parser.add_argument('--replica', action='store', help="Replica Count", type=int, default=1)
-        run_parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int)
+        run_parser.add_argument('--count', action='store', help="Record Count", type=int_arg)
+        run_parser.add_argument('--ops', action='store', help="Operation Count", type=int_arg)
+        run_parser.add_argument('--threads', action='store', help="Threads for run", type=int_arg)
+        run_parser.add_argument('--replica', action='store', help="Replica Count", type=int_arg, default=1)
+        run_parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int_arg)
         # run_parser.add_argument('--file', action='store', help="File based collection schema JSON")
         run_parser.add_argument('--output', action='store', help="Output file for run stats")
         run_parser.add_argument('--inventory', action='store', help="Location of inventory JSON")
         run_parser.add_argument('--id', action='store', help="ID field for file based collection schema", default="record_id")
         # run_parser.add_argument('--query', action='store', help="Field to query in JSON File", default="last_name")
         # run_parser.add_argument('--load', action='store_true', help="Only Load Data")
-        run_parser.add_argument('--max', action='store', help="Max ramp threads", type=int)
+        run_parser.add_argument('--max', action='store', help="Max ramp threads", type=int_arg)
         run_parser.add_argument('--ramp', action='store_true', help="Run Calibration Style Test")
         run_parser.add_argument('--sync', action='store_true', help="Use Synchronous Connections")
         run_parser.add_argument('--noinit', action='store_true', help="Skip init phase")
