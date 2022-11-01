@@ -225,6 +225,32 @@ class cb_common(object):
         node_set = set(nodes)
         return list(node_set)
 
+    @retry(factor=0.5)
+    def wait_for_query_ready(self):
+        query_str = r"SELECT 1 FROM system:dual;"
+        cluster = Cluster(self.cb_connect_string, ClusterOptions(self.auth,
+                                                                 timeout_options=self.timeouts,
+                                                                 lockmode=LockMode.WAIT))
+        result = cluster.query(query_str, QueryOptions(metrics=False, adhoc=True))
+        value = result.rows()[0].get('$1')
+        if value == 1:
+            return True
+        else:
+            return False
+
+    @retry(factor=0.5)
+    def wait_for_index_ready(self):
+        query_str = r"SELECT * FROM system:indexes;"
+        cluster = Cluster(self.cb_connect_string, ClusterOptions(self.auth,
+                                                                 timeout_options=self.timeouts,
+                                                                 lockmode=LockMode.WAIT))
+        result = cluster.query(query_str, QueryOptions(metrics=False, adhoc=True))
+        value = result.rows()
+        if len(value) >= 0:
+            return True
+        else:
+            return False
+
     def index_name(self, field):
         field = field.replace('.', '_')
         field = re.sub('^_*', '', field)

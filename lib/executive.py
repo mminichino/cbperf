@@ -201,10 +201,24 @@ class print_host_map(cbPerfBase):
             self.test_mode = True
         else:
             self.test_mode = False
+        if self.parameters.wait:
+            self.wait_mode = True
+        else:
+            self.wait_mode = False
 
     def run(self):
         db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls).init()
+
+        if self.wait_mode:
+            try:
+                db.wait_for_query_ready()
+                db.wait_for_index_ready()
+            except Exception as err:
+                self.logger.error(f"cluster wait failed: {err}")
+                TestExecError("cluster not ready")
+
         db.print_host_map()
+
         if self.cluster_ping:
             if self.test_mode:
                 db.cluster_health_check(output=False, restrict=False, noraise=True, extended=True)

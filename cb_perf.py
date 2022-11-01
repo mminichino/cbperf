@@ -20,7 +20,7 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '2.0b'
+VERSION = '2.0b2'
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger()
@@ -64,6 +64,7 @@ class params(object):
         list_parser = argparse.ArgumentParser(add_help=False)
         list_parser.add_argument('--ping', action='store_true', help='Show cluster ping output')
         list_parser.add_argument('--test', action='store_true', help='Just check status and error if not ready')
+        list_parser.add_argument('--wait', action='store_true', help='Wait for cluster to be ready')
         schema_parser = argparse.ArgumentParser(add_help=False)
         schema_parser.add_argument('--list', action='store_true', help='Show schema list')
         schema_parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')
