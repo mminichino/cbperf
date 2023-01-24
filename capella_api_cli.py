@@ -45,7 +45,7 @@ class cluster_mgr(object):
         print("Type   "
               "Name                                     "
               "ID                                   "
-              "Project                  "
+              "Project                    "
               "Cloud "
               "Region               "
               "#   "
@@ -53,12 +53,13 @@ class cluster_mgr(object):
               "Ver   "
               "MDS "
               "Age        "
+              "CIDR            "
               "Services                                    "
               "Nodes")
         print("====== "
               "======================================== "
               "==================================== "
-              "======================== "
+              "========================== "
               "===== "
               "==================== "
               "=== "
@@ -66,6 +67,7 @@ class cluster_mgr(object):
               "===== "
               "=== "
               "========== "
+              "=============== "
               "=========================================== "
               "=======================================")
         for item in clusters:
@@ -73,7 +75,7 @@ class cluster_mgr(object):
             print(f"{item['environment'].ljust(6)} "
                   f"{item['name'].ljust(40)} "
                   f"{item['id']} "
-                  f"{project_info['name'].ljust(24)} ", end='')
+                  f"{project_info['name'].ljust(26)} ", end='')
             try:
                 node_total = 0
                 storage_total = 0
@@ -108,11 +110,17 @@ class cluster_mgr(object):
                       f"{cluster_info['version']['components']['cbServerVersion']} "
                       f"{mds.ljust(3)} "
                       f"{d_days.rjust(5)}d {d_hours.rjust(2)}h "
+                      f"{cluster_info['place']['CIDR'].ljust(16)}"
                       f"{','.join(service_list).ljust(43)} "
                       f"{','.join(type_list)}")
             except HTTPNotImplemented:
                 print("")
                 continue
+
+    def get_projects(self):
+        projects = self.api.api_get("/v2/projects").json()
+        for project in projects:
+            print(f"{project['id']} {project['name']}")
 
 
 def main():
@@ -128,6 +136,9 @@ def main():
     cluster_command_get = cluster_command_parser.add_parser('get', help="Get Cluster Info", parents=[], add_help=False)
     cluster_command_list = cluster_command_parser.add_parser('list', help="Get Cluster List", parents=[], add_help=False)
     cluster_command_get.add_argument('remainder', nargs=argparse.REMAINDER)
+    project_parser = command_parser.add_parser('project', help="Project Operations", parents=[], add_help=False)
+    project_command_parser = project_parser.add_subparsers(dest='project_command')
+    project_command_list = project_command_parser.add_parser('list', help="Get Project List", parents=[], add_help=False)
     args = parser.parse_args()
 
     api = api_session(auth_type=api_session.AUTH_CAPELLA)
@@ -148,6 +159,10 @@ def main():
                 cm.cluster_get(args.remainder[0])
             elif args.cluster_command == "list":
                 cm.cluster_list()
+        elif args.command == 'project':
+            cm = cluster_mgr()
+            if args.project_command == "list":
+                cm.get_projects()
     except HTTPNotImplemented:
         sys.exit(404)
     except Exception:
