@@ -1,11 +1,12 @@
 #!/usr/bin/env -S python3
 
 import argparse
+import json
 import sys
 import signal
 import warnings
 from datetime import datetime, timezone
-from lib.cbutil.httpsessionmgr import api_session
+from lib.cbutil.httpsessionmgr import api_session, CapellaToken, capella_auth
 from lib.cbutil.httpexceptions import HTTPNotImplemented
 
 
@@ -20,6 +21,9 @@ class cluster_mgr(object):
     def __init__(self):
         self.api = api_session(auth_type=api_session.AUTH_CAPELLA)
         self.api.set_host("cloudapi.cloud.couchbase.com", api_session.HTTPS)
+
+    def get_url(self, path):
+        return self.api.get_endpoint(path)
 
     def service_sort(self, service_list):
         ref = ['data', 'index', 'query', 'search', 'eventing', 'analytics']
@@ -39,6 +43,19 @@ class cluster_mgr(object):
                     break
                 except HTTPNotImplemented:
                     print(f"Cluster details for {name} were not found.")
+
+    def cluster_create(self, filename):
+        with open(filename, "r") as file:
+            data = file.read()
+            file.close()
+            data_json = json.loads(data)
+            try:
+                response = self.api.api_post("/v3/clusters", data_json)
+                print(f"Cluster created.")
+            except Exception as err:
+                print(f"Cluster creation failed: {err}")
+                print(response)
+                sys.exit(1)
 
     def cluster_list(self):
         clusters = self.api.api_get("/v3/clusters").json()
@@ -135,10 +152,20 @@ def main():
     cluster_command_parser = cluster_parser.add_subparsers(dest='cluster_command')
     cluster_command_get = cluster_command_parser.add_parser('get', help="Get Cluster Info", parents=[], add_help=False)
     cluster_command_list = cluster_command_parser.add_parser('list', help="Get Cluster List", parents=[], add_help=False)
+    cluster_command_create = cluster_command_parser.add_parser('create', help="Create Cluster List", parents=[], add_help=False)
+    cluster_command_create.add_argument('-f', action='store')
     cluster_command_get.add_argument('remainder', nargs=argparse.REMAINDER)
     project_parser = command_parser.add_parser('project', help="Project Operations", parents=[], add_help=False)
     project_command_parser = project_parser.add_subparsers(dest='project_command')
     project_command_list = project_command_parser.add_parser('list', help="Get Project List", parents=[], add_help=False)
+    auth_parser = command_parser.add_parser('auth', help="Auth Operations", parents=[], add_help=False)
+    auth_command_parser = auth_parser.add_subparsers(dest='auth_command')
+    auth_command_header = auth_command_parser.add_parser('header', help="Get Auth Header", parents=[], add_help=False)
+    auth_command_header.add_argument('-e', action='store')
+    auth_command_header.add_argument('--post', action='store_true')
+    auth_command_header.add_argument('--get', action='store_true')
+    auth_command_header.add_argument('--put', action='store_true')
+    auth_command_header.add_argument('--delete', action='store_true')
     args = parser.parse_args()
 
     api = api_session(auth_type=api_session.AUTH_CAPELLA)
@@ -159,10 +186,24 @@ def main():
                 cm.cluster_get(args.remainder[0])
             elif args.cluster_command == "list":
                 cm.cluster_list()
+            elif args.cluster_command == "create":
+                cm.cluster_create(args.f)
         elif args.command == 'project':
             cm = cluster_mgr()
             if args.project_command == "list":
                 cm.get_projects()
+        elif args.command == 'auth':
+            cm = cluster_mgr()
+            if args.auth_command == "header":
+                method = "GET"
+                if args.post:
+                    method = "POST"
+                elif args.put:
+                    method = "PUT"
+                elif args.delete:
+                    method = "DELETE"
+                url = cm.get_url(args.e)
+                CapellaToken(capella_auth().capella_key, capella_auth().capella_secret).signature(method, url).dump()
     except HTTPNotImplemented:
         sys.exit(404)
     except Exception:

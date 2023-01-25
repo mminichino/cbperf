@@ -10,6 +10,30 @@ from requests.auth import AuthBase
 from .capexceptions import *
 
 
+class CapellaToken(object):
+
+    def __init__(self, key: str, secret: str):
+        self.cbc_api_signature = None
+        self.cbc_api_now = None
+        self.capella_key = key
+        self.capella_secret = secret
+
+    def signature(self, cbc_api_method: str, cbc_api_endpoint: str):
+        self.cbc_api_now = int(datetime.datetime.now().timestamp() * 1000)
+        cbc_api_message = cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(self.cbc_api_now)
+        self.cbc_api_signature = base64.b64encode(hmac.new(bytes(self.capella_secret, 'utf-8'),
+                                                  bytes(cbc_api_message, 'utf-8'),
+                                                  digestmod=hashlib.sha256).digest())
+        return self
+
+    @property
+    def token(self):
+        return {
+            'Authorization': 'Bearer ' + self.capella_key + ':' + self.cbc_api_signature.decode(),
+            'Couchbase-Timestamp': str(self.cbc_api_now)
+        }
+
+
 class capella_auth(AuthBase):
 
     def __init__(self):
@@ -31,14 +55,6 @@ class capella_auth(AuthBase):
         else:
             cbc_api_endpoint = ep_path
         cbc_api_method = r.method
-        cbc_api_now = int(datetime.datetime.now().timestamp() * 1000)
-        cbc_api_message = cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(cbc_api_now)
-        cbc_api_signature = base64.b64encode(hmac.new(bytes(self.capella_secret, 'utf-8'),
-                                                      bytes(cbc_api_message, 'utf-8'),
-                                                      digestmod=hashlib.sha256).digest())
-        cbc_api_request_headers = {
-            'Authorization': 'Bearer ' + self.capella_key + ':' + cbc_api_signature.decode(),
-            'Couchbase-Timestamp': str(cbc_api_now)
-        }
+        cbc_api_request_headers = CapellaToken(self.capella_key, self.capella_secret).signature(cbc_api_method, cbc_api_endpoint).token
         r.headers.update(cbc_api_request_headers)
         return r
