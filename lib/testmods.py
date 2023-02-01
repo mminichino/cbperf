@@ -263,7 +263,7 @@ class test_mods(object):
 
         try:
             self.logger.info(f"test_thread_{n:03d}: connecting to {self.host} keyspace {coll_obj.bucket}.{coll_obj.scope}.{coll_obj.name}")
-            db = await cb_connect_a(self.host, self.username, self.password, ssl=self.tls).init()
+            db = await cb_connect_a(self.host, self.username, self.password, ssl=self.tls, external=self.external_network).init()
             await db.bucket(coll_obj.bucket)
             await db.scope(coll_obj.scope)
             await db.collection(coll_obj.name)
@@ -376,7 +376,7 @@ class test_mods(object):
 
         try:
             self.logger.info(f"test_thread_{n:03d}: connecting to {self.host}")
-            db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls).init()
+            db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls, external=self.external_network).init()
             db.bucket(coll_obj.bucket)
             db.scope(coll_obj.scope)
             db.collection(coll_obj.name)

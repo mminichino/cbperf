@@ -66,3 +66,7 @@ class TestRunError(cbPerfFatal):
 
 class TestRunException(cbPerfException):
     pass
+
+
+class ExportException(cbPerfException):
+    pass

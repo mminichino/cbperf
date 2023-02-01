@@ -50,9 +50,13 @@ class cb_connect_s(cb_common):
 
     def init(self):
         try:
+            self.logger.debug("begin init")
             self.is_reachable()
+            self.logger.debug("cluster is reachable")
             self.connect()
+            self.logger.debug("cluster is connected")
             self.all_hosts = self.wait_until_ready()
+            self.logger.debug(f"hosts: {','.join(self.all_hosts)}")
 
             s = api_session(self.username, self.password)
             s.set_host(self.rally_cluster_node, self.ssl, self.admin_port)
@@ -63,6 +67,7 @@ class cb_connect_s(cb_common):
 
             self.node_cycle = cycle(self.all_hosts)
 
+            self.logger.debug("init complete")
             return self
         except ClusterHealthCheckError as err:
             print(f"Cluster not ready: {err}")

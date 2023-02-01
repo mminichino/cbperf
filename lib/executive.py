@@ -207,7 +207,7 @@ class print_host_map(cbPerfBase):
             self.wait_mode = False
 
     def run(self):
-        db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls).init()
+        db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls, external=self.external_network).init()
 
         if self.wait_mode:
             try:
@@ -298,7 +298,7 @@ class test_exec(cbPerfBase):
         try:
             self.loop = asyncio.get_event_loop()
             self.loop.set_exception_handler(self.test_unhandled_exception)
-            self.db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls).init()
+            self.db = cb_connect_s(self.host, self.username, self.password, ssl=self.tls, external=self.external_network).init()
         except Exception as err:
             raise TestExecError(f"test_exec init: {err}")
 

@@ -98,9 +98,6 @@ class cb_common(object):
         self.timeouts = ClusterTimeoutOptions(query_timeout=timedelta(seconds=30),
                                               kv_timeout=timedelta(seconds=30))
 
-        if 'CB_PERF_DEBUG_LEVEL' in os.environ:
-            couchbase.enable_logging()
-
         if self.ssl:
             self.prefix = "https://"
             self.cb_prefix = "couchbases://"
@@ -115,6 +112,12 @@ class cb_common(object):
             self.admin_port = "8091"
             self.node_port = "9102"
             self.options = ""
+
+        if external:
+            if self.ssl:
+                self.options += "&network=external"
+            else:
+                self.options += "?network=external"
 
     def construct_key(self, key):
         if type(key) == int or str(key).isdigit():
@@ -148,7 +151,9 @@ class cb_common(object):
 
     @property
     def cb_connect_string(self):
-        return self.cb_prefix + self.rally_host_name + self.options
+        connect_string = self.cb_prefix + self.rally_host_name + self.options
+        self.logger.debug(f"Connect string: {connect_string}")
+        return connect_string
 
     @property
     def cb_network(self):
@@ -214,6 +219,7 @@ class cb_common(object):
         cluster = Cluster(self.cb_connect_string, ClusterOptions(self.auth,
                                                                  timeout_options=self.timeouts,
                                                                  lockmode=LockMode.WAIT))
+        self.logger.debug(f"cluster {self.cb_connect_string} ping")
         ping_result = cluster.ping()
         for endpoint, reports in ping_result.endpoints.items():
             for report in reports:
@@ -223,6 +229,7 @@ class cb_common(object):
                     raise ClusterHealthCheckError(f"service {endpoint.value} not ok")
 
         node_set = set(nodes)
+        self.logger.debug("ping complete")
         return list(node_set)
 
     @retry(factor=0.5)

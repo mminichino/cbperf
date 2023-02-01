@@ -3,7 +3,7 @@
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 YUM_PKGS="python39 gcc gcc-c++ git python39-devel python3-pip cmake make openssl-devel"
 APT_PKGS="python3.9 python3.9-dev python3.9-venv git-all python3-pip python3-setuptools cmake build-essential"
-MAC_PKGS="python@3.9 openssl"
+MAC_PKGS="python@3.9 openssl@1.1"
 LEGACY_YUM_PKGS="gcc gcc-c++ git python3-pip cmake make libffi-devel zlib-devel"
 MAJOR_REV=3
 MINOR_REV=9
@@ -230,9 +230,14 @@ fi
 
 if [ -d $SCRIPTDIR/$VENV_NAME -a $FORCE -eq 0 ]; then
   echo "Virtual environment $SCRIPTDIR/$VENV_NAME already exists."
-  exit 1
-else
-  rm -rf ${SCRIPTDIR:?}/${VENV_NAME:?}
+  printf "Remove the existing directory? (y/n) [y]:"
+  read INPUT
+  if [ "$INPUT" == "y" -o -z "$INPUT" ]; then
+    [ -n "$SCRIPTDIR" ] && [ -n "$VENV_NAME" ] && rm -rf $SCRIPTDIR/$VENV_NAME
+  else
+    echo "Setup cancelled. No changes were made."
+    exit 1
+  fi
 fi
 
 printf "Creating virtual environment... "
