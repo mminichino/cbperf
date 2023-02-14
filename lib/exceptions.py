@@ -7,66 +7,66 @@ import inspect
 import logging
 
 
-class cbPerfFatal(Exception):
+class FatalError(Exception):
 
     def __init__(self, message):
         import traceback
-        traceback.print_exc()
+        logging.debug(traceback.print_exc())
         frame = inspect.currentframe().f_back
         (filename, line, function, lines, index) = inspect.getframeinfo(frame)
         filename = os.path.basename(filename)
-        print("Error: {} in {} {} at line {}: {}".format(type(self).__name__, filename, function, line, message))
+        logging.debug("Error: {} in {} {} at line {}: {}".format(type(self).__name__, filename, function, line, message))
+        logging.error(f"{message} [{filename}:{line}]")
         sys.exit(1)
 
 
-class cbPerfException(Exception):
+class NonFatalError(Exception):
 
     def __init__(self, message):
-        logger = logging.getLogger(self.__class__.__name__)
         frame = inspect.currentframe().f_back
         (filename, line, function, lines, index) = inspect.getframeinfo(frame)
         filename = os.path.basename(filename)
         self.message = "Error: {} in {} {} at line {}: {}".format(
             type(self).__name__, filename, function, line, message)
-        logger.debug(f"Caught exception: {self.message}")
+        logging.debug(f"Caught exception: {self.message}")
         super().__init__(self.message)
 
 
-class ConfigFileError(cbPerfFatal):
+class ConfigFileError(FatalError):
     pass
 
 
-class SchemaFileError(cbPerfFatal):
+class SchemaFileError(FatalError):
     pass
 
 
-class ParameterError(cbPerfFatal):
+class ParameterError(FatalError):
     pass
 
 
-class TestExecError(cbPerfFatal):
+class TestExecError(FatalError):
     pass
 
 
-class RulesError(cbPerfFatal):
+class RulesError(FatalError):
     pass
 
 
-class TestConfigError(cbPerfFatal):
+class TestConfigError(FatalError):
     pass
 
 
-class InventoryConfigError(cbPerfFatal):
+class InventoryConfigError(FatalError):
     pass
 
 
-class TestRunError(cbPerfFatal):
+class TestRunError(FatalError):
     pass
 
 
-class TestRunException(cbPerfException):
+class TestRunException(NonFatalError):
     pass
 
 
-class ExportException(cbPerfException):
+class ExportException(NonFatalError):
     pass

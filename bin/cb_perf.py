@@ -12,6 +12,7 @@ from lib.executive import print_host_map, test_exec, schema_admin
 from lib.exceptions import *
 import lib.config as config
 from lib.export import CBExport
+from lib.logging import CustomFormatter
 
 
 LOAD_DATA = 0x0000
@@ -137,29 +138,32 @@ def main():
     config.process_params(parameters)
 
     try:
-        open(config.debug_file, 'w').close()
-    except Exception as err:
-        print(f"[!] Warning: can not clear log file {config.debug_file}: {err}")
-
-    handler = logging.FileHandler(config.debug_file)
-    formatter = logging.Formatter(logging.BASIC_FORMAT)
-    handler.setFormatter(formatter)
-
-    try:
         debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
     except (ValueError, KeyError):
-        debug_level = 2
+        debug_level = 3
 
     if debug_level == 0:
         logger.setLevel(logging.DEBUG)
+
+        try:
+            open(config.debug_file, 'w').close()
+        except Exception as err:
+            print(f"[!] Warning: can not clear log file {config.debug_file}: {err}")
+
+        file_handler = logging.FileHandler(config.default_debug_file)
+        file_formatter = logging.Formatter(logging.BASIC_FORMAT)
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
     elif debug_level == 1:
-        logger.setLevel(logging.INFO)
-    elif debug_level == 2:
         logger.setLevel(logging.ERROR)
+    elif debug_level == 2:
+        logger.setLevel(logging.INFO)
     else:
         logger.setLevel(logging.CRITICAL)
 
-    logger.addHandler(handler)
+    screen_handler = logging.StreamHandler()
+    screen_handler.setFormatter(CustomFormatter())
+    logger.addHandler(screen_handler)
 
     test_run = cbPerf(parameters)
     test_run.run()

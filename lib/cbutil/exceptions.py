@@ -22,244 +22,245 @@ def decode_error_code(code, message):
         return CouchbaseError
 
 
-class cbUtilError(Exception):
+class FatalError(Exception):
 
     def __init__(self, message):
+        import traceback
+        logging.debug(traceback.print_exc())
         frame = inspect.currentframe().f_back
         (filename, line, function, lines, index) = inspect.getframeinfo(frame)
         filename = os.path.basename(filename)
-        print("Error: {} in {} {} at line {}: {}".format(type(self).__name__, filename, function, line, message))
+        logging.debug("Error: {} in {} {} at line {}: {}".format(type(self).__name__, filename, function, line, message))
+        logging.error(f"{message} [{filename}:{line}]")
         sys.exit(1)
 
 
-class cbUtilException(Exception):
+class NonFatalError(Exception):
 
     def __init__(self, message):
-        logger = logging.getLogger(self.__class__.__name__)
         frame = inspect.currentframe().f_back
         (filename, line, function, lines, index) = inspect.getframeinfo(frame)
         filename = os.path.basename(filename)
         self.message = "Error: {} in {} {} at line {}: {}".format(type(self).__name__, filename, function, line, message)
-        logger.debug(f"Caught exception: {self.message}")
+        logging.debug(f"Caught exception: {self.message}")
         super().__init__(self.message)
 
 
-class HTTPExceptionError(cbUtilError):
+class HTTPExceptionError(FatalError):
     pass
 
 
-class GeneralError(cbUtilError):
+class GeneralError(FatalError):
     pass
 
 
-class NotAuthorized(cbUtilError):
+class NotAuthorized(FatalError):
     pass
 
 
-class ForbiddenError(cbUtilError):
+class ForbiddenError(FatalError):
     pass
 
 
-class ClusterInitError(cbUtilException):
+class ClusterInitError(NonFatalError):
     pass
 
 
-class ClusterCloseError(cbUtilException):
+class ClusterCloseError(NonFatalError):
     pass
 
 
-class CbUtilEnvironmentError(cbUtilError):
+class CbUtilEnvironmentError(FatalError):
     pass
 
 
-class NodeUnreachable(cbUtilException):
+class NodeUnreachable(NonFatalError):
     pass
 
 
-class NodeConnectionTimeout(cbUtilException):
+class NodeConnectionTimeout(NonFatalError):
     pass
 
 
-class NodeConnectionError(cbUtilException):
+class NodeConnectionError(NonFatalError):
     pass
 
 
-class NodeConnectionFailed(cbUtilException):
+class NodeConnectionFailed(NonFatalError):
     pass
 
 
-class DNSLookupTimeout(cbUtilException):
+class DNSLookupTimeout(NonFatalError):
     pass
 
 
-class NodeApiError(cbUtilError):
+class NodeApiError(FatalError):
     pass
 
 
-class AdminApiError(cbUtilError):
+class AdminApiError(FatalError):
     pass
 
 
-class CollectionGetError(cbUtilException):
+class CollectionGetError(NonFatalError):
     pass
 
 
-class CollectionUpsertError(cbUtilException):
+class CollectionUpsertError(NonFatalError):
     pass
 
 
-class CollectionSubdocUpsertError(cbUtilException):
+class CollectionSubdocUpsertError(NonFatalError):
     pass
 
 
-class CollectionSubdocGetError(cbUtilException):
+class CollectionSubdocGetError(NonFatalError):
     pass
 
 
-class CollectionRemoveError(cbUtilException):
+class CollectionRemoveError(NonFatalError):
     pass
 
 
-class CollectionCountError(cbUtilException):
+class CollectionCountError(NonFatalError):
     pass
 
 
-class CollectionWaitException(cbUtilException):
+class CollectionWaitException(NonFatalError):
     pass
 
 
-class CollectionCountException(cbUtilException):
+class CollectionCountException(NonFatalError):
     pass
 
 
-class ScopeWaitException(cbUtilException):
+class ScopeWaitException(NonFatalError):
     pass
 
 
-class BucketWaitException(cbUtilException):
+class BucketWaitException(NonFatalError):
     pass
 
 
-class QueryError(cbUtilException):
+class QueryError(NonFatalError):
     pass
 
 
-class QueryEmptyException(cbUtilException):
+class QueryEmptyException(NonFatalError):
     pass
 
 
-class QueryArgumentsError(cbUtilError):
+class QueryArgumentsError(FatalError):
     pass
 
 
-class IndexStatError(cbUtilError):
+class IndexStatError(FatalError):
     pass
 
 
-class IndexConnectError(cbUtilError):
+class IndexConnectError(FatalError):
     pass
 
 
-class IndexBucketError(cbUtilError):
+class IndexBucketError(FatalError):
     pass
 
 
-class IndexScopeError(cbUtilError):
+class IndexScopeError(FatalError):
     pass
 
 
-class IndexQueryError(cbUtilError):
+class IndexQueryError(FatalError):
     pass
 
 
-class IndexCollectionError(cbUtilError):
+class IndexCollectionError(FatalError):
     pass
 
 
-class IndexInternalError(cbUtilError):
+class IndexInternalError(FatalError):
     pass
 
 
-class ClusterConnectException(cbUtilException):
+class ClusterConnectException(NonFatalError):
     pass
 
 
-class BucketCreateException(cbUtilException):
+class BucketCreateException(NonFatalError):
     pass
 
 
-class BucketDeleteException(cbUtilException):
+class BucketDeleteException(NonFatalError):
     pass
 
 
-class ScopeCreateException(cbUtilException):
+class ScopeCreateException(NonFatalError):
     pass
 
 
-class IsCollectionException(cbUtilException):
+class IsCollectionException(NonFatalError):
     pass
 
 
-class CollectionCreateException(cbUtilException):
+class CollectionCreateException(NonFatalError):
     pass
 
 
-class NotFoundError(cbUtilException):
+class NotFoundError(NonFatalError):
     pass
 
 
-class CollectionNameNotFound(cbUtilException):
+class CollectionNameNotFound(NonFatalError):
     pass
 
 
-class IndexNotReady(cbUtilException):
+class IndexNotReady(NonFatalError):
     pass
 
 
-class ClusterHealthCheckError(cbUtilException):
+class ClusterHealthCheckError(NonFatalError):
     pass
 
 
-class ClusterKVServiceError(cbUtilException):
+class ClusterKVServiceError(NonFatalError):
     pass
 
 
-class ClusterQueryServiceError(cbUtilException):
+class ClusterQueryServiceError(NonFatalError):
     pass
 
 
-class ClusterViewServiceError(cbUtilException):
+class ClusterViewServiceError(NonFatalError):
     pass
 
 
-class CouchbaseError(cbUtilException):
+class CouchbaseError(NonFatalError):
     pass
 
 
-class IndexExistsError(cbUtilException):
+class IndexExistsError(NonFatalError):
     pass
 
 
-class IndexNotFoundError(cbUtilException):
+class IndexNotFoundError(NonFatalError):
     pass
 
 
-class TransientError(cbUtilException):
+class TransientError(NonFatalError):
     pass
 
 
-class TestPauseError(cbUtilException):
+class TestPauseError(NonFatalError):
     pass
 
 
-class BucketStatsError(cbUtilException):
+class BucketStatsError(NonFatalError):
     pass
 
 
-class BucketNotFound(cbUtilException):
+class BucketNotFound(NonFatalError):
     pass
 
 
-class CollectionNotDefined(cbUtilException):
+class CollectionNotDefined(NonFatalError):
     pass
-
