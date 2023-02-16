@@ -4,12 +4,18 @@
 import os
 import warnings
 import argparse
+from enum import Enum
 from lib.schema import ProcessSchema
 
 
 warnings.filterwarnings("ignore")
 lib_dir = os.path.dirname(os.path.realpath(__file__))
 package_dir = os.path.dirname(lib_dir)
+
+
+class OperatingMode(Enum):
+    LOAD = 0
+    READ = 1
 
 
 if 'HOME' in os.environ:
@@ -56,6 +62,11 @@ inventory = None
 schema = None
 output_file = None
 output_dir = None
+command = "load"
+op_mode = OperatingMode.LOAD.value
+continuous = False
+batch_size = 100
+count = 100
 
 
 def process_params(parameters: argparse.Namespace) -> None:
@@ -69,7 +80,10 @@ def process_params(parameters: argparse.Namespace) -> None:
         schema_name, \
         inventory, \
         output_file, \
-        output_dir
+        output_dir, \
+        command, \
+        op_mode, \
+        count
 
     if parameters.user:
         username = parameters.user
@@ -97,6 +111,14 @@ def process_params(parameters: argparse.Namespace) -> None:
             schema_name = parameters.schema
         else:
             schema_name = "default"
+    if parameters.command:
+        command = parameters.command
+    if command == 'load':
+        op_mode = OperatingMode.LOAD.value
+    elif command == "read":
+        op_mode = OperatingMode.READ.value
+    if parameters.count:
+        count = parameters.count
 
     inventory = ProcessSchema(schema_file).inventory()
     schema = inventory.get(schema_name)

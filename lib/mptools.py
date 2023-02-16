@@ -4,7 +4,7 @@
 import multiprocessing.queues
 
 
-class mp_value(object):
+class MPValue(object):
 
     def __init__(self, i=0):
         self.count = multiprocessing.Value('i', i)
@@ -32,11 +32,11 @@ class mp_value(object):
         return self.count.value
 
 
-class mp_queue(multiprocessing.queues.Queue):
+class MPQueue(multiprocessing.queues.Queue):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._size = mp_value()
+        self._size = MPValue()
 
     def put(self, *args, **kwargs):
         self._size.increment()
@@ -55,9 +55,3 @@ class mp_queue(multiprocessing.queues.Queue):
     def clear(self):
         while not self.empty():
             self.get()
-
-
-class telemetry(mp_queue):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)

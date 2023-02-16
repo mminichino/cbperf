@@ -13,6 +13,7 @@ from lib.exceptions import *
 import lib.config as config
 from lib.export import CBExport
 from lib.logging import CustomFormatter
+from lib.main import MainLoop
 
 
 LOAD_DATA = 0x0000
@@ -64,6 +65,7 @@ class params(object):
         parent_parser.add_argument('--outfile', action='store', help="Output file", default="output.dat")
         parent_parser.add_argument('--directory', action='store', help="Output directory")
         parent_parser.add_argument('--schema', action='store', help="Test Schema")
+        parent_parser.add_argument('--dev', action='store_true', help="Use Experimental Methods")
         parent_parser.add_argument('--help', action='help', default=argparse.SUPPRESS, help='Show help message')
         list_parser = argparse.ArgumentParser(add_help=False)
         list_parser.add_argument('--ping', action='store_true', help='Show cluster ping output')
@@ -126,8 +128,11 @@ class cbPerf(object):
             CBExport().as_csv()
             sys.exit(0)
         else:
-            task = test_exec(self.args)
-            task.run()
+            if self.args.dev:
+                MainLoop().start()
+            else:
+                task = test_exec(self.args)
+                task.run()
 
 
 def main():

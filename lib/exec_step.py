@@ -25,20 +25,19 @@ class DBRead(object):
 
 class DBWrite(object):
 
-    def __init__(self, db: CBConnect, key: str, document: dict, id_field: str = "record_id"):
+    def __init__(self, db: CBConnect, document: dict, id_field: str = "record_id"):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.key = key
         self.document = document
         self.id_field = id_field
         self.db = db
         self._result = None
 
-    def execute(self):
+    def execute(self, key: str):
         r = randomize()
         r.prepareTemplate(self.document)
         document = r.processTemplate()
-        document[self.id_field] = self.key
-        self._result = self.db.cb_upsert(self.key, document)
+        document[self.id_field] = key
+        self._result = self.db.cb_upsert(key, document)
 
     @property
     def result(self):
