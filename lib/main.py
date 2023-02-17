@@ -46,6 +46,7 @@ class MainLoop(object):
             operation_count = config.count
 
         db_op = DBWrite(db, collection.schema, collection.idkey)
+        logging.debug(f"process: collection {collection.name} count {operation_count}")
 
         while True:
             tasks = set()
