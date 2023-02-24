@@ -145,7 +145,8 @@ class Collection(object):
     idkey = attr.ib(validator=io(str))
     primary_index = attr.ib(validator=io(bool))
     override_count = attr.ib(validator=io(bool))
-    indexes = attr.ib(validator=io(list))
+    indexes = attr.ib(validator=attr.validators.optional(io(list)), default=None)
+    index_name = attr.ib(validator=attr.validators.optional(io(str)), default=None)
 
     @classmethod
     def from_config(cls, json_data: dict):
@@ -158,6 +159,9 @@ class Collection(object):
             json_data.get("indexes")
             )
 
+    def set_index_name(self, name: str):
+        self.index_name = name
+
     @property
     def as_dict(self):
         return self.__dict__
@@ -167,16 +171,20 @@ class Collection(object):
 class Rule(object):
     name = attr.ib(validator=io(str))
     type = attr.ib(validator=io(str))
+    id_field = attr.ib(validator=io(str))
     foreign_key = attr.ib(validator=io(str))
     primary_key = attr.ib(validator=io(str))
+    sql = attr.ib(validator=io(str))
 
     @classmethod
     def from_config(cls, json_data: dict):
         return cls(
             json_data.get("name"),
             json_data.get("type"),
+            json_data.get("id_field"),
             json_data.get("foreign_key"),
             json_data.get("primary_key"),
+            json_data.get("sql")
             )
 
     @property

@@ -148,8 +148,10 @@
           {
             "name": "rule0",
             "type": "link",
+            "id_field": "record_id",
             "foreign_key": "sample_app:profiles:user_data:picture",
-            "primary_key": "sample_app:profiles:user_images:record_id"
+            "primary_key": "sample_app:profiles:user_images:record_id",
+            "sql" : "MERGE INTO sample_app.profiles.user_data u USING sample_app.profiles.user_images i ON u.record_id = i.record_id WHEN MATCHED THEN UPDATE SET u.picture = meta(i).id ;"
           }
         ]
       }

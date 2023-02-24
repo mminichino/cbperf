@@ -67,6 +67,11 @@ op_mode = OperatingMode.LOAD.value
 continuous = False
 batch_size = 100
 count = 100
+replicas = 0
+bucket_name = None
+scope_name = None
+collection_name = None
+document_key = None
 
 
 def process_params(parameters: argparse.Namespace) -> None:
@@ -83,7 +88,12 @@ def process_params(parameters: argparse.Namespace) -> None:
         output_dir, \
         command, \
         op_mode, \
-        count
+        count, \
+        replicas, \
+        bucket_name, \
+        scope_name, \
+        collection_name, \
+        document_key
 
     if parameters.user:
         username = parameters.user
@@ -99,6 +109,16 @@ def process_params(parameters: argparse.Namespace) -> None:
         input_file = parameters.file
     if parameters.outfile:
         output_file = parameters.outfile
+    if parameters.replica:
+        replicas = parameters.replica
+    if parameters.bucket:
+        bucket_name = parameters.bucket
+    if parameters.scope:
+        scope_name = parameters.scope
+    if parameters.collection:
+        collection_name = parameters.collection
+    if parameters.key:
+        document_key = parameters.key
     if parameters.directory:
         output_dir = parameters.directory
     else:
@@ -115,7 +135,7 @@ def process_params(parameters: argparse.Namespace) -> None:
         command = parameters.command
     if command == 'load':
         op_mode = OperatingMode.LOAD.value
-    elif command == "read":
+    elif command == "get":
         op_mode = OperatingMode.READ.value
     if parameters.count:
         count = parameters.count

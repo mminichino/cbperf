@@ -18,4 +18,4 @@ passlib>=1.7.4
 bcrypt>=4.0.0
 pandas>=1.5.3
 attrs>=19.3.0
-cbcmgr>=1.0.6
+cbcmgr>=1.1.0

@@ -14,6 +14,7 @@ import lib.config as config
 from lib.export import CBExport
 from lib.logging import CustomFormatter
 from lib.main import MainLoop
+from lib.config import OperatingMode
 
 
 LOAD_DATA = 0x0000
@@ -54,7 +55,10 @@ class params(object):
         parent_parser.add_argument('-u', '--user', action='store', help="User Name", default="Administrator")
         parent_parser.add_argument('-p', '--password', action='store', help="User Password", default="password")
         parent_parser.add_argument('-h', '--host', action='store', help="Cluster Node Name", default="localhost")
-        parent_parser.add_argument('-b', '--bucket', action='store', help="Test Bucket", default="pillowfight")
+        parent_parser.add_argument('-b', '--bucket', action='store', help="Bucket", default="pillowfight")
+        parent_parser.add_argument('-s', '--scope', action='store', help="Scope", default="_default")
+        parent_parser.add_argument('-c', '--collection', action='store', help="Collection", default="_default")
+        parent_parser.add_argument('-k', '--key', action='store', help="Document Key")
         parent_parser.add_argument('--tls', action='store_true', help="Enable SSL")
         parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int_arg, default=3)
         parent_parser.add_argument('--limit', action='store_true', help="Limited Network Connectivity")
@@ -94,6 +98,7 @@ class params(object):
         list_mode = subparsers.add_parser('list', help="List Nodes", parents=[parent_parser, list_parser], add_help=False)
         clean_mode = subparsers.add_parser('clean', help="Clean Up", parents=[parent_parser, run_parser], add_help=False)
         load_mode = subparsers.add_parser('load', help="Load Data", parents=[parent_parser, run_parser], add_help=False)
+        read_mode = subparsers.add_parser('get', help="Get Data", parents=[parent_parser, run_parser], add_help=False)
         schema_mode = subparsers.add_parser('schema', help="Schema Admin", parents=[schema_parser], add_help=False)
         export_mode = subparsers.add_parser('export', help="Export Data", parents=[parent_parser], add_help=False)
         self.parser = parser
@@ -101,6 +106,7 @@ class params(object):
         self.list_parser = list_mode
         self.clean_parser = clean_mode
         self.load_parser = load_mode
+        self.read_parser = read_mode
         self.schema_parser = schema_mode
 
 
@@ -129,7 +135,10 @@ class cbPerf(object):
             sys.exit(0)
         else:
             if self.args.dev:
-                MainLoop().start()
+                if config.op_mode == OperatingMode.LOAD.value and self.args.schema:
+                    MainLoop().schema_load()
+                elif config.op_mode == OperatingMode.READ.value:
+                    MainLoop().read()
             else:
                 task = test_exec(self.args)
                 task.run()
@@ -145,7 +154,7 @@ def main():
     try:
         debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
     except (ValueError, KeyError):
-        debug_level = 3
+        debug_level = 2
 
     if debug_level == 0:
         logger.setLevel(logging.DEBUG)
