@@ -10,4 +10,4 @@ fi
 . $PKGDIR/venv/bin/activate
 export PYTHONPATH=$PYTHONPATH:$PKGDIR
 cd $PKGDIR
-$SCRIPTDIR/cb_perf.py "$@"
+$SCRIPTDIR/cb_perf.py "$@" < /dev/stdin

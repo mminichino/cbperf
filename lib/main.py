@@ -3,14 +3,17 @@
 
 import logging
 import json
+import re
+import sys
+import io
+import itertools as it
 import concurrent.futures
+from functools import partial
 import lib.config as config
-from lib.config import OperatingMode
 from cbcmgr.cb_connect import CBConnect
 from cbcmgr.cb_management import CBManager
 from lib.exceptions import TestRunError
 from lib.exec_step import DBRead, DBWrite, DBQuery
-from lib.mptools import MPValue
 from lib.schema import Bucket, Scope, Collection
 
 
@@ -18,6 +21,28 @@ class MainLoop(object):
 
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+
+    @staticmethod
+    def prep_bucket(bucket, scope, collection):
+        dbm = CBManager(config.host, config.username, config.password, ssl=config.tls).connect()
+        dbm.create_bucket(bucket)
+        dbm.create_scope(scope)
+        dbm.create_collection(collection)
+        return dbm
+
+    def task_wait(self, tasks):
+        result_set = []
+        while tasks:
+            done, tasks = concurrent.futures.wait(tasks, return_when=concurrent.futures.FIRST_COMPLETED)
+            for task in done:
+                try:
+                    result = task.result()
+                    if type(result) == dict:
+                        result_set.append(result)
+                except Exception as err:
+                    self.logger.error(f"task error: {type(err).__name__}: {err}")
+                    return
+        return result_set
 
     def schema_load(self):
         self.logger.info("Processing buckets")
@@ -36,10 +61,7 @@ class MainLoop(object):
 
     def pre_process(self, bucket: Bucket, scope: Scope, collection: Collection):
         self.logger.info("Creating bucket structure")
-        dbm = CBManager(config.host, config.username, config.password, ssl=config.tls).connect()
-        dbm.create_bucket(bucket.name)
-        dbm.create_scope(scope.name)
-        dbm.create_collection(collection.name)
+        dbm = self.prep_bucket(bucket.name, scope.name, collection.name)
 
         self.logger.info("Processing indexes")
         if collection.primary_index:
@@ -52,7 +74,8 @@ class MainLoop(object):
 
     def process(self, bucket: Bucket, scope: Scope, collection: Collection):
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=config.batch_size)
-        i = MPValue()
+        run_batch_size = config.batch_size * 10
+        tasks = set()
 
         try:
             db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect(bucket.name, scope.name, collection.name)
@@ -67,23 +90,13 @@ class MainLoop(object):
         db_op = DBWrite(db, collection.schema, collection.idkey)
         self.logger.info(f"Inserting {operation_count} records into collection {collection.name}")
 
-        while True:
-            tasks = set()
-            for n in range(config.batch_size):
-                if i.value >= operation_count:
+        for n in range(1, operation_count + 1, run_batch_size):
+            tasks.clear()
+            for key in range(n, n + run_batch_size):
+                if key > operation_count:
                     break
-                if config.op_mode == OperatingMode.LOAD.value:
-                    tasks.add(executor.submit(db_op.execute, i.next))
-            if len(tasks) == 0:
-                break
-            task_count = len(tasks)
-            while tasks:
-                done, tasks = concurrent.futures.wait(tasks, return_when=concurrent.futures.FIRST_COMPLETED)
-                for task in done:
-                    try:
-                        result = task.result()
-                    except Exception as err:
-                        self.logger.error(f"task error: {err}")
+                tasks.add(executor.submit(db_op.execute, key))
+            self.task_wait(tasks)
 
     def post_process(self, bucket: Bucket, scope: Scope, collection: Collection):
         pass
@@ -103,6 +116,50 @@ class MainLoop(object):
         db_op = DBQuery(db, query)
         db_op.execute()
 
+    def input_load(self):
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=config.batch_size)
+        decoder = json.JSONDecoder()
+        bucket = config.bucket_name
+        scope = config.scope_name
+        collection = config.collection_name
+        tasks = set()
+
+        self.logger.info(f"Inserting records into collection {collection}")
+
+        try:
+            dbm = self.prep_bucket(bucket, scope, collection)
+            db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect(bucket, scope, collection)
+        except Exception as err:
+            raise TestRunError(f"can not connect to Couchbase: {err}")
+
+        if config.insert_data:
+            content = io.StringIO(config.insert_data)
+        else:
+            content = sys.stdin
+
+        count = db.collection_count()
+
+        object_count = 0
+        key_count = count
+        buffer = ''
+        for chunk in iter(partial(content.read, 131072), ''):
+            tasks.clear()
+            buffer += chunk
+            while buffer:
+                try:
+                    json_object, position = decoder.raw_decode(buffer)
+                    db_op = DBWrite(db, json_object)
+                    key_count += 1
+                    tasks.add(executor.submit(db_op.execute, key_count, False))
+                    object_count += 1
+                    buffer = buffer[position:]
+                    buffer = buffer.lstrip()
+                except ValueError:
+                    break
+            self.task_wait(tasks)
+
+        self.logger.info(f"Collection had {count} documents - inserted {object_count} additional record(s)")
+
     def read(self):
         bucket = config.bucket_name
         scope = config.scope_name
@@ -114,7 +171,35 @@ class MainLoop(object):
             raise TestRunError(f"can not connect to Couchbase: {err}")
 
         if config.document_key:
-            db_op = DBRead(db, config.document_key)
+            self.read_by_key(config.document_key, db)
+        else:
+            self.read_by_meta_id(db)
+
+    @staticmethod
+    def read_by_key(key: str, db: CBConnect, start: int = 1):
+        count = it.count(start)
+
+        while True:
+            lookup_key, n = re.subn(r"%N", lambda x: str(next(count)), key)
+            db_op = DBRead(db, lookup_key)
+            db_op.execute()
+            if not db_op.result:
+                break
+            try:
+                output = json.dumps(db_op.result, indent=2)
+            except json.decoder.JSONDecodeError:
+                output = db_op.result
+            print(output)
+            if n == 0:
+                break
+
+    @staticmethod
+    def read_by_meta_id(db: CBConnect):
+        query = r"select meta().id from {{ keyspace }} ;"
+        db_op = DBQuery(db, query, keyspace=db.keyspace)
+        db_op.execute()
+        for meta_id in db_op.result:
+            db_op = DBRead(db, meta_id['id'])
             db_op.execute()
             try:
                 output = json.dumps(db_op.result, indent=2)

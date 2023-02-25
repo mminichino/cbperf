@@ -59,6 +59,7 @@ class params(object):
         parent_parser.add_argument('-s', '--scope', action='store', help="Scope", default="_default")
         parent_parser.add_argument('-c', '--collection', action='store', help="Collection", default="_default")
         parent_parser.add_argument('-k', '--key', action='store', help="Document Key")
+        parent_parser.add_argument('-d', '--data', action='store', help="Document To Insert")
         parent_parser.add_argument('--tls', action='store_true', help="Enable SSL")
         parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int_arg, default=3)
         parent_parser.add_argument('--limit', action='store_true', help="Limited Network Connectivity")
@@ -137,6 +138,8 @@ class cbPerf(object):
             if self.args.dev:
                 if config.op_mode == OperatingMode.LOAD.value and self.args.schema:
                     MainLoop().schema_load()
+                elif config.op_mode == OperatingMode.LOAD.value:
+                    MainLoop().input_load()
                 elif config.op_mode == OperatingMode.READ.value:
                     MainLoop().read()
             else:

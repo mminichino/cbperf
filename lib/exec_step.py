@@ -2,6 +2,7 @@
 ##
 
 import logging
+import time
 from jinja2 import Template
 from cbcmgr.cb_connect import CBConnect
 from lib.cbutil.randomize import randomize
@@ -32,12 +33,19 @@ class DBWrite(object):
         self.db = db
         self._result = None
 
-    def execute(self, key: str):
-        r = randomize()
-        r.prepareTemplate(self.document)
-        document = r.processTemplate()
+    def execute(self, key: str, template: bool = True):
+        begin_time = time.time()
+        if template:
+            r = randomize()
+            r.prepareTemplate(self.document)
+            document = r.processTemplate()
+        else:
+            document = self.document
         document[self.id_field] = key
         self._result = self.db.cb_upsert(key, document)
+        end_time = time.time()
+        total_time = end_time - begin_time
+        self.logger.debug(f"write complete in {total_time:.6f}")
 
     @property
     def result(self):
@@ -58,6 +66,10 @@ class DBQuery(object):
             t = Template(self.query)
             self.query = t.render(**self.query_params)
         self._result = self.db.cb_query(sql=self.query)
+
+    @property
+    def keyspace(self):
+        return self.db.keyspace
 
     @property
     def result(self):

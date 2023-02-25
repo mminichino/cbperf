@@ -72,6 +72,7 @@ bucket_name = None
 scope_name = None
 collection_name = None
 document_key = None
+insert_data = None
 
 
 def process_params(parameters: argparse.Namespace) -> None:
@@ -93,7 +94,8 @@ def process_params(parameters: argparse.Namespace) -> None:
         bucket_name, \
         scope_name, \
         collection_name, \
-        document_key
+        document_key, \
+        insert_data
 
     if parameters.user:
         username = parameters.user
@@ -119,6 +121,8 @@ def process_params(parameters: argparse.Namespace) -> None:
         collection_name = parameters.collection
     if parameters.key:
         document_key = parameters.key
+    if parameters.data:
+        insert_data = parameters.data
     if parameters.directory:
         output_dir = parameters.directory
     else:
