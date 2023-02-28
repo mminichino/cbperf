@@ -1,0 +1,57 @@
+{ 
+    "id" : "b5299737-2011-490d-bb2e-901d0c99df87",
+    "class" : "com.example.CardPurchase",
+    "createdDate" : "{{ date_time }}", 
+    "processingTimeFirstPass" : "88",
+    "sponsorID" : "{{ rand_id }}", 
+    "primaryAccountNumberHash" : "{{ rand_hash }}", 
+    "encryptionKeyName" : "{{ rand_id }}", 
+    "primaryAccountNumber" : "{{ rand_account }}", 
+    "appID" : "ShoppingCart",
+    "cardPrefix" : "{{ rand_four }}", 
+    "cardType" : "Credit",
+    "cardBrand" : "Store",
+    "createdOnDate" : "{{ date_time }}",
+    "decisionRequest" : {
+        "dateTimeLocal" : "{{ date_time }}",
+        "retrievalReferenceNumber" : "{{ rand_id }}", 
+        "cardholderBillAmount" : "{{ rand_dollar }}",
+        "transactionID" : "{{ rand_id }}",
+        "merchantInfo" : {
+            "name" : "{{ rand_first }} {{ rand_last }}", 
+            "addressLines" : [
+                "{{ rand_address }}"
+            ], 
+            "city" : "{{ rand_city }}", 
+            "region" : "US", 
+            "postalCode" : "{{ rand_zip_code }}", 
+            "countryCode" : "USA", 
+            "merchantCategoryCode" : "{{ rand_four }}", 
+            "currencyCode" : "123",
+            "transactionAmount" : "{{ rand_dollar }}", 
+            "cardAcceptorTerminalID" : "{{ rand_id }}"
+        },
+        "pointOfServiceInfo" : {
+            "terminalClass" : {
+                "isAttended" : true, 
+                "howOperated" : "CUSTOMER_OPERATED", 
+                "deviceLocation" : "ON_PREMISE"
+            }
+        }, 
+        "decisionRequestTimeStamp" : "{{ date_time }}",
+        "decisionRequestTimeStampInMs" : "{{ date_time }}"
+    }, 
+    "decisionResponse" : {
+        "shouldDecline" : true, 
+        "shouldAlert" : false, 
+        "decisionResponseTimeStamp" : "{{ date_time }}",
+        "alertsRuleDetail" : [
+        ], 
+        "declineRuleDetail" : {
+            "ruleType" : "DECLINE",
+            "alertReason" : "DECLINE_ALL", 
+            "userIdentifier" : "{{ rand_id }}",
+            "controlTargetType" : "CARD"
+        }
+    }
+}

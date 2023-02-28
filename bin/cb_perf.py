@@ -96,7 +96,7 @@ class params(object):
         run_parser.add_argument('--skiprules', action='store_true', help="Do not run rules if defined")
         subparsers = parser.add_subparsers(dest='command')
         run_mode = subparsers.add_parser('run', help="Run Test Scenarios", parents=[parent_parser, run_parser], add_help=False)
-        list_mode = subparsers.add_parser('list', help="List Nodes", parents=[parent_parser, list_parser], add_help=False)
+        list_mode = subparsers.add_parser('list', help="List Nodes", parents=[parent_parser, list_parser, run_parser], add_help=False)
         clean_mode = subparsers.add_parser('clean', help="Clean Up", parents=[parent_parser, run_parser], add_help=False)
         load_mode = subparsers.add_parser('load', help="Load Data", parents=[parent_parser, run_parser], add_help=False)
         read_mode = subparsers.add_parser('get', help="Get Data", parents=[parent_parser, run_parser], add_help=False)
@@ -120,16 +120,14 @@ class cbPerf(object):
 
     def run(self):
         if self.verb == 'list':
-            task = print_host_map(self.args)
-            task.run()
+            MainLoop().cluster_list()
             sys.exit(0)
         elif self.verb == 'schema':
             task = schema_admin(self.args)
             task.run()
             sys.exit(0)
         elif self.verb == 'clean':
-            task = test_exec(self.args)
-            task.test_clean()
+            MainLoop().schema_remove()
             sys.exit(0)
         elif self.verb == 'export':
             CBExport().as_csv()

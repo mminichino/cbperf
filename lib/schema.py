@@ -5,8 +5,11 @@ from __future__ import annotations
 import attr
 import logging
 import json
+import jinja2
+from jinja2.meta import find_undeclared_variables
 from attr.validators import instance_of as io
 from lib.exceptions import SchemaFileError
+import lib.config as config
 
 
 @attr.s
@@ -104,7 +107,7 @@ class Bucket(object):
     @classmethod
     def build(cls, name: str):
         return cls(
-            name,
+            ProcessVariables.resolve_variables(name),
             []
         )
 
@@ -152,11 +155,11 @@ class Collection(object):
     def from_config(cls, json_data: dict):
         return cls(
             json_data.get("name"),
-            json_data.get("schema"),
-            json_data.get("idkey"),
+            ProcessVariables.resolve_variables(json_data.get("schema")),
+            ProcessVariables.resolve_variables(json_data.get("idkey")),
             json_data.get("primary_index"),
             json_data.get("override_count"),
-            json_data.get("indexes")
+            [ProcessVariables.resolve_variables(i) for i in json_data.get("indexes")]
             )
 
     def set_index_name(self, name: str):
@@ -231,3 +234,38 @@ class ProcessSchema(object):
                     schema_builder.add_rule(rule_builder)
                 inventory_builder.add_schema(schema_builder)
         return inventory_builder
+
+
+class ProcessVariables(object):
+
+    def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    @staticmethod
+    def read_file(filename):
+        try:
+            with open(filename, 'r') as input_file:
+                schema_json = json.load(input_file)
+            input_file.close()
+            return schema_json
+        except OSError as err:
+            raise SchemaFileError(f"can not read input file {filename}: {err}")
+        except json.JSONDecodeError as err:
+            raise SchemaFileError(f"invalid JSON data in input file {filename}: {err}")
+
+    @staticmethod
+    def resolve_variables(value):
+        if type(value) != str:
+            return value
+        env = jinja2.Environment(undefined=jinja2.DebugUndefined)
+        raw_template = env.from_string(value)
+        formatted_value = raw_template.render(
+            ID_FIELD_PARAMETER=config.id_key if config.id_key else "",
+            BUCKET_PARAMETER=config.bucket_name if config.bucket_name else "",
+        )
+        ast = env.parse(formatted_value)
+        requested_vars = find_undeclared_variables(ast)
+        if 'FILE_PARAMETER' in requested_vars:
+            return config.schema_file_json
+        else:
+            return formatted_value

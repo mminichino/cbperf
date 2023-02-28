@@ -44,6 +44,37 @@ class MainLoop(object):
                     return
         return result_set
 
+    def schema_remove(self):
+        dbm = CBManager(config.host, config.username, config.password, ssl=config.tls).connect()
+        if config.schema_name:
+            bucket_list = [b.name for b in config.schema.buckets]
+        else:
+            bucket_list = [config.bucket_name]
+        for bucket in bucket_list:
+            if bucket:
+                self.logger.info(f"Removing bucket {bucket}")
+                dbm.drop_bucket(bucket)
+
+    def cluster_list(self):
+        db = CBManager(config.host, config.username, config.password, ssl=config.tls)
+
+        if config.wait_mode:
+            try:
+                db.wait_for_query_ready()
+                db.wait_for_index_ready()
+            except Exception as err:
+                self.logger.error(f"cluster wait failed: {err}")
+                raise TestRunError("cluster not ready")
+
+        db.print_host_map()
+
+        if config.ping_mode:
+            if config.test_mode:
+                db.cluster_health_check(output=False, restrict=False, extended=True)
+            else:
+                print("Cluster Status:")
+                db.cluster_health_check(output=True, restrict=False)
+
     def schema_load(self):
         self.logger.info("Processing buckets")
         for bucket in config.schema.buckets:

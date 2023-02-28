@@ -5,7 +5,7 @@ import os
 import warnings
 import argparse
 from enum import Enum
-from lib.schema import ProcessSchema
+from lib.schema import ProcessSchema, ProcessVariables
 
 
 warnings.filterwarnings("ignore")
@@ -16,6 +16,7 @@ package_dir = os.path.dirname(lib_dir)
 class OperatingMode(Enum):
     LOAD = 0
     READ = 1
+    LIST = 2
 
 
 if 'HOME' in os.environ:
@@ -73,6 +74,11 @@ scope_name = None
 collection_name = None
 document_key = None
 insert_data = None
+wait_mode = False
+ping_mode = False
+test_mode = False
+schema_file_json = {}
+id_key = None
 
 
 def process_params(parameters: argparse.Namespace) -> None:
@@ -95,7 +101,12 @@ def process_params(parameters: argparse.Namespace) -> None:
         scope_name, \
         collection_name, \
         document_key, \
-        insert_data
+        insert_data, \
+        wait_mode, \
+        ping_mode, \
+        test_mode, \
+        schema_file_json, \
+        id_key
 
     if parameters.user:
         username = parameters.user
@@ -109,6 +120,9 @@ def process_params(parameters: argparse.Namespace) -> None:
         external_network = parameters.external
     if parameters.file:
         input_file = parameters.file
+        schema_file_json = ProcessVariables().read_file(input_file)
+    if parameters.id:
+        id_key = parameters.id
     if parameters.outfile:
         output_file = parameters.outfile
     if parameters.replica:
@@ -133,16 +147,25 @@ def process_params(parameters: argparse.Namespace) -> None:
     else:
         if parameters.schema:
             schema_name = parameters.schema
-        else:
-            schema_name = "default"
     if parameters.command:
         command = parameters.command
     if command == 'load':
         op_mode = OperatingMode.LOAD.value
     elif command == "get":
         op_mode = OperatingMode.READ.value
+    elif command == "list":
+        op_mode = OperatingMode.LIST.value
     if parameters.count:
         count = parameters.count
 
-    inventory = ProcessSchema(schema_file).inventory()
-    schema = inventory.get(schema_name)
+    if op_mode == OperatingMode.LIST.value:
+        if parameters.wait:
+            wait_mode = parameters.wait
+        if parameters.ping:
+            ping_mode = parameters.ping
+        if parameters.test:
+            test_mode = parameters.test
+
+    if schema_name:
+        inventory = ProcessSchema(schema_file).inventory()
+        schema = inventory.get(schema_name)
