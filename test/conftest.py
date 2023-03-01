@@ -1,10 +1,10 @@
 import pytest
 import docker
-import time
 
 
 def pytest_addoption(parser):
     parser.addoption("--hostname", action="store", default="localhost")
+    parser.addoption("--external", action="store_true")
 
 
 @pytest.fixture
@@ -17,6 +17,9 @@ def pytest_configure(config):
 
 
 def pytest_sessionstart(session):
+    external = session.config.getoption('--external')
+    if external:
+        return
     print("Starting test container")
     client = docker.from_env()
     container_id = client.containers.run('mminichino/cbdev:latest',
@@ -69,6 +72,9 @@ def pytest_sessionstart(session):
 
 
 def pytest_sessionfinish(session, exitstatus):
+    external = session.config.getoption('--external')
+    if external:
+        return
     print("")
     print("Stopping container")
     client = docker.from_env()

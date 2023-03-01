@@ -93,6 +93,12 @@ class MPAtomicIncrement(object):
 
 data_file_name = package_dir + '/config/data.json'
 data_struct = {}
+issued_struct = {
+    "ssn": {},
+    "username": {},
+    "email": {},
+    "nickname": {}
+}
 requested_tags = None
 template = None
 compiled: Template
@@ -211,7 +217,11 @@ def credit_card():
 
 
 def social_security_number():
-    return '-'.join([random_number_seq(3), random_number_seq(2), random_number_seq(4)])
+    while True:
+        issued = '-'.join([random_number_seq(3), random_number_seq(2), random_number_seq(4)])
+        if not issued_struct['ssn'].get(issued):
+            issued_struct['ssn'].update({issued: None})
+            return issued
 
 
 def three_digits():
@@ -375,15 +385,30 @@ def date_code():
 
 
 def nick_name(first_name="John", last_name="Doe"):
-    return first_name[0].lower() + last_name.lower()
+    name = first_name[0].lower() + last_name.lower()
+    found = [issued_struct['nickname'][key] for key in issued_struct['nickname'] if re.match(f"^{name}", key)]
+    if len(found) > 0:
+        suffix = str(len(found))
+        name += suffix
+    return name
 
 
 def email_address(first_name="John", last_name="Doe"):
-    return first_name.lower() + '.' + last_name.lower() + '@example.com'
+    mailbox = first_name.lower() + '.' + last_name.lower()
+    found = [issued_struct['email'][key] for key in issued_struct['email'] if re.match(f"^{mailbox}", key)]
+    if len(found) > 0:
+        suffix = str(len(found))
+        mailbox += suffix
+    return mailbox + '@example.com'
 
 
 def user_name(first_name="John", last_name="Doe"):
-    return first_name.lower() + last_name.lower() + four_digits()
+    user = first_name.lower() + last_name.lower()
+    found = [issued_struct['username'][key] for key in issued_struct['username'] if re.match(f"^{user}", key)]
+    if len(found) > 0:
+        suffix = str(len(found))
+        user += suffix
+    return user
 
 
 def rand_image():
@@ -410,41 +435,8 @@ def rand_password():
     return base64.b64encode(digest).decode('utf-8')
 
 
-def test_all():
-    g = rand_gender()
-    _past_date = past_date()
-    _dob_date = dob_date()
-    first_name = rand_first_name(g)
-    last_name = rand_last_name()
-    month = month_value()
-    print("Credit Card: " + credit_card())
-    print("SSN        : " + social_security_number())
-    print("Four Digits: " + four_digits())
-    print("ZIP Code   : " + zip_code())
-    print("Account    : " + account_number())
-    print("Dollar     : " + dollar_amount())
-    print("Sequence   : " + numeric_sequence())
-    print("Hash       : " + hash_code())
-    print("Address    : " + address_line())
-    print("City       : " + rand_city())
-    print("State      : " + rand_state())
-    print("First      : " + first_name)
-    print("Last       : " + last_name)
-    print("Nickname   : " + nick_name(first_name, last_name))
-    print("Email      : " + email_address(first_name, last_name))
-    print("Username   : " + user_name(first_name, last_name))
-    print("Phone      : " + phone_number())
-    print("Boolean    : " + str(boolean_value()))
-    print("Date       : " + date_code())
-    print("Year       : " + year_value())
-    print("Month      : " + month)
-    print("Day        : " + day_value(month))
-    print("Past Date 1: " + past_date_slash(_past_date))
-    print("Past Date 2: " + past_date_hyphen(_past_date))
-    print("Past Date 3: " + past_date_text(_past_date))
-    print("DOB Date 1 : " + dob_slash(_dob_date))
-    print("DOB Date 2 : " + dob_hyphen(_dob_date))
-    print("DOB Date 3 : " + dob_text(_dob_date))
+def rand_init():
+    load_data()
 
 
 def prepare_template(json_block):

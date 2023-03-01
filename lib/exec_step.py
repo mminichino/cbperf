@@ -5,7 +5,6 @@ import logging
 import time
 from jinja2 import Template
 from cbcmgr.cb_connect import CBConnect
-from lib.cbutil.randomize import randomize
 
 
 class DBRead(object):
@@ -26,21 +25,14 @@ class DBRead(object):
 
 class DBWrite(object):
 
-    def __init__(self, db: CBConnect, document: dict, id_field: str = "record_id"):
+    def __init__(self, db: CBConnect, id_field: str = "record_id"):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.document = document
         self.id_field = id_field
         self.db = db
         self._result = None
 
-    def execute(self, key: str, template: bool = True):
+    def execute(self, key: str, document: dict):
         begin_time = time.time()
-        if template:
-            r = randomize()
-            r.prepareTemplate(self.document)
-            document = r.processTemplate()
-        else:
-            document = self.document
         document[self.id_field] = key
         self._result = self.db.cb_upsert(key, document)
         end_time = time.time()

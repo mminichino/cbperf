@@ -10,6 +10,7 @@ import itertools as it
 import concurrent.futures
 from functools import partial
 import lib.config as config
+import lib.randomize as rand
 from cbcmgr.cb_connect import CBConnect
 from cbcmgr.cb_management import CBManager
 from lib.exceptions import TestRunError
@@ -21,6 +22,7 @@ class MainLoop(object):
 
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+        rand.rand_init()
 
     @staticmethod
     def prep_bucket(bucket, scope, collection):
@@ -107,6 +109,7 @@ class MainLoop(object):
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=config.batch_size)
         run_batch_size = config.batch_size * 10
         tasks = set()
+        rand.prepare_template(collection.schema)
 
         try:
             db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect(bucket.name, scope.name, collection.name)
@@ -118,7 +121,7 @@ class MainLoop(object):
         else:
             operation_count = config.count
 
-        db_op = DBWrite(db, collection.schema, collection.idkey)
+        db_op = DBWrite(db, collection.idkey)
         self.logger.info(f"Inserting {operation_count} records into collection {collection.name}")
 
         for n in range(1, operation_count + 1, run_batch_size):
@@ -126,7 +129,8 @@ class MainLoop(object):
             for key in range(n, n + run_batch_size):
                 if key > operation_count:
                     break
-                tasks.add(executor.submit(db_op.execute, key))
+                document = rand.process_template()
+                tasks.add(executor.submit(db_op.execute, key, document))
             self.task_wait(tasks)
 
     def post_process(self, bucket: Bucket, scope: Scope, collection: Collection):
@@ -179,9 +183,9 @@ class MainLoop(object):
             while buffer:
                 try:
                     json_object, position = decoder.raw_decode(buffer)
-                    db_op = DBWrite(db, json_object)
+                    db_op = DBWrite(db)
                     key_count += 1
-                    tasks.add(executor.submit(db_op.execute, key_count, False))
+                    tasks.add(executor.submit(db_op.execute, key_count, json_object))
                     object_count += 1
                     buffer = buffer[position:]
                     buffer = buffer.lstrip()
