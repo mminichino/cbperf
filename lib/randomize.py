@@ -7,6 +7,7 @@ import json
 import multiprocessing
 import random
 import re
+import io
 from jinja2 import Template
 from jinja2.environment import Environment
 from jinja2.runtime import DebugUndefined
@@ -17,13 +18,11 @@ import base64
 import hashlib
 from enum import Enum
 import numpy
+from PIL import Image
 
 warnings.filterwarnings("ignore")
 lib_dir = os.path.dirname(os.path.realpath(__file__))
 package_dir = os.path.dirname(lib_dir)
-
-data_file_name = package_dir + '/config/data.json'
-data_struct = {}
 
 
 class HashMode(Enum):
@@ -90,6 +89,16 @@ class MPAtomicIncrement(object):
             return current
         else:
             return self.count.value
+
+
+data_file_name = package_dir + '/config/data.json'
+data_struct = {}
+requested_tags = None
+template = None
+compiled: Template
+password_hash = HashMode.sha1.value
+incrementor = MPAtomicIncrement()
+incrementor_block = MPAtomicIncrement(s=10)
 
 
 def load_data() -> None:
@@ -243,12 +252,12 @@ def year_value():
 
 def month_value():
     value = month_number()
-    return f'{value:02}'
+    return f'{int(value):02}'
 
 
 def day_value(month):
     value = month_day(month)
-    return f'{value:02}'
+    return f'{int(value):02}'
 
 
 def past_date():
@@ -290,7 +299,7 @@ def hash_code():
 
 
 def rand_gender():
-    return Gender(random_bits(1))
+    return Gender(next(random_bits(1)))
 
 
 def rand_street_name():
@@ -305,6 +314,41 @@ def rand_street_suffix():
     data = data_struct.get('street_suffix')
     if not data:
         raise ConfigFileError("No random street suffix data")
+    rand_gen = FastRandom(len(data), 0)
+    return data[rand_gen.value]
+
+
+def rand_first_name(g: Gender):
+    if g == Gender.M:
+        data = data_struct.get('first_names', {}).get('male')
+    else:
+        data = data_struct.get('first_names', {}).get('female')
+    if not data:
+        raise ConfigFileError("No random first name data")
+    rand_gen = FastRandom(len(data), 0)
+    return data[rand_gen.value]
+
+
+def rand_last_name():
+    data = data_struct.get('last_names')
+    if not data:
+        raise ConfigFileError("No random last name data")
+    rand_gen = FastRandom(len(data), 0)
+    return data[rand_gen.value]
+
+
+def rand_city():
+    data = data_struct.get('city_names')
+    if not data:
+        raise ConfigFileError("No random city name data")
+    rand_gen = FastRandom(len(data), 0)
+    return data[rand_gen.value]
+
+
+def rand_state():
+    data = data_struct.get('state_names_short')
+    if not data:
+        raise ConfigFileError("No random state name data")
     rand_gen = FastRandom(len(data), 0)
     return data[rand_gen.value]
 
@@ -355,11 +399,11 @@ def rand_image():
 
 def rand_password():
     password = "password"
-    if self.password_hash == HashMode.sha1.value:
+    if password_hash == HashMode.sha1.value:
         digest = hashlib.sha1(password.encode('utf-8')).digest()
-    elif self.password_hash == HashMode.sha256.value:
+    elif password_hash == HashMode.sha256.value:
         digest = hashlib.sha256(password.encode('utf-8')).digest()
-    elif self.password_hash == HashMode.sha512.value:
+    elif password_hash == HashMode.sha512.value:
         digest = hashlib.sha512(password.encode('utf-8')).digest()
     else:
         digest = hashlib.md5(password.encode('utf-8')).digest()
@@ -367,94 +411,100 @@ def rand_password():
 
 
 def test_all():
-    past_date = self.pastDate
-    dob_date = self.dobDate
-    first_name = self.firstName
-    last_name = self.lastName
-    print("Credit Card: " + self.creditCard)
-    print("SSN        : " + self.socialSecurityNumber)
-    print("Four Digits: " + self.fourDigits)
-    print("ZIP Code   : " + self.zipCode)
-    print("Account    : " + self.accountNumner)
-    print("Dollar     : " + self.dollarAmount)
-    print("Sequence   : " + self.numericSequence)
-    print("Hash       : " + self.hashCode)
-    print("Address    : " + self.addressLine)
-    print("City       : " + self.cityName)
-    print("State      : " + self.stateName)
+    g = rand_gender()
+    _past_date = past_date()
+    _dob_date = dob_date()
+    first_name = rand_first_name(g)
+    last_name = rand_last_name()
+    month = month_value()
+    print("Credit Card: " + credit_card())
+    print("SSN        : " + social_security_number())
+    print("Four Digits: " + four_digits())
+    print("ZIP Code   : " + zip_code())
+    print("Account    : " + account_number())
+    print("Dollar     : " + dollar_amount())
+    print("Sequence   : " + numeric_sequence())
+    print("Hash       : " + hash_code())
+    print("Address    : " + address_line())
+    print("City       : " + rand_city())
+    print("State      : " + rand_state())
     print("First      : " + first_name)
     print("Last       : " + last_name)
-    print("Nickname   : " + self.nickName(first_name, last_name))
-    print("Email      : " + self.emailAddress(first_name, last_name))
-    print("Username   : " + self.userName(first_name, last_name))
-    print("Phone      : " + self.phoneNumber)
-    print("Boolean    : " + str(self.booleanValue))
-    print("Date       : " + self.dateCode)
-    print("Year       : " + self.yearValue)
-    print("Month      : " + self.monthValue)
-    print("Day        : " + self.dayValue)
-    print("Past Date 1: " + self.pastDateSlash(past_date))
-    print("Past Date 2: " + self.pastDateHyphen(past_date))
-    print("Past Date 3: " + self.pastDateText(past_date))
-    print("DOB Date 1 : " + self.dobSlash(dob_date))
-    print("DOB Date 2 : " + self.dobHyphen(dob_date))
-    print("DOB Date 3 : " + self.dobText(dob_date))
+    print("Nickname   : " + nick_name(first_name, last_name))
+    print("Email      : " + email_address(first_name, last_name))
+    print("Username   : " + user_name(first_name, last_name))
+    print("Phone      : " + phone_number())
+    print("Boolean    : " + str(boolean_value()))
+    print("Date       : " + date_code())
+    print("Year       : " + year_value())
+    print("Month      : " + month)
+    print("Day        : " + day_value(month))
+    print("Past Date 1: " + past_date_slash(_past_date))
+    print("Past Date 2: " + past_date_hyphen(_past_date))
+    print("Past Date 3: " + past_date_text(_past_date))
+    print("DOB Date 1 : " + dob_slash(_dob_date))
+    print("DOB Date 2 : " + dob_hyphen(_dob_date))
+    print("DOB Date 3 : " + dob_text(_dob_date))
 
 
 def prepare_template(json_block):
+    global requested_tags, template, compiled
     block_string = json.dumps(json_block)
     env = Environment(undefined=DebugUndefined)
-    template = env.from_string(block_string)
-    rendered = template.render()
+    t = env.from_string(block_string)
+    rendered = t.render()
     ast = env.parse(rendered)
-    self.requested_tags = find_undeclared_variables(ast)
-    self.template = block_string
-    self.compiled = Template(self.template)
+    requested_tags = find_undeclared_variables(ast)
+    template = block_string
+    compiled = Template(template)
 
 
 def process_template():
-    first_name = self.firstName
-    last_name = self.lastName
-    past_date = self.pastDate
-    dob_date = self.dobDate
+    global compiled
+    g = rand_gender()
+    first_name = rand_first_name(g)
+    last_name = rand_last_name()
+    _past_date = past_date()
+    _dob_date = dob_date()
+    month = month_number()
     random_image = None
 
-    if 'rand_image' in self.requested_tags:
-        random_image = self.randImage()
+    if 'rand_image' in requested_tags:
+        random_image = rand_image()
 
-    formattedBlock = self.compiled.render(date_time=self.dateCode,
-                                          incr_value=self.incrementor.next,
-                                          incr_block=self.incrementor_block.next,
-                                          rand_credit_card=self.creditCard,
-                                          rand_ssn=self.socialSecurityNumber,
-                                          rand_four=self.fourDigits,
-                                          rand_account=self.accountNumner,
-                                          rand_id=self.numericSequence,
-                                          rand_zip_code=self.zipCode,
-                                          rand_dollar=self.dollarAmount,
-                                          rand_hash=self.hashCode,
-                                          rand_address=self.addressLine,
-                                          rand_city=self.cityName,
-                                          rand_state=self.stateName,
-                                          rand_first=first_name,
-                                          rand_last=last_name,
-                                          rand_nickname=self.nickName(first_name, last_name),
-                                          rand_email=self.emailAddress(first_name, last_name),
-                                          rand_username=self.userName(first_name, last_name),
-                                          rand_phone=self.phoneNumber,
-                                          rand_bool=self.booleanValue,
-                                          rand_year=self.yearValue,
-                                          rand_month=self.monthValue,
-                                          rand_day=self.dayValue,
-                                          rand_date_1=self.pastDateSlash(past_date),
-                                          rand_date_2=self.pastDateHyphen(past_date),
-                                          rand_date_3=self.pastDateText(past_date),
-                                          rand_dob_1=self.dobSlash(dob_date),
-                                          rand_dob_2=self.dobHyphen(dob_date),
-                                          rand_dob_3=self.dobText(dob_date),
-                                          rand_image=random_image,
-                                          rand_password=self.randPassword(),
-                                          )
-    finished = formattedBlock.encode('ascii')
-    jsonBlock = json.loads(finished)
-    return jsonBlock
+    formatted_block = compiled.render(date_time=date_code(),
+                                      incr_value=incrementor.next,
+                                      incr_block=incrementor_block.next,
+                                      rand_credit_card=credit_card(),
+                                      rand_ssn=social_security_number(),
+                                      rand_four=four_digits(),
+                                      rand_account=account_number(),
+                                      rand_id=numeric_sequence(),
+                                      rand_zip_code=zip_code(),
+                                      rand_dollar=dollar_amount(),
+                                      rand_hash=hash_code(),
+                                      rand_address=address_line(),
+                                      rand_city=rand_city(),
+                                      rand_state=rand_state(),
+                                      rand_first=first_name,
+                                      rand_last=last_name,
+                                      rand_nickname=nick_name(first_name, last_name),
+                                      rand_email=email_address(first_name, last_name),
+                                      rand_username=user_name(first_name, last_name),
+                                      rand_phone=phone_number(),
+                                      rand_bool=boolean_value(),
+                                      rand_year=year_value(),
+                                      rand_month=month,
+                                      rand_day=day_value(month),
+                                      rand_date_1=past_date_slash(_past_date),
+                                      rand_date_2=past_date_hyphen(_past_date),
+                                      rand_date_3=past_date_text(_past_date),
+                                      rand_dob_1=dob_slash(_dob_date),
+                                      rand_dob_2=dob_hyphen(_dob_date),
+                                      rand_dob_3=dob_text(_dob_date),
+                                      rand_image=random_image,
+                                      rand_password=rand_password(),
+                                      )
+    finished = formatted_block.encode('ascii')
+    json_block = json.loads(finished)
+    return json_block
