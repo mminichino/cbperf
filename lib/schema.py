@@ -197,19 +197,24 @@ class Rule(object):
 
 class ProcessSchema(object):
 
-    def __init__(self, filename):
+    def __init__(self, filename: str = None, json_data: dict = None):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.filename = filename
+        self.inventory_data = json_data
         self._inventory = Inventory.build()
 
-        try:
-            with open(self.filename, 'r') as schema_file:
-                self.inventory_data = json.load(schema_file)
-                schema_file.close()
-        except KeyError:
-            raise SchemaFileError(f"schema file {self.filename}: syntax error")
-        except Exception as err:
-            raise SchemaFileError(f"can not open schema file {self.filename}: {err}")
+        if filename:
+            try:
+                with open(self.filename, 'r') as schema_file:
+                    self.inventory_data = json.load(schema_file)
+                    schema_file.close()
+            except KeyError:
+                raise SchemaFileError(f"schema file {self.filename}: syntax error")
+            except Exception as err:
+                raise SchemaFileError(f"can not open schema file {self.filename}: {err}")
+
+        if not self.inventory_data:
+            raise SchemaFileError(f"no schema data")
 
     def inventory(self):
         inventory_builder = Inventory.build()

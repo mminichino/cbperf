@@ -7,7 +7,6 @@ workloads/*.dat
 workload*.dat
 data-load.dat
 *.debug
-test.py
 p_test.py
 cb_perf.log
 cb_debug.log

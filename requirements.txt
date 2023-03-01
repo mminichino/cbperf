@@ -18,5 +18,5 @@ passlib>=1.7.4
 bcrypt>=4.0.0
 pandas>=1.5.3
 attrs>=19.3.0
-cbcmgr==1.1.4
+cbcmgr==1.1.6
 docker~=6.0.1

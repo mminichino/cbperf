@@ -43,7 +43,7 @@ def cli_run(cmd: str, *args: str, input_file: str = None):
 def test_cli_1(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['load', '--host', hostname, '--count', '30', '--schema', 'employee_demo', '--replica', '0', '--dev']
+    args = ['load', '--host', hostname, '--count', '30', '--schema', 'employee_demo', '--replica', '0']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Processing rules")
@@ -54,7 +54,7 @@ def test_cli_1(hostname):
 def test_cli_2(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['clean', '--host', hostname, '--schema', 'employee_demo', '--dev']
+    args = ['clean', '--host', hostname, '--schema', 'employee_demo']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Removing bucket employees")
@@ -65,7 +65,7 @@ def test_cli_2(hostname):
 def test_cli_3(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['load', '--host', hostname, '--count', '1000', '--schema', 'profile_demo', '--replica', '0', '--dev']
+    args = ['load', '--host', hostname, '--count', '1000', '--schema', 'profile_demo', '--replica', '0']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Running link rule rule0")
@@ -76,7 +76,7 @@ def test_cli_3(hostname):
 def test_cli_4(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['clean', '--host', hostname, '--schema', 'profile_demo', '--dev']
+    args = ['clean', '--host', hostname, '--schema', 'profile_demo']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Removing bucket sample_app")
@@ -87,7 +87,7 @@ def test_cli_4(hostname):
 def test_cli_5(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['load', '--host', hostname, '--count', '1000', '--schema', 'default', '--replica', '0', '--dev']
+    args = ['load', '--host', hostname, '--count', '1000', '--schema', 'default', '--replica', '0']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Processing rules")
@@ -98,7 +98,7 @@ def test_cli_5(hostname):
 def test_cli_6(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['clean', '--host', hostname, '--schema', 'default', '--dev']
+    args = ['clean', '--host', hostname, '--schema', 'default']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Removing bucket cbperf")
@@ -120,7 +120,7 @@ def test_cli_7(hostname):
 def test_cli_8(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['load', '--host', hostname, '--count', '100', '--file', current + '/input_template.json', '--replica', '0', '--dev']
+    args = ['load', '--host', hostname, '--count', '100', '--file', current + '/input_template.json', '--replica', '0']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Processing rules")
@@ -131,7 +131,7 @@ def test_cli_8(hostname):
 def test_cli_9(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['clean', '--host', hostname, '--dev']
+    args = ['clean', '--host', hostname]
 
     result, output = cli_run(cmd, *args)
     p = re.compile(r"Removing bucket pillowfight")
@@ -142,7 +142,7 @@ def test_cli_9(hostname):
 def test_cli_10(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['load', '--host', hostname, '--dev']
+    args = ['load', '--host', hostname]
 
     result, output = cli_run(cmd, *args, input_file=current + '/input_stdin.dat')
     p = re.compile(r"Collection had 0 documents - inserted 7 additional record")
@@ -153,7 +153,7 @@ def test_cli_10(hostname):
 def test_cli_11(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['get', '--host', hostname, '-k', 'pillowfight:1', '--dev']
+    args = ['get', '--host', hostname, '-k', 'pillowfight:1']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(r'"record_id": 1')
@@ -164,7 +164,7 @@ def test_cli_11(hostname):
 def test_cli_12(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['get', '--host', hostname, '-k', 'pillowfight:%N', '--dev']
+    args = ['get', '--host', hostname, '-k', 'pillowfight:%N']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(r'"record_id": 7')
@@ -175,9 +175,42 @@ def test_cli_12(hostname):
 def test_cli_13(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['clean', '--host', hostname, '--dev']
+    args = ['clean', '--host', hostname]
 
     result, output = cli_run(cmd, *args)
     p = re.compile(r"Removing bucket pillowfight")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_14(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['load', '--host', hostname, '--count', '30', '--schema', 'employee_demo', '--replica', '0']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Processing rules")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_15(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['export', '--host', hostname, '-b', 'employees', '--directory', '/var/tmp']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Retrieved 30 records")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_16(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['clean', '--host', hostname, '--schema', 'employee_demo']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Removing bucket employees")
     assert p.search(output) is not None
     assert result == 0

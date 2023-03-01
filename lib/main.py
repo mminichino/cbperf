@@ -16,6 +16,7 @@ from cbcmgr.cb_management import CBManager
 from lib.exceptions import TestRunError
 from lib.exec_step import DBRead, DBWrite, DBQuery
 from lib.schema import Bucket, Scope, Collection
+from lib.schema import ProcessSchema
 
 
 class MainLoop(object):
@@ -56,6 +57,28 @@ class MainLoop(object):
             if bucket:
                 self.logger.info(f"Removing bucket {bucket}")
                 dbm.drop_bucket(bucket)
+
+    @staticmethod
+    def schema_list():
+        config.inventory = ProcessSchema(config.schema_file).inventory()
+        for schema in config.inventory.inventory:
+            print(f"Schema: {schema.name}")
+            for bucket in schema.buckets:
+                print(f"  Bucket: {bucket.name}")
+                for scope in bucket.scopes:
+                    print(f"    - Scope: {scope.name}")
+                    for collection in scope.collections:
+                        print(f"      > Collection: {collection.name}")
+                        print(f"        Schema:")
+                        json_output = json.dumps(collection.schema, indent=2)
+                        lines = json_output.split('\n')
+                        for line in lines:
+                            print(f"               {line}")
+            for rule in schema.rules:
+                if rule.type == "link":
+                    print(f"Rule: {rule.name}")
+                    print(f"  Type: {rule.type}")
+                    print(f"  SQL : {rule.sql}")
 
     def cluster_list(self):
         db = CBManager(config.host, config.username, config.password, ssl=config.tls)

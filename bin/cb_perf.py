@@ -8,7 +8,6 @@ import argparse
 import signal
 import warnings
 import traceback
-from lib.executive import print_host_map, test_exec, schema_admin
 from lib.exceptions import *
 import lib.config as config
 from lib.export import CBExport
@@ -100,8 +99,8 @@ class params(object):
         clean_mode = subparsers.add_parser('clean', help="Clean Up", parents=[parent_parser, run_parser], add_help=False)
         load_mode = subparsers.add_parser('load', help="Load Data", parents=[parent_parser, run_parser], add_help=False)
         read_mode = subparsers.add_parser('get', help="Get Data", parents=[parent_parser, run_parser], add_help=False)
-        schema_mode = subparsers.add_parser('schema', help="Schema Admin", parents=[schema_parser], add_help=False)
-        export_mode = subparsers.add_parser('export', help="Export Data", parents=[parent_parser], add_help=False)
+        schema_mode = subparsers.add_parser('schema', help="Schema Admin", parents=[parent_parser, run_parser], add_help=False)
+        export_mode = subparsers.add_parser('export', help="Export Data", parents=[parent_parser, run_parser], add_help=False)
         self.parser = parser
         self.run_parser = run_mode
         self.list_parser = list_mode
@@ -123,8 +122,7 @@ class cbPerf(object):
             MainLoop().cluster_list()
             sys.exit(0)
         elif self.verb == 'schema':
-            task = schema_admin(self.args)
-            task.run()
+            MainLoop().schema_list()
             sys.exit(0)
         elif self.verb == 'clean':
             MainLoop().schema_remove()
@@ -133,16 +131,12 @@ class cbPerf(object):
             CBExport().as_csv()
             sys.exit(0)
         else:
-            if self.args.dev:
-                if config.op_mode == OperatingMode.LOAD.value and self.args.schema:
-                    MainLoop().schema_load()
-                elif config.op_mode == OperatingMode.LOAD.value:
-                    MainLoop().input_load()
-                elif config.op_mode == OperatingMode.READ.value:
-                    MainLoop().read()
-            else:
-                task = test_exec(self.args)
-                task.run()
+            if config.op_mode == OperatingMode.LOAD.value and self.args.schema:
+                MainLoop().schema_load()
+            elif config.op_mode == OperatingMode.LOAD.value:
+                MainLoop().input_load()
+            elif config.op_mode == OperatingMode.READ.value:
+                MainLoop().read()
 
 
 def main():
