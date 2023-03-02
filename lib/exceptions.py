@@ -70,3 +70,7 @@ class TestRunException(NonFatalError):
 
 class ExportException(NonFatalError):
     pass
+
+
+class ExportError(FatalError):
+    pass

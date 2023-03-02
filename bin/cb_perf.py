@@ -10,7 +10,7 @@ import warnings
 import traceback
 from lib.exceptions import *
 import lib.config as config
-from lib.export import CBExport
+from lib.export import CBExport, ExportType
 from lib.logging import CustomFormatter
 from lib.main import MainLoop
 from lib.config import OperatingMode
@@ -23,7 +23,7 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '2.0.0'
+VERSION = '2.0.1'
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger()
@@ -59,13 +59,17 @@ class Params(object):
         parent_parser.add_argument('-c', '--collection', action='store', help="Collection", default="_default")
         parent_parser.add_argument('-k', '--key', action='store', help="Document Key")
         parent_parser.add_argument('-d', '--data', action='store', help="Document To Insert")
+        parent_parser.add_argument('-q', '--quiet', action='store_true', help="Suppress Output")
+        parent_parser.add_argument('-i', '--index', action='store_true', help="Create Index")
+        parent_parser.add_argument('-O', '--stdout', action='store_true', help="Output to terminal")
+        parent_parser.add_argument('--docid', action='store', help="Import document ID field", default="doc_id")
         parent_parser.add_argument('--tls', action='store_true', help="Enable SSL")
         parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int_arg, default=3)
         parent_parser.add_argument('--limit', action='store_true', help="Limited Network Connectivity")
         parent_parser.add_argument('--noapi', action='store_true', help="Disable Capella API functionality")
         parent_parser.add_argument('--safe', action='store_true', help="Do not overwrite data")
         parent_parser.add_argument('-e', '--external', action='store_true', help='Use external network')
-        parent_parser.add_argument('--file', action='store', help="File based collection schema JSON")
+        parent_parser.add_argument('-f', '--file', action='store', help="File based collection schema JSON")
         parent_parser.add_argument('--outfile', action='store', help="Output file", default="output.dat")
         parent_parser.add_argument('--directory', action='store', help="Output directory")
         parent_parser.add_argument('--schema', action='store', help="Test Schema")
@@ -100,6 +104,9 @@ class Params(object):
         read_mode = subparsers.add_parser('get', help="Get Data", parents=[parent_parser, run_parser], add_help=False)
         schema_mode = subparsers.add_parser('schema', help="Schema Admin", parents=[parent_parser, run_parser], add_help=False)
         export_mode = subparsers.add_parser('export', help="Export Data", parents=[parent_parser, run_parser], add_help=False)
+        export_action = export_mode.add_subparsers(dest='export_command')
+        export_action.add_parser('csv', help="Export CSV", parents=[parent_parser, run_parser], add_help=False)
+        export_action.add_parser('json', help="Export JSON", parents=[parent_parser, run_parser], add_help=False)
         self.parser = parser
         self.list_parser = list_mode
         self.clean_parser = clean_mode
@@ -112,7 +119,7 @@ class Params(object):
 class CBPerf(object):
 
     def __init__(self, parameters):
-        print("CBPerf version %s" % VERSION)
+        logger.info("CBPerf version %s" % VERSION)
         self.args = parameters
         self.verb = self.args.command
 
@@ -127,7 +134,10 @@ class CBPerf(object):
             MainLoop().schema_remove()
             sys.exit(0)
         elif self.verb == 'export':
-            CBExport().as_csv()
+            if self.args.export_command == 'csv':
+                CBExport().export(ExportType.csv)
+            elif self.args.export_command == 'json':
+                CBExport().export(ExportType.json)
             sys.exit(0)
         else:
             if config.op_mode == OperatingMode.LOAD.value and self.args.schema:
@@ -149,6 +159,9 @@ def main():
         debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
     except (ValueError, KeyError):
         debug_level = 2
+
+    if parameters.quiet:
+        debug_level = 3
 
     if debug_level == 0:
         logger.setLevel(logging.DEBUG)

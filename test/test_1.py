@@ -197,7 +197,7 @@ def test_cli_14(hostname):
 def test_cli_15(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['export', '--host', hostname, '-b', 'employees', '--directory', '/var/tmp']
+    args = ['export', 'json', '--host', hostname, '-i', '-b', 'employees', '--directory', '/var/tmp']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Retrieved 30 records")
@@ -206,6 +206,17 @@ def test_cli_15(hostname):
 
 
 def test_cli_16(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['export', 'csv', '--host', hostname, '-i', '-b', 'employees', '--directory', '/var/tmp']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Retrieved 30 records")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_17(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['clean', '--host', hostname, '--schema', 'employee_demo']

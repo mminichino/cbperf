@@ -9,18 +9,28 @@ from cbcmgr.cb_connect import CBConnect
 
 class DBRead(object):
 
-    def __init__(self, db: CBConnect, key: str):
+    def __init__(self, db: CBConnect, add_key: bool = False, key_field: str = 'doc_id'):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.key = key
         self.db = db
+        self._add_key = add_key
+        self._key_field = key_field
         self._result = None
 
-    def execute(self):
-        self._result = self.db.cb_get(self.key)
+    def execute(self, key: str):
+        self._result = self.db.cb_get(key)
+        self.add_key(key)
 
     @property
     def result(self):
         return self._result
+
+    def add_key(self, key: str):
+        if self._result and self._add_key:
+            self._result[self._key_field] = key
+
+    def fetch(self, key: str):
+        self.execute(key)
+        return self.result
 
 
 class DBWrite(object):

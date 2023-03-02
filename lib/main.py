@@ -185,7 +185,7 @@ class MainLoop(object):
         self.logger.info(f"Inserting records into collection {collection}")
 
         try:
-            dbm = self.prep_bucket(bucket, scope, collection)
+            self.prep_bucket(bucket, scope, collection)
             db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect(bucket, scope, collection)
         except Exception as err:
             raise TestRunError(f"can not connect to Couchbase: {err}")
@@ -208,7 +208,11 @@ class MainLoop(object):
                     json_object, position = decoder.raw_decode(buffer)
                     db_op = DBWrite(db)
                     key_count += 1
-                    tasks.add(executor.submit(db_op.execute, key_count, json_object))
+                    if config.key_field in json_object:
+                        doc_key = json_object[config.key_field]
+                    else:
+                        doc_key = key_count
+                    tasks.add(executor.submit(db_op.execute, doc_key, json_object))
                     object_count += 1
                     buffer = buffer[position:]
                     buffer = buffer.lstrip()
@@ -236,11 +240,11 @@ class MainLoop(object):
     @staticmethod
     def read_by_key(key: str, db: CBConnect, start: int = 1):
         count = it.count(start)
+        db_op = DBRead(db)
 
         while True:
             lookup_key, n = re.subn(r"%N", lambda x: str(next(count)), key)
-            db_op = DBRead(db, lookup_key)
-            db_op.execute()
+            db_op.execute(lookup_key)
             if not db_op.result:
                 break
             try:
@@ -254,11 +258,11 @@ class MainLoop(object):
     @staticmethod
     def read_by_meta_id(db: CBConnect):
         query = r"select meta().id from {{ keyspace }} ;"
-        db_op = DBQuery(db, query, keyspace=db.keyspace)
-        db_op.execute()
-        for meta_id in db_op.result:
-            db_op = DBRead(db, meta_id['id'])
-            db_op.execute()
+        query_op = DBQuery(db, query, keyspace=db.keyspace)
+        query_op.execute()
+        db_op = DBRead(db)
+        for meta_id in query_op.result:
+            db_op.execute(meta_id['id'])
             try:
                 output = json.dumps(db_op.result, indent=2)
             except json.decoder.JSONDecodeError:

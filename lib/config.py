@@ -79,6 +79,10 @@ ping_mode = False
 test_mode = False
 schema_file_json = {}
 id_key = None
+quiet_mode = False
+create_indexes = False
+screen_output = False
+key_field = None
 
 
 def process_params(parameters: argparse.Namespace) -> None:
@@ -106,7 +110,11 @@ def process_params(parameters: argparse.Namespace) -> None:
         ping_mode, \
         test_mode, \
         schema_file_json, \
-        id_key
+        id_key, \
+        quiet_mode, \
+        create_indexes, \
+        screen_output, \
+        key_field
 
     if parameters.user:
         username = parameters.user
@@ -137,6 +145,14 @@ def process_params(parameters: argparse.Namespace) -> None:
         document_key = parameters.key
     if parameters.data:
         insert_data = parameters.data
+    if parameters.quiet:
+        quiet_mode = parameters.quiet
+    if parameters.index:
+        create_indexes = parameters.index
+    if parameters.stdout:
+        screen_output = parameters.stdout
+    if parameters.docid:
+        key_field = parameters.docid
     if parameters.directory:
         output_dir = parameters.directory
     else:

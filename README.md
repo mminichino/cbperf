@@ -23,7 +23,11 @@ $ cat data/data_file.txt | bin/cb_perf load --host couchbase.example.com -b buck
 ````
 Export data from a bucket to CSV (default output file location is $HOME)
 ````
-$ bin/cb_perf export --host couchbase.example.com -b sample_app
+$ bin/cb_perf export csv --host couchbase.example.com -i -b sample_app
+````
+Export data as JSON and load that data into another cluster
+````
+$ bin/cb_perf export json --host source -i -O -q -b bucket | bin/cb_perf load --host destination -b bucket
 ````
 Get a document from a bucket using the key:
 ````
@@ -87,20 +91,23 @@ Usage: cb_perf command options
 | clean   | Remove buckets            |
 | schema  | Schema management options |
 
-| Option                                 | Description                                                |
-|----------------------------------------|------------------------------------------------------------|
-| -u USER, --user USER                   | User Name                                                  |
-| -p PASSWORD, --password PASSWORD       | User Password                                              |
-| -h HOST, --host HOST                   | Cluster Node or Domain Name                                |
-| -b BUCKET, --bucket BUCKET             | Bucket name                                                |
-| -s SCOPE, --scope SCOPE                | Scope name                                                 |
-| -c COLLECTION, --collection COLLECTION | Collection name                                            |
-| -k KEY, --key KEY                      | Key name or pattern                                        |
-| -d DATA, --data DATA                   | Data to import                                             |
-| --tls                                  | Enable SSL (default)                                       |
-| -e, --external                         | Use external network for clusters with an external network |
-| --schema SCHEMA                        | Schema name                                                |
-| --count COUNT                          | Record Count                                               |
-| --file FILE                            | File mode schema JSON file                                 |
-| --id ID                                | ID field (for file mode)                                   |
-| --directory DIRECTORY                  | Directory for export operations                            |
+| Option                                 | Description                                                   |
+|----------------------------------------|---------------------------------------------------------------|
+| -u USER, --user USER                   | User Name                                                     |
+| -p PASSWORD, --password PASSWORD       | User Password                                                 |
+| -h HOST, --host HOST                   | Cluster Node or Domain Name                                   |
+| -b BUCKET, --bucket BUCKET             | Bucket name                                                   |
+| -s SCOPE, --scope SCOPE                | Scope name                                                    |
+| -c COLLECTION, --collection COLLECTION | Collection name                                               |
+| -k KEY, --key KEY                      | Key name or pattern                                           |
+| -d DATA, --data DATA                   | Data to import                                                |
+| -q, --quiet                            | Quiet mode (only necessary output)                            |
+| -O, --stdout                           | Output exported data to the terminal                          |
+| -i, --index                            | Create a primary index for export operations (if not present) |
+| --tls                                  | Enable SSL (default)                                          |
+| -e, --external                         | Use external network for clusters with an external network    |
+| --schema SCHEMA                        | Schema name                                                   |
+| --count COUNT                          | Record Count                                                  |
+| --file FILE                            | File mode schema JSON file                                    |
+| --id ID                                | ID field (for file mode)                                      |
+| --directory DIRECTORY                  | Directory for export operations                               |
