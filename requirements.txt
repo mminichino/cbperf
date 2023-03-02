@@ -20,3 +20,4 @@ pandas>=1.5.3
 attrs>=19.3.0
 cbcmgr==1.1.8
 docker~=6.0.1
+oracledb==1.2.2

@@ -83,6 +83,7 @@ quiet_mode = False
 create_indexes = False
 screen_output = False
 key_field = None
+plugin_name = None
 
 
 def process_params(parameters: argparse.Namespace) -> None:
@@ -114,7 +115,8 @@ def process_params(parameters: argparse.Namespace) -> None:
         quiet_mode, \
         create_indexes, \
         screen_output, \
-        key_field
+        key_field, \
+        plugin_name
 
     if parameters.user:
         username = parameters.user
@@ -153,6 +155,8 @@ def process_params(parameters: argparse.Namespace) -> None:
         screen_output = parameters.stdout
     if parameters.docid:
         key_field = parameters.docid
+    if parameters.plugin:
+        plugin_name = parameters.plugin
     if parameters.directory:
         output_dir = parameters.directory
     else:

@@ -74,3 +74,7 @@ class ExportException(NonFatalError):
 
 class ExportError(FatalError):
     pass
+
+
+class DriverError(FatalError):
+    pass

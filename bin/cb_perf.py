@@ -10,7 +10,7 @@ import warnings
 import traceback
 from lib.exceptions import *
 import lib.config as config
-from lib.export import CBExport, ExportType
+from lib.export import CBExport, ExportType, PluginExport
 from lib.logging import CustomFormatter
 from lib.main import MainLoop
 from lib.config import OperatingMode
@@ -62,6 +62,7 @@ class Params(object):
         parent_parser.add_argument('-q', '--quiet', action='store_true', help="Suppress Output")
         parent_parser.add_argument('-i', '--index', action='store_true', help="Create Index")
         parent_parser.add_argument('-O', '--stdout', action='store_true', help="Output to terminal")
+        parent_parser.add_argument('-P', '--plugin', action='store', help="Export Plugin")
         parent_parser.add_argument('--docid', action='store', help="Import document ID field", default="doc_id")
         parent_parser.add_argument('--tls', action='store_true', help="Enable SSL")
         parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int_arg, default=3)
@@ -107,6 +108,7 @@ class Params(object):
         export_action = export_mode.add_subparsers(dest='export_command')
         export_action.add_parser('csv', help="Export CSV", parents=[parent_parser, run_parser], add_help=False)
         export_action.add_parser('json', help="Export JSON", parents=[parent_parser, run_parser], add_help=False)
+        export_action.add_parser('plugin', help="Export via Plugin", parents=[parent_parser, run_parser], add_help=False)
         self.parser = parser
         self.list_parser = list_mode
         self.clean_parser = clean_mode
@@ -138,6 +140,8 @@ class CBPerf(object):
                 CBExport().export(ExportType.csv)
             elif self.args.export_command == 'json':
                 CBExport().export(ExportType.json)
+            elif self.args.export_command == 'plugin':
+                PluginExport().export()
             sys.exit(0)
         else:
             if config.op_mode == OperatingMode.LOAD.value and self.args.schema:
