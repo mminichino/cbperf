@@ -23,7 +23,7 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '2.0'
+VERSION = '2.0.0'
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger()
@@ -46,7 +46,7 @@ def int_arg(value):
         raise argparse.ArgumentTypeError("numeric argument expected")
 
 
-class params(object):
+class Params(object):
 
     def __init__(self):
         parser = argparse.ArgumentParser(add_help=False)
@@ -94,7 +94,6 @@ class params(object):
         run_parser.add_argument('--skipbucket', action='store_true', help="Use Preexisting bucket")
         run_parser.add_argument('--skiprules', action='store_true', help="Do not run rules if defined")
         subparsers = parser.add_subparsers(dest='command')
-        run_mode = subparsers.add_parser('run', help="Run Test Scenarios", parents=[parent_parser, run_parser], add_help=False)
         list_mode = subparsers.add_parser('list', help="List Nodes", parents=[parent_parser, list_parser, run_parser], add_help=False)
         clean_mode = subparsers.add_parser('clean', help="Clean Up", parents=[parent_parser, run_parser], add_help=False)
         load_mode = subparsers.add_parser('load', help="Load Data", parents=[parent_parser, run_parser], add_help=False)
@@ -102,15 +101,15 @@ class params(object):
         schema_mode = subparsers.add_parser('schema', help="Schema Admin", parents=[parent_parser, run_parser], add_help=False)
         export_mode = subparsers.add_parser('export', help="Export Data", parents=[parent_parser, run_parser], add_help=False)
         self.parser = parser
-        self.run_parser = run_mode
         self.list_parser = list_mode
         self.clean_parser = clean_mode
         self.load_parser = load_mode
         self.read_parser = read_mode
         self.schema_parser = schema_mode
+        self.export_parser = export_mode
 
 
-class cbPerf(object):
+class CBPerf(object):
 
     def __init__(self, parameters):
         print("CBPerf version %s" % VERSION)
@@ -141,7 +140,7 @@ class cbPerf(object):
 
 def main():
     global logger
-    arg_parser = params()
+    arg_parser = Params()
     parameters = arg_parser.parser.parse_args()
     signal.signal(signal.SIGINT, break_signal_handler)
     config.process_params(parameters)
@@ -174,7 +173,7 @@ def main():
     screen_handler.setFormatter(CustomFormatter())
     logger.addHandler(screen_handler)
 
-    test_run = cbPerf(parameters)
+    test_run = CBPerf(parameters)
     test_run.run()
 
 
