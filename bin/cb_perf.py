@@ -10,7 +10,8 @@ import warnings
 import traceback
 from lib.exceptions import *
 import lib.config as config
-from lib.export import CBExport, ExportType, PluginExport
+from lib.export import CBExport, ExportType
+from lib.pimport import PluginImport
 from lib.logging import CustomFormatter
 from lib.main import MainLoop
 from lib.config import OperatingMode
@@ -63,6 +64,7 @@ class Params(object):
         parent_parser.add_argument('-i', '--index', action='store_true', help="Create Index")
         parent_parser.add_argument('-O', '--stdout', action='store_true', help="Output to terminal")
         parent_parser.add_argument('-P', '--plugin', action='store', help="Export Plugin")
+        parent_parser.add_argument('-V', '--variable', action='append', nargs='+', help="Plugin Variable")
         parent_parser.add_argument('--docid', action='store', help="Import document ID field", default="doc_id")
         parent_parser.add_argument('--tls', action='store_true', help="Enable SSL")
         parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int_arg, default=3)
@@ -108,7 +110,7 @@ class Params(object):
         export_action = export_mode.add_subparsers(dest='export_command')
         export_action.add_parser('csv', help="Export CSV", parents=[parent_parser, run_parser], add_help=False)
         export_action.add_parser('json', help="Export JSON", parents=[parent_parser, run_parser], add_help=False)
-        export_action.add_parser('plugin', help="Export via Plugin", parents=[parent_parser, run_parser], add_help=False)
+        import_mode = subparsers.add_parser('import', help="Import Data", parents=[parent_parser, run_parser], add_help=False)
         self.parser = parser
         self.list_parser = list_mode
         self.clean_parser = clean_mode
@@ -116,6 +118,7 @@ class Params(object):
         self.read_parser = read_mode
         self.schema_parser = schema_mode
         self.export_parser = export_mode
+        self.import_parser = import_mode
 
 
 class CBPerf(object):
@@ -140,8 +143,9 @@ class CBPerf(object):
                 CBExport().export(ExportType.csv)
             elif self.args.export_command == 'json':
                 CBExport().export(ExportType.json)
-            elif self.args.export_command == 'plugin':
-                PluginExport().export()
+            sys.exit(0)
+        elif self.verb == 'import':
+            PluginImport().import_tables()
             sys.exit(0)
         else:
             if config.op_mode == OperatingMode.LOAD.value and self.args.schema:
@@ -157,7 +161,6 @@ def main():
     arg_parser = Params()
     parameters = arg_parser.parser.parse_args()
     signal.signal(signal.SIGINT, break_signal_handler)
-    config.process_params(parameters)
 
     try:
         debug_level = int(os.environ['CB_PERF_DEBUG_LEVEL'])
@@ -190,6 +193,7 @@ def main():
     screen_handler.setFormatter(CustomFormatter())
     logger.addHandler(screen_handler)
 
+    config.process_params(parameters)
     test_run = CBPerf(parameters)
     test_run.run()
 

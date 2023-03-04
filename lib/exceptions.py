@@ -78,3 +78,7 @@ class ExportError(FatalError):
 
 class DriverError(FatalError):
     pass
+
+
+class PluginImportError(FatalError):
+    pass

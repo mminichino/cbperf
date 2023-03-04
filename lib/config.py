@@ -1,6 +1,7 @@
 ##
 ##
 
+import logging
 import os
 import warnings
 import argparse
@@ -84,9 +85,11 @@ create_indexes = False
 screen_output = False
 key_field = None
 plugin_name = None
+plugin_vars = {}
 
 
 def process_params(parameters: argparse.Namespace) -> None:
+    logger = logging.getLogger(__name__)
     global username, \
         password, \
         tls, \
@@ -116,7 +119,8 @@ def process_params(parameters: argparse.Namespace) -> None:
         create_indexes, \
         screen_output, \
         key_field, \
-        plugin_name
+        plugin_name, \
+        plugin_vars
 
     if parameters.user:
         username = parameters.user
@@ -153,6 +157,12 @@ def process_params(parameters: argparse.Namespace) -> None:
         create_indexes = parameters.index
     if parameters.stdout:
         screen_output = parameters.stdout
+    if parameters.variable:
+        for variable in parameters.variable:
+            if len(variable) != 2:
+                logger.warning(f"Invalid plugin variable: {' '.join(variable)}")
+                continue
+            plugin_vars.update({variable[0]: variable[1]})
     if parameters.docid:
         key_field = parameters.docid
     if parameters.plugin:

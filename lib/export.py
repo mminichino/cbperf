@@ -103,17 +103,3 @@ class CBExport(object):
                         for element in data:
                             block = json.dumps(element)
                             write_file.write(block + '\n')
-
-
-class PluginExport(object):
-
-    def __init__(self):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        module = __import__(f"lib.plugins.{config.plugin_name}", fromlist=['*'])
-        self.plugin = module.DBDriver()
-
-    def relational_schema(self):
-        self.plugin.get_table_names()
-
-    def export(self):
-        self.relational_schema()
