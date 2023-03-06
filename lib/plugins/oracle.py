@@ -72,6 +72,21 @@ class DBDriver(object):
                 fields = tuple(str(f).lower() for f in result)
                 yield dict(zip(columns, fields))
 
+    def get_table_indexes(self, table_name: str):
+        with self.db.cursor() as cursor:
+            cursor.execute(f"""
+                select ic.index_name, ic.column_name, ie.column_expression
+                from all_ind_columns ic left join all_ind_expressions ie
+                on ie.index_owner = ic.index_owner
+                and ie.index_name = ic.index_name
+                and ie.column_position = ic.column_position
+                where ic.table_name = '{table_name.upper()}'""")
+            columns = [c[0].lower() for c in cursor.description]
+            results = cursor.fetchall()
+            column_list = list(map(lambda c: c[1] if not c[2] else c[2], [result for result in results]))
+            column_list = list(map(lambda c: re.sub('"', '', c).lower(), [column for column in column_list]))
+            return column_list
+
     def get_row_fields(self, table_name: str):
         with self.db.cursor() as cursor:
             cursor.execute(f"select column_name, data_type from all_tab_columns where table_name = '{table_name.upper()}'")
