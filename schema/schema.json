@@ -284,6 +284,7 @@
                     "schema": {
                       "record_id": "record_id",
                       "employee_id": "{{ incr_value }}",
+                      "division": "automotive",
                       "user_id": "{{ rand_username }}",
                       "email": "{{ rand_email }}",
                       "first_name": "{{ rand_first }}",
@@ -303,7 +304,8 @@
                       "record_id",
                       "user_id",
                       "email",
-                      "employee_id"
+                      "employee_id",
+                      "division"
                     ]
                   }
                 ]

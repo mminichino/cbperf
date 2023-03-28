@@ -68,9 +68,13 @@ class PluginImport(object):
                 self.logger.info(f"Creating collection {collection}")
                 dbm = MainLoop().prep_bucket(bucket, scope, collection, bucket_mem_quota)
                 if len(table_index_columns) > 0:
-                    self.logger.info(f"Creating index on {','.join(table_index_columns)}")
-                    index_name = dbm.cb_create_index(fields=table_index_columns, replica=config.replicas)
-                    self.logger.info(f"Created index {index_name}")
+                    for column in table_index_columns:
+                        self.logger.info(f"Creating index on {column}")
+                        index_name = dbm.cb_create_index(fields=[column], replica=config.replicas)
+                        if not index_name:
+                            self.logger.info(f"Index already exists")
+                        else:
+                            self.logger.info(f"Created index {index_name}")
                 db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect(bucket, scope, collection)
             except Exception as err:
                 raise PluginImportError(f"can not connect to Couchbase: {err}")

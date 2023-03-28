@@ -135,9 +135,13 @@ class MainLoop(object):
             dbm.cb_create_primary_index(replica=config.replicas)
             self.logger.info(f"Created primary index on {collection.name}")
         if collection.indexes:
-            index_name = dbm.cb_create_index(fields=collection.indexes, replica=config.replicas)
-            collection.set_index_name(index_name)
-            self.logger.info(f"Created index {index_name} on {','.join(collection.indexes)}")
+            for index in collection.indexes:
+                index_name = dbm.cb_create_index(fields=[index], replica=config.replicas)
+                if not index_name:
+                    self.logger.info(f"Index already exists on field {index}")
+                else:
+                    collection.add_index_name(index_name)
+                    self.logger.info(f"Created index {index_name} on {index}")
 
     def process(self, bucket: Bucket, scope: Scope, collection: Collection):
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=config.batch_size)
