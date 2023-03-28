@@ -148,6 +148,7 @@ class Collection(object):
     idkey = attr.ib(validator=io(str))
     primary_index = attr.ib(validator=io(bool))
     override_count = attr.ib(validator=io(bool))
+    record_count = attr.ib(validator=attr.validators.optional(io(int)), default=None)
     indexes = attr.ib(validator=attr.validators.optional(io(list)), default=None)
     index_name = attr.ib(validator=attr.validators.optional(io(str)), default=None)
 
@@ -159,6 +160,7 @@ class Collection(object):
             ProcessVariables.resolve_variables(json_data.get("idkey")),
             json_data.get("primary_index"),
             json_data.get("override_count"),
+            json_data.get("record_count"),
             [ProcessVariables.resolve_variables(i) for i in json_data.get("indexes")]
             )
 

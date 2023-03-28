@@ -225,3 +225,25 @@ def test_cli_17(hostname):
     p = re.compile(f"Removing bucket employees")
     assert p.search(output) is not None
     assert result == 0
+
+
+def test_cli_18(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['load', '--host', hostname, '--count', '100', '--schema', 'adjuster_demo', '--replica', '0']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Running sql rule rule0")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_19(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['clean', '--host', hostname, '--schema', 'adjuster_demo']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Removing bucket adjuster_demo")
+    assert p.search(output) is not None
+    assert result == 0

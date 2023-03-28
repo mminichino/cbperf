@@ -440,7 +440,8 @@ def rand_init():
 
 
 def prepare_template(json_block):
-    global requested_tags, template, compiled
+    global requested_tags, template, compiled, incrementor
+    incrementor.reset()
     block_string = json.dumps(json_block)
     env = Environment(undefined=DebugUndefined)
     t = env.from_string(block_string)

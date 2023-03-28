@@ -69,6 +69,8 @@ class MainLoop(object):
                     print(f"    - Scope: {scope.name}")
                     for collection in scope.collections:
                         print(f"      > Collection: {collection.name}")
+                        if collection.override_count:
+                            print(f"        Document Count: {collection.record_count}")
                         print(f"        Schema:")
                         json_output = json.dumps(collection.schema, indent=2)
                         lines = json_output.split('\n')
@@ -76,9 +78,15 @@ class MainLoop(object):
                             print(f"               {line}")
             for rule in schema.rules:
                 if rule.type == "link":
-                    print(f"Rule: {rule.name}")
-                    print(f"  Type: {rule.type}")
-                    print(f"  SQL : {rule.sql}")
+                    print(f"Rule               : {rule.name}")
+                    print(f"  Type             : {rule.type}")
+                    print(f"  Record ID        : {rule.id_field}")
+                    print(f"  Foreign ID Field : {rule.foreign_key}")
+                    print(f"  Primary ID Field : {rule.primary_key}")
+                elif rule.type == "sql":
+                    print(f"Rule   : {rule.name}")
+                    print(f"  Type : {rule.type}")
+                    print(f"  SQL  : {rule.sql}")
 
     def cluster_list(self):
         db = CBManager(config.host, config.username, config.password, ssl=config.tls)
@@ -114,6 +122,9 @@ class MainLoop(object):
             if rule.type == "link":
                 self.logger.info(f"Running link rule {rule.name}")
                 self.run_link_rule(rule.id_field, rule.primary_key, rule.foreign_key)
+            elif rule.type == "sql":
+                self.logger.info(f"Running sql rule {rule.name}")
+                self.run_sql_rule(rule.sql)
 
     def pre_process(self, bucket: Bucket, scope: Scope, collection: Collection):
         self.logger.info("Creating bucket structure")
@@ -140,7 +151,7 @@ class MainLoop(object):
             raise TestRunError(f"can not connect to Couchbase: {err}")
 
         if collection.override_count:
-            operation_count = collection.override_count
+            operation_count = collection.record_count
         else:
             operation_count = config.count
 
@@ -170,6 +181,16 @@ class MainLoop(object):
             raise TestRunError(f"can not connect to Couchbase: {err}")
 
         query = f"MERGE INTO {t_keyspace} t USING {s_keyspace} s ON t.{id_field} = s.{id_field} WHEN MATCHED THEN UPDATE SET t.{t_field} = meta(s).id ;"
+        self.logger.debug(f"running rule query {query}")
+        db_op = DBQuery(db, query)
+        db_op.execute()
+
+    def run_sql_rule(self, query: str):
+        try:
+            db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect()
+        except Exception as err:
+            raise TestRunError(f"can not connect to Couchbase: {err}")
+
         self.logger.debug(f"running rule query {query}")
         db_op = DBQuery(db, query)
         db_op.execute()
