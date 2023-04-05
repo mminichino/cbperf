@@ -209,118 +209,78 @@
             "name": "adjuster_demo",
             "scopes": [
               {
-                "name": "data",
+                "name": "_default",
                 "collections": [
                   {
-                    "name": "claims",
-                    "schema": {
-                      "record_id": "record_id",
-                      "claim_id": "{{ incr_block }}",
-                      "claim_date": "{{ date_time }}",
-                      "customer_id": "",
-                      "adjuster_id": "",
-                      "claim_amount": 0.0,
-                      "claim_status": 0,
-                      "claim_paid": false
-                    },
+                    "name": "_default",
+                    "schema": [
+                      {
+                        "record_id": "record_id",
+                        "claim_id": "{{ incr_block }}",
+                        "claim_date": "{{ date_time }}",
+                        "customer_id": "{{ incr_value }}",
+                        "adjuster_id": "",
+                        "claim_amount": 0.0,
+                        "claim_status": 0,
+                        "claim_paid": false,
+                        "region": "{{ region_name }}",
+                        "type": "claim"
+                      },
+                      {
+                        "record_id": "record_id",
+                        "customer_id": "{{ incr_value }}",
+                        "name": "{{ rand_first }} {{ rand_last }}",
+                        "user_id": "{{ rand_username }}",
+                        "email": "{{ rand_email }}",
+                        "email_verified": true,
+                        "first_name": "{{ rand_first }}",
+                        "last_name": "{{ rand_last }}",
+                        "address": "{{ rand_address }}",
+                        "city": "{{ rand_city }}",
+                        "state": "{{ rand_state }}",
+                        "zip_code": "{{ rand_zip_code }}",
+                        "phone": "{{ rand_phone }}",
+                        "date_of_birth": "{{ rand_dob_1 }}",
+                        "password": "{{ rand_password }}",
+                        "region": "{{ region_name }}",
+                        "type": "customer"
+                      },
+                      {
+                        "record_id": "record_id",
+                        "employee_id": "{{ incr_value }}",
+                        "division": "automotive",
+                        "user_id": "{{ rand_username }}",
+                        "email": "{{ rand_email }}",
+                        "first_name": "{{ rand_first }}",
+                        "last_name": "{{ rand_last }}",
+                        "address": "{{ rand_address }}",
+                        "city": "{{ rand_city }}",
+                        "state": "{{ rand_state }}",
+                        "zip_code": "{{ rand_zip_code }}",
+                        "phone": "{{ rand_phone }}",
+                        "password": "{{ rand_password }}",
+                        "region": "{{ region_name }}",
+                        "type": "adjuster"
+                      }
+                    ],
                     "idkey": "record_id",
                     "primary_index": false,
                     "override_count": false,
                     "indexes": [
                       "record_id",
                       "claim_id",
-                      "customer_id"
-                    ]
-                  },
-                  {
-                    "name": "claim_images",
-                    "schema": {
-                      "record_id": "record_id",
-                      "claim_id": "",
-                      "type": "",
-                      "image": ""
-                    },
-                    "idkey": "record_id",
-                    "primary_index": false,
-                    "override_count": true,
-                    "batch_size": 10,
-                    "record_count": 0,
-                    "indexes": [
-                      "record_id",
-                      "claim_id"
-                    ]
-                  },
-                  {
-                    "name": "customers",
-                    "schema": {
-                      "record_id": "record_id",
-                      "customer_id": "{{ incr_value }}",
-                      "name": "{{ rand_first }} {{ rand_last }}",
-                      "user_id": "{{ rand_username }}",
-                      "email": "{{ rand_email }}",
-                      "email_verified": true,
-                      "first_name": "{{ rand_first }}",
-                      "last_name": "{{ rand_last }}",
-                      "address": "{{ rand_address }}",
-                      "city": "{{ rand_city }}",
-                      "state": "{{ rand_state }}",
-                      "zip_code": "{{ rand_zip_code }}",
-                      "phone": "{{ rand_phone }}",
-                      "date_of_birth": "{{ rand_dob_1 }}",
-                      "password": "{{ rand_password }}"
-                    },
-                    "idkey": "record_id",
-                    "primary_index": false,
-                    "override_count": false,
-                    "indexes": [
-                      "record_id",
                       "customer_id",
-                      "user_id",
-                      "email"
-                    ]
-                  },
-                  {
-                    "name": "adjusters",
-                    "schema": {
-                      "record_id": "record_id",
-                      "employee_id": "{{ incr_value }}",
-                      "division": "automotive",
-                      "user_id": "{{ rand_username }}",
-                      "email": "{{ rand_email }}",
-                      "first_name": "{{ rand_first }}",
-                      "last_name": "{{ rand_last }}",
-                      "address": "{{ rand_address }}",
-                      "city": "{{ rand_city }}",
-                      "state": "{{ rand_state }}",
-                      "zip_code": "{{ rand_zip_code }}",
-                      "phone": "{{ rand_phone }}",
-                      "password": "{{ rand_password }}"
-                    },
-                    "idkey": "record_id",
-                    "primary_index": false,
-                    "override_count": true,
-                    "record_count": 10,
-                    "indexes": [
-                      "record_id",
+                      "employee_id",
                       "user_id",
                       "email",
-                      "employee_id",
-                      "division"
+                      "division",
+                      "region",
+                      "type"
                     ]
                   }
                 ]
               }
             ]
-          }
-        ],
-        "rules": [
-          {
-            "name": "rule0",
-            "type": "sql",
-            "id_field": "record_id",
-            "foreign_key": "adjuster_demo:data:claims:customer_id",
-            "primary_key": "adjuster_demo:data:customers:customer_id",
-            "sql" : "MERGE INTO adjuster_demo.data.claims u USING adjuster_demo.data.customers i ON u.record_id = i.record_id WHEN MATCHED THEN UPDATE SET u.customer_id = i.customer_id ;"
           }
         ]
       }

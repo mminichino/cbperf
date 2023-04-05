@@ -144,32 +144,40 @@ class MainLoop(object):
                     self.logger.info(f"Created index {index_name} on {index}")
 
     def process(self, bucket: Bucket, scope: Scope, collection: Collection):
+        last_batch = 0
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=config.batch_size)
         run_batch_size = config.batch_size * 10
         tasks = set()
-        rand.prepare_template(collection.schema)
-
-        try:
-            db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect(bucket.name, scope.name, collection.name)
-        except Exception as err:
-            raise TestRunError(f"can not connect to Couchbase: {err}")
-
-        if collection.override_count:
-            operation_count = collection.record_count
+        if type(collection.schema) == list:
+            schema_list = collection.schema
         else:
-            operation_count = config.count
+            schema_list = [collection.schema]
 
-        db_op = DBWrite(db, collection.idkey)
-        self.logger.info(f"Inserting {operation_count} records into collection {collection.name}")
+        for schema in schema_list:
+            rand.prepare_template(schema)
 
-        for n in range(1, operation_count + 1, run_batch_size):
-            tasks.clear()
-            for key in range(n, n + run_batch_size):
-                if key > operation_count:
-                    break
-                document = rand.process_template()
-                tasks.add(executor.submit(db_op.execute, key, document))
-            self.task_wait(tasks)
+            try:
+                db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect(bucket.name, scope.name, collection.name)
+            except Exception as err:
+                raise TestRunError(f"can not connect to Couchbase: {err}")
+
+            if collection.override_count:
+                operation_count = collection.record_count
+            else:
+                operation_count = config.count
+
+            db_op = DBWrite(db, collection.idkey)
+            self.logger.info(f"Inserting {operation_count} records into collection {collection.name}")
+
+            for n in range(1, operation_count + 1, run_batch_size):
+                tasks.clear()
+                for key in range(n, n + run_batch_size):
+                    if key > operation_count:
+                        break
+                    document = rand.process_template()
+                    tasks.add(executor.submit(db_op.execute, key + last_batch, document))
+                self.task_wait(tasks)
+            last_batch += operation_count
 
     def post_process(self, bucket: Bucket, scope: Scope, collection: Collection):
         pass

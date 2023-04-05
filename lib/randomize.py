@@ -37,6 +37,12 @@ class Gender(Enum):
     F = 1
 
 
+class Region(Enum):
+    east = 0
+    central = 1
+    west = 2
+
+
 class FastRandom(object):
 
     def __init__(self, x=256, start=1):
@@ -105,6 +111,7 @@ compiled: Template
 password_hash = HashMode.sha1.value
 incrementor = MPAtomicIncrement()
 incrementor_block = MPAtomicIncrement(s=10)
+region_block = MPAtomicIncrement(i=0, s=10)
 
 
 def load_data() -> None:
@@ -468,6 +475,7 @@ def process_template():
     formatted_block = compiled.render(date_time=date_code(),
                                       incr_value=incrementor.next,
                                       incr_block=incrementor_block.next,
+                                      region_name=Region(region_block.next % 3).name,
                                       rand_credit_card=credit_card(),
                                       rand_ssn=social_security_number(),
                                       rand_four=four_digits(),

@@ -144,7 +144,7 @@ class Scope(object):
 @attr.s
 class Collection(object):
     name = attr.ib(validator=io(str))
-    schema = attr.ib(validator=attr.validators.instance_of((dict, str)))
+    schema = attr.ib(validator=attr.validators.instance_of((list, dict, str)))
     idkey = attr.ib(validator=io(str))
     primary_index = attr.ib(validator=io(bool))
     override_count = attr.ib(validator=io(bool))
