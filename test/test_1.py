@@ -233,7 +233,7 @@ def test_cli_18(hostname):
     args = ['load', '--host', hostname, '--count', '100', '--schema', 'adjuster_demo', '--replica', '0']
 
     result, output = cli_run(cmd, *args)
-    p = re.compile(f"Running sql rule rule0")
+    p = re.compile(f"Processing rules")
     assert p.search(output) is not None
     assert result == 0
 
