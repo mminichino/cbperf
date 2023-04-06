@@ -216,7 +216,7 @@
                     "schema": [
                       {
                         "record_id": "record_id",
-                        "claim_id": "{{ incr_block }}",
+                        "claim_id": "{{ incr_value }}",
                         "claim_date": "{{ date_time }}",
                         "customer_id": "{{ incr_value }}",
                         "adjuster_id": "",
