@@ -391,6 +391,16 @@ def date_code():
     return datetime_str
 
 
+def date_iso_7():
+    _past_date = datetime.today() - timedelta(seconds=random.getrandbits(20))
+    return _past_date.isoformat()
+
+
+def date_iso_30():
+    _past_date = datetime.today() - timedelta(seconds=random.getrandbits(22))
+    return _past_date.isoformat()
+
+
 def nick_name(first_name="John", last_name="Doe"):
     name = first_name[0].lower() + last_name.lower()
     found = [issued_struct['nickname'][key] for key in issued_struct['nickname'] if re.match(f"^{name}", key)]
@@ -497,6 +507,8 @@ def process_template():
                                       rand_year=year_value(),
                                       rand_month=month,
                                       rand_day=day_value(month),
+                                      date_iso_week=date_iso_7(),
+                                      date_iso_month=date_iso_30(),
                                       rand_date_1=past_date_slash(_past_date),
                                       rand_date_2=past_date_hyphen(_past_date),
                                       rand_date_3=past_date_text(_past_date),
