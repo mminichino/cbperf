@@ -3,6 +3,7 @@
 
 import logging
 import time
+import re
 from jinja2 import Template
 from cbcmgr.cb_connect import CBConnect
 
@@ -42,8 +43,13 @@ class DBWrite(object):
         self._result = None
 
     def execute(self, key: str, document: dict):
+        number = re.split(':', key)[-1]
+        try:
+            id_value = int(number)
+        except ValueError:
+            id_value = key
         begin_time = time.time()
-        document[self.id_field] = key
+        document[self.id_field] = id_value
         self._result = self.db.cb_upsert(key, document)
         end_time = time.time()
         total_time = end_time - begin_time

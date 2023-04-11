@@ -24,7 +24,7 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '2.0.4'
+VERSION = '2.0.5'
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger()

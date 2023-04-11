@@ -150,18 +150,35 @@ class Collection(object):
     override_count = attr.ib(validator=io(bool))
     index_names = attr.ib(validator=io(list))
     record_count = attr.ib(validator=attr.validators.optional(io(int)), default=None)
+    key_format = attr.ib(validator=attr.validators.optional(io(str)), default=None)
     indexes = attr.ib(validator=attr.validators.optional(io(list)), default=None)
 
     @classmethod
     def from_config(cls, json_data: dict):
+        id_key = ProcessVariables.resolve_variables(json_data.get("idkey"))
+        schema_data = ProcessVariables.resolve_variables(json_data.get("schema"))
+        if type(schema_data) == list:
+            schema_list = [CollectionDoc.from_config(s) for s in schema_data]
+        else:
+            schema_list = [
+                CollectionDoc.from_config(
+                    {
+                        "id_key": id_key,
+                        "override_count": json_data.get("override_count"),
+                        "record_count": json_data.get("record_count"),
+                        "doc": schema_data
+                    }
+                )
+            ]
         return cls(
             json_data.get("name"),
-            ProcessVariables.resolve_variables(json_data.get("schema")),
-            ProcessVariables.resolve_variables(json_data.get("idkey")),
+            schema_list,
+            id_key,
             json_data.get("primary_index"),
             json_data.get("override_count"),
             [],
             json_data.get("record_count"),
+            json_data.get("key_format"),
             [ProcessVariables.resolve_variables(i) for i in json_data.get("indexes")]
             )
 
@@ -170,6 +187,28 @@ class Collection(object):
 
     def remove_index_name(self, name: str):
         self.index_names.remove(name)
+
+    @property
+    def as_dict(self):
+        return self.__dict__
+
+
+@attr.s
+class CollectionDoc(object):
+    doc = attr.ib(validator=io(dict))
+    override_count = attr.ib(validator=attr.validators.optional(io(bool)), default=None)
+    id_key = attr.ib(validator=attr.validators.optional(io(str)), default=None)
+    record_count = attr.ib(validator=attr.validators.optional(io(int)), default=None)
+
+    @classmethod
+    def from_config(cls, json_data: dict):
+        return cls(
+
+            json_data.get("doc"),
+            json_data.get("override_count"),
+            json_data.get("id_key"),
+            json_data.get("record_count")
+            )
 
     @property
     def as_dict(self):

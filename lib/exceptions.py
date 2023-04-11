@@ -82,3 +82,7 @@ class DriverError(FatalError):
 
 class PluginImportError(FatalError):
     pass
+
+
+class KeyFormatError(FatalError):
+    pass

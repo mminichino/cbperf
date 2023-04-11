@@ -16,7 +16,8 @@ from cbcmgr.cb_management import CBManager
 from lib.exceptions import TestRunError
 from lib.exec_step import DBRead, DBWrite, DBQuery
 from lib.schema import Bucket, Scope, Collection
-from lib.schema import ProcessSchema
+from lib.schema import ProcessSchema, CollectionDoc
+from lib.keyformat import KeyStyle, KeyFormat
 
 
 class MainLoop(object):
@@ -148,23 +149,33 @@ class MainLoop(object):
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=config.batch_size)
         run_batch_size = config.batch_size * 10
         tasks = set()
+        schema_list: list[CollectionDoc]
+
         if type(collection.schema) == list:
             schema_list = collection.schema
         else:
             schema_list = [collection.schema]
 
         for schema in schema_list:
-            rand.prepare_template(schema)
+            rand.prepare_template(schema.doc)
 
             try:
                 db = CBConnect(config.host, config.username, config.password, ssl=config.tls).connect(bucket.name, scope.name, collection.name)
             except Exception as err:
                 raise TestRunError(f"can not connect to Couchbase: {err}")
 
-            if collection.override_count:
-                operation_count = collection.record_count
+            if schema.override_count:
+                operation_count = schema.record_count
             else:
                 operation_count = config.count
+
+            if collection.key_format:
+                try:
+                    key_format = KeyStyle[collection.key_format.upper()]
+                except KeyError:
+                    raise TestRunError(f"unknown key format: {collection.key_format}")
+            else:
+                key_format = KeyStyle.DEFAULT
 
             db_op = DBWrite(db, collection.idkey)
             self.logger.info(f"Inserting {operation_count} records into collection {collection.name}")
@@ -175,7 +186,7 @@ class MainLoop(object):
                     if key > operation_count:
                         break
                     document = rand.process_template()
-                    tasks.add(executor.submit(db_op.execute, key + last_batch, document))
+                    tasks.add(executor.submit(db_op.execute, KeyFormat.key_format(key_format, document, db.collection_name, key + last_batch, schema.id_key), document))
                 self.task_wait(tasks)
             last_batch += operation_count
 
