@@ -43,10 +43,10 @@ class DBWrite(object):
         self._result = None
 
     def execute(self, key: str, document: dict):
-        number = re.split(':', key)[-1]
         try:
+            number = re.split(':', key)[-1]
             id_value = int(number)
-        except ValueError:
+        except (ValueError, TypeError):
             id_value = key
         begin_time = time.time()
         document[self.id_field] = id_value

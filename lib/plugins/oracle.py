@@ -15,6 +15,7 @@ class DBDriver(object):
         self.logger = logging.getLogger(self.__class__.__name__)
 
         if 'connect' in plugin_vars:
+            self.logger.debug(f"connect data: {plugin_vars.get('connect')}")
             vector = re.split('[@/:]', plugin_vars.get('connect'))
             self.username = vector[0]
             self.password = vector[1] if len(vector) > 1 else None
@@ -23,8 +24,10 @@ class DBDriver(object):
 
         if 'ORACLE_SID' in os.environ:
             self.oracle_sid = os.environ['ORACLE_SID']
-        else:
+        elif not self.oracle_sid:
             raise DriverError("Please set ORACLE_SID environment variable")
+        else:
+            os.environ['ORACLE_SID'] = self.oracle_sid
 
         if None in (self.username, self.password, self.hostname, self.oracle_sid):
             raise DriverError(f"Please supply required connection parameters")

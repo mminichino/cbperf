@@ -162,6 +162,7 @@ def process_params(parameters: argparse.Namespace) -> None:
             if len(variable) != 2:
                 logger.warning(f"Invalid plugin variable: {' '.join(variable)}")
                 continue
+            logger.debug(f"Adding plugin variable {variable[0]}:{variable[1]}")
             plugin_vars.update({variable[0]: variable[1]})
     if parameters.docid:
         key_field = parameters.docid

@@ -45,7 +45,7 @@ class MainLoop(object):
                         result_set.append(result)
                 except Exception as err:
                     self.logger.error(f"task error: {type(err).__name__}: {err}")
-                    return
+                    raise TestRunError(f"task failed: {err}")
         return result_set
 
     def schema_remove(self):
