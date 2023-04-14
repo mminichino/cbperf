@@ -43,7 +43,7 @@ def cli_run(cmd: str, *args: str, input_file: str = None):
 def test_cli_1(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
-    args = ['load', '--host', hostname, '--count', '30', '--schema', 'employee_demo', '--replica', '0']
+    args = ['load', '--host', hostname, '--count', '30', '--schema', 'employee_demo', '--replica', '0', '--quota', '128']
 
     result, output = cli_run(cmd, *args)
     p = re.compile(f"Processing rules")

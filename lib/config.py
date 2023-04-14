@@ -70,6 +70,7 @@ continuous = False
 batch_size = 100
 count = 100
 replicas = 0
+bucket_quota = 256
 bucket_name = None
 scope_name = None
 collection_name = None
@@ -105,6 +106,7 @@ def process_params(parameters: argparse.Namespace) -> None:
         op_mode, \
         count, \
         replicas, \
+        bucket_quota, \
         bucket_name, \
         scope_name, \
         collection_name, \
@@ -141,6 +143,8 @@ def process_params(parameters: argparse.Namespace) -> None:
         output_file = parameters.outfile
     if parameters.replica:
         replicas = parameters.replica
+    if parameters.quota:
+        bucket_quota = parameters.quota
     if parameters.bucket:
         bucket_name = parameters.bucket
     if parameters.scope:

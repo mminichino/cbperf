@@ -129,7 +129,7 @@ class MainLoop(object):
 
     def pre_process(self, bucket: Bucket, scope: Scope, collection: Collection):
         self.logger.info("Creating bucket structure")
-        dbm = self.prep_bucket(bucket.name, scope.name, collection.name)
+        dbm = self.prep_bucket(bucket.name, scope.name, collection.name, config.bucket_quota)
 
         self.logger.info("Processing indexes")
         if collection.primary_index:

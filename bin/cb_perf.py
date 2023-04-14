@@ -24,7 +24,7 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '2.0.6'
+VERSION = '2.0.7'
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger()
@@ -90,7 +90,7 @@ class Params(object):
         run_parser.add_argument('--ops', action='store', help="Operation Count", type=int_arg)
         run_parser.add_argument('--threads', action='store', help="Threads for run", type=int_arg)
         run_parser.add_argument('--replica', action='store', help="Replica Count", type=int_arg, default=1)
-        run_parser.add_argument('--memquota', action='store', help="Bucket Memory Quota", type=int_arg)
+        run_parser.add_argument('--quota', action='store', help="Bucket Memory Quota", type=int_arg)
         run_parser.add_argument('--output', action='store', help="Output file for run stats")
         run_parser.add_argument('--inventory', action='store', help="Location of inventory JSON")
         run_parser.add_argument('--id', action='store', help="ID field for file based collection schema", default="record_id")
