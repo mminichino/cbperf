@@ -10,9 +10,13 @@ from lib.plugins.relational import Schema, Table, Column
 
 
 class DBDriver(object):
+    VERSION = '1.0.1'
 
     def __init__(self, plugin_vars: dict):
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.table_list = []
+
+        self.logger.info(f"Driver version {DBDriver.VERSION}")
 
         if 'connect' in plugin_vars:
             self.logger.debug(f"connect data: {plugin_vars.get('connect')}")
@@ -21,6 +25,10 @@ class DBDriver(object):
             self.password = vector[1] if len(vector) > 1 else None
             self.hostname = vector[2] if len(vector) > 2 else None
             self.oracle_sid = vector[3] if len(vector) > 3 else None
+
+        if 'tables' in plugin_vars:
+            self.table_list = plugin_vars.get('tables', "").split(',')
+            self.logger.debug(f"table list: {','.join(self.table_list)}")
 
         if 'ORACLE_SID' in os.environ:
             self.oracle_sid = os.environ['ORACLE_SID']
@@ -41,6 +49,9 @@ class DBDriver(object):
     def get_schema(self):
         schema = Schema.build()
         for table_data in self.get_table_rows():
+            if len(self.table_list) > 0:
+                if table_data['table_name'] not in self.table_list:
+                    continue
             table_size = self.get_table_size(table_data['table_name'])
             table = Table.build(table_data['table_name'], table_size['table_mib'], int(table_data['num_rows']))
             for field_data in self.get_row_fields(table_data['table_name']):

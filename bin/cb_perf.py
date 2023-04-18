@@ -24,7 +24,7 @@ REMOVE_DATA = 0x0003
 PAUSE_TEST = 0x0009
 INSTANCE_MAX = 0x200
 RUN_STOP = 0xFFFF
-VERSION = '2.0.7'
+VERSION = '2.0.8'
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger()
@@ -64,7 +64,7 @@ class Params(object):
         parent_parser.add_argument('-i', '--index', action='store_true', help="Create Index")
         parent_parser.add_argument('-O', '--stdout', action='store_true', help="Output to terminal")
         parent_parser.add_argument('-P', '--plugin', action='store', help="Export Plugin")
-        parent_parser.add_argument('-V', '--variable', action='append', nargs='+', help="Plugin Variable")
+        parent_parser.add_argument('-V', '--variable', action='append', help="Plugin Variables")
         parent_parser.add_argument('--docid', action='store', help="Import document ID field", default="doc_id")
         parent_parser.add_argument('--tls', action='store_true', help="Enable SSL")
         parent_parser.add_argument('--debug', action='store', help="Enable Debug Output", type=int_arg, default=3)

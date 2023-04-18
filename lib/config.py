@@ -163,11 +163,10 @@ def process_params(parameters: argparse.Namespace) -> None:
         screen_output = parameters.stdout
     if parameters.variable:
         for variable in parameters.variable:
-            if len(variable) != 2:
-                logger.warning(f"Invalid plugin variable: {' '.join(variable)}")
-                continue
-            logger.debug(f"Adding plugin variable {variable[0]}:{variable[1]}")
-            plugin_vars.update({variable[0]: variable[1]})
+            key = variable.split('=')[0]
+            value = '='.join(variable.split('=')[1:])
+            logger.debug(f"Adding plugin variable {key}:{value}")
+            plugin_vars.update({key: value})
     if parameters.docid:
         key_field = parameters.docid
     if parameters.plugin:

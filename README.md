@@ -1,4 +1,4 @@
-# CBPerf 2.0
+# CBPerf 2
 Utility for loading data into Couchbase and running performance tests. Includes the ability to load randomized data based on a template.
 
 Runs on any POSIX style client such as macOS and Linux.
@@ -15,7 +15,7 @@ $ ./setup.sh
 ````
 Load 1,000 records of data using the default schema:
 ````
-$ ./cb_perf load --host couchbase.example.com --count 1000 --schema default
+$ bin/cb_perf load --host couchbase.example.com --count 1000 --schema default
 ````
 Load data from a test file:
 ````
@@ -35,15 +35,19 @@ $ bin/cb_perf get --host couchbase.example.com -b employees -k employees:1
 ````
 List information about a Couchbase cluster:
 ````
-$ ./cb_perf list --host couchbase.example.com -u developer -p password
+$ bin/cb_perf list --host couchbase.example.com -u developer -p password
 ````
 List detailed information about a Couchbase cluster including health information:
 ````
-$ ./cb_perf list --host couchbase.example.com --ping -u developer -p password
+$ bin/cb_perf list --host couchbase.example.com --ping -u developer -p password
+````
+Import data from Oracle into Couchbase:
+````
+$ bin/cb_perf import -h couchbase.example.com -b soe -s soe -P oracle -V connect=soe/soe@dbsrv.example.com/test5db -V tables=customers
 ````
 List available schemas:
 ````
-$ ./cb_perf schema
+$ bin/cb_perf schema
 ````
 ## Randomizer tokens
 Note: Except for the US States the random data generated may not be valid. For example the first four digits of the random credit card may not represent a valid financial institution. The intent is to simulate real data. Any similarities to real data is purely coincidental.  
@@ -82,14 +86,15 @@ Note: Except for the US States the random data generated may not be valid. For e
 ## Options
 Usage: cb_perf command options
 
-| Command | Description               |
-|---------|---------------------------|
-| load    | Load data                 |
-| get     | Get data                  |
-| list    | List cluster information  |
-| export  | Export data               |
-| clean   | Remove buckets            |
-| schema  | Schema management options |
+| Command  | Description               |
+|----------|---------------------------|
+| load     | Load data                 |
+| get      | Get data                  |
+| list     | List cluster information  |
+| export   | Export data               |
+| import   | Import via plugin         |
+| clean    | Remove buckets            |
+| schema   | Schema management options |
 
 | Option                                 | Description                                                   |
 |----------------------------------------|---------------------------------------------------------------|
@@ -111,3 +116,5 @@ Usage: cb_perf command options
 | --file FILE                            | File mode schema JSON file                                    |
 | --id ID                                | ID field (for file mode)                                      |
 | --directory DIRECTORY                  | Directory for export operations                               |
+| -P PLUGIN                              | Import plugin                                                 |
+| -V PLUGIN_VARIABLE                     | Pass variable in form key=value to plugin                     |
