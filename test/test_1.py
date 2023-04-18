@@ -46,12 +46,23 @@ def test_cli_1(hostname):
     args = ['load', '--host', hostname, '--count', '30', '--schema', 'employee_demo', '--replica', '0', '--quota', '128']
 
     result, output = cli_run(cmd, *args)
-    p = re.compile(f"Processing rules")
+    p = re.compile(f"Inserted 30")
     assert p.search(output) is not None
     assert result == 0
 
 
 def test_cli_2(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['load', '--host', hostname, '--count', '30', '--schema', 'employee_demo', '--replica', '0', '--quota', '128', '--safe']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Inserted 0")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_3(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['clean', '--host', hostname, '--schema', 'employee_demo']
@@ -62,7 +73,7 @@ def test_cli_2(hostname):
     assert result == 0
 
 
-def test_cli_3(hostname):
+def test_cli_4(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['load', '--host', hostname, '--count', '1000', '--schema', 'profile_demo', '--replica', '0']
@@ -73,7 +84,7 @@ def test_cli_3(hostname):
     assert result == 0
 
 
-def test_cli_4(hostname):
+def test_cli_5(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['clean', '--host', hostname, '--schema', 'profile_demo']
@@ -84,7 +95,7 @@ def test_cli_4(hostname):
     assert result == 0
 
 
-def test_cli_5(hostname):
+def test_cli_6(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['load', '--host', hostname, '--count', '1000', '--schema', 'default', '--replica', '0']
@@ -95,7 +106,7 @@ def test_cli_5(hostname):
     assert result == 0
 
 
-def test_cli_6(hostname):
+def test_cli_7(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['clean', '--host', hostname, '--schema', 'default']
@@ -106,7 +117,7 @@ def test_cli_6(hostname):
     assert result == 0
 
 
-def test_cli_7(hostname):
+def test_cli_8(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['list', '--host', hostname, '--wait']
@@ -117,7 +128,7 @@ def test_cli_7(hostname):
     assert result == 0
 
 
-def test_cli_8(hostname):
+def test_cli_9(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['load', '--host', hostname, '--count', '100', '--file', current + '/input_template.json', '--replica', '0']
@@ -128,7 +139,7 @@ def test_cli_8(hostname):
     assert result == 0
 
 
-def test_cli_9(hostname):
+def test_cli_10(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['clean', '--host', hostname]
@@ -139,7 +150,7 @@ def test_cli_9(hostname):
     assert result == 0
 
 
-def test_cli_10(hostname):
+def test_cli_11(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['load', '--host', hostname]
@@ -150,7 +161,7 @@ def test_cli_10(hostname):
     assert result == 0
 
 
-def test_cli_11(hostname):
+def test_cli_12(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['get', '--host', hostname, '-k', 'pillowfight:1']
@@ -161,7 +172,7 @@ def test_cli_11(hostname):
     assert result == 0
 
 
-def test_cli_12(hostname):
+def test_cli_13(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['get', '--host', hostname, '-k', 'pillowfight:%N']
@@ -172,7 +183,7 @@ def test_cli_12(hostname):
     assert result == 0
 
 
-def test_cli_13(hostname):
+def test_cli_14(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['clean', '--host', hostname]
@@ -183,7 +194,7 @@ def test_cli_13(hostname):
     assert result == 0
 
 
-def test_cli_14(hostname):
+def test_cli_15(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['load', '--host', hostname, '--count', '30', '--schema', 'employee_demo', '--replica', '0']
@@ -194,7 +205,7 @@ def test_cli_14(hostname):
     assert result == 0
 
 
-def test_cli_15(hostname):
+def test_cli_16(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['export', 'json', '--host', hostname, '-i', '-b', 'employees', '--directory', '/var/tmp']
@@ -205,7 +216,7 @@ def test_cli_15(hostname):
     assert result == 0
 
 
-def test_cli_16(hostname):
+def test_cli_17(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['export', 'csv', '--host', hostname, '-i', '-b', 'employees', '--directory', '/var/tmp']
@@ -216,7 +227,7 @@ def test_cli_16(hostname):
     assert result == 0
 
 
-def test_cli_17(hostname):
+def test_cli_18(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['clean', '--host', hostname, '--schema', 'employee_demo']
@@ -227,7 +238,7 @@ def test_cli_17(hostname):
     assert result == 0
 
 
-def test_cli_18(hostname):
+def test_cli_19(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['load', '--host', hostname, '--count', '100', '--schema', 'adjuster_demo', '--replica', '0']
@@ -238,7 +249,7 @@ def test_cli_18(hostname):
     assert result == 0
 
 
-def test_cli_19(hostname):
+def test_cli_20(hostname):
     global parent
     cmd = parent + '/bin/cb_perf'
     args = ['clean', '--host', hostname, '--schema', 'adjuster_demo']

@@ -79,6 +79,7 @@ insert_data = None
 wait_mode = False
 ping_mode = False
 test_mode = False
+safe_mode = False
 schema_file_json = {}
 id_key = None
 quiet_mode = False
@@ -115,6 +116,7 @@ def process_params(parameters: argparse.Namespace) -> None:
         wait_mode, \
         ping_mode, \
         test_mode, \
+        safe_mode, \
         schema_file_json, \
         id_key, \
         quiet_mode, \
@@ -161,6 +163,8 @@ def process_params(parameters: argparse.Namespace) -> None:
         create_indexes = parameters.index
     if parameters.stdout:
         screen_output = parameters.stdout
+    if parameters.safe:
+        safe_mode = parameters.safe
     if parameters.variable:
         for variable in parameters.variable:
             key = variable.split('=')[0]

@@ -41,7 +41,7 @@ class MainLoop(object):
             for task in done:
                 try:
                     result = task.result()
-                    if type(result) == dict:
+                    if result:
                         result_set.append(result)
                 except Exception as err:
                     self.logger.error(f"task error: {type(err).__name__}: {err}")
@@ -146,6 +146,8 @@ class MainLoop(object):
 
     def process(self, bucket: Bucket, scope: Scope, collection: Collection):
         last_batch = 0
+        inserted_total = 0
+        skipped_count = 0
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=config.batch_size)
         run_batch_size = config.batch_size * 10
         tasks = set()
@@ -182,13 +184,22 @@ class MainLoop(object):
 
             for n in range(1, operation_count + 1, run_batch_size):
                 tasks.clear()
+                inserted_count = 0
                 for key in range(n, n + run_batch_size):
                     if key > operation_count:
                         break
                     document = rand.process_template()
-                    tasks.add(executor.submit(db_op.execute, KeyFormat.key_format(key_format, document, db.collection_name, key + last_batch, schema.id_key), document))
-                self.task_wait(tasks)
+                    tasks.add(executor.submit(db_op.execute,
+                                              KeyFormat.key_format(key_format, document, db.collection_name, key + last_batch, schema.id_key),
+                                              document,
+                                              config.safe_mode))
+                    inserted_count += 1
+                results = self.task_wait(tasks)
+                inserted_total += len(results)
+                skipped_count = inserted_count - len(results)
             last_batch += operation_count
+
+        self.logger.info(f"Inserted {inserted_total} skipped {skipped_count}")
 
     def post_process(self, bucket: Bucket, scope: Scope, collection: Collection):
         pass

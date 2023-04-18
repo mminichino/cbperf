@@ -42,7 +42,10 @@ class DBWrite(object):
         self.db = db
         self._result = None
 
-    def execute(self, key: str, document: dict):
+    def execute(self, key: str, document: dict, no_squash: bool = False):
+        if no_squash:
+            if self.db.cb_doc_exists(key):
+                return None
         try:
             number = re.split(':', key)[-1]
             id_value = int(number)
@@ -54,6 +57,7 @@ class DBWrite(object):
         end_time = time.time()
         total_time = end_time - begin_time
         self.logger.debug(f"write complete in {total_time:.6f}")
+        return self._result
 
     @property
     def result(self):
