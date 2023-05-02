@@ -60,7 +60,7 @@ def pytest_sessionstart(session):
             break
 
     print("Waiting for Couchbase Server to be ready")
-    exit_code, output = container_id.exec_run(['/demo/couchbase/cbperf/cb_perf',
+    exit_code, output = container_id.exec_run(['/demo/couchbase/cbperf/bin/cb_perf',
                                                'list',
                                                '--host', '127.0.0.1',
                                                '--wait'])

@@ -15,6 +15,8 @@ class Params(object):
         parser.add_argument('--city', action='store', help="City Names")
         parser.add_argument('--cards', action='store', help="Credit Card Masks")
         parser.add_argument('--area', action='store', help="Area Codes")
+        parser.add_argument('--franchise', action='store', help="Franchise Names")
+        parser.add_argument('--corporation', action='store', help="Company Names")
         self.args = parser.parse_args()
 
     @property
@@ -31,6 +33,8 @@ street_names = []
 city_names = []
 card_masks = []
 area_codes = []
+franchises = []
+corporations = []
 
 
 with open(options.male, 'r') as dat_file:
@@ -89,6 +93,22 @@ with open(options.area, 'r') as dat_file:
         item = line.strip()
         area_codes.append(item)
 
+with open(options.franchise, 'r') as dat_file:
+    while True:
+        line = dat_file.readline()
+        if not line:
+            break
+        item = line.strip()
+        franchises.append(item)
+
+with open(options.corporation, 'r') as dat_file:
+    while True:
+        line = dat_file.readline()
+        if not line:
+            break
+        item = line.strip()
+        corporations.append(item)
+
 data_struct = {
     "first_names": {
         "male": male_names,
@@ -99,6 +119,8 @@ data_struct = {
     "city_names": city_names,
     "card_masks": card_masks,
     "area_codes": area_codes,
+    "franchises": franchises,
+    "corporations": corporations,
     "street_suffix": [
             'Alley',
             'Annex',

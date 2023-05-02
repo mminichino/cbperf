@@ -13,6 +13,8 @@ class KeyStyle(Enum):
     TYPE = 1
     UUID = 2
     FIELD = 3
+    COLLECTION = 4
+    COMPOUND = 5
 
 
 class KeyFormat(object):
@@ -40,7 +42,13 @@ class KeyFormat(object):
             return f"{document['type']}{separator}{number}"
         elif style.value == 2:
             return uuid.uuid4()
-        else:
+        elif style.value == 3:
             if not field:
                 raise KeyFormatError(f"Key field name style requested: field parameter is null")
             return f"{field}{separator}{doc_num}"
+        elif style.value == 4:
+            return f"{keyspace}{separator}{doc_num}"
+        else:
+            if not field:
+                raise KeyFormatError(f"Key compound name style requested: field parameter is null")
+            return f"{keyspace}{separator}{field}{separator}{doc_num}"

@@ -370,6 +370,22 @@ def rand_state():
     return data[rand_gen.value]
 
 
+def rand_franchise():
+    data = data_struct.get('franchises')
+    if not data:
+        raise ConfigFileError("No random franchise name data")
+    rand_gen = FastRandom(len(data), 0)
+    return data[rand_gen.value]
+
+
+def rand_corporation():
+    data = data_struct.get('corporations')
+    if not data:
+        raise ConfigFileError("No random corporation name data")
+    rand_gen = FastRandom(len(data), 0)
+    return data[rand_gen.value]
+
+
 def address_line():
     return ' '.join([random_number(4, m=1), rand_street_name(), rand_street_suffix()])
 
@@ -507,6 +523,8 @@ def process_template():
                                       rand_year=year_value(),
                                       rand_month=month,
                                       rand_day=day_value(month),
+                                      rand_franchise=rand_franchise(),
+                                      rand_corporation=rand_corporation(),
                                       date_iso_week=date_iso_7(),
                                       date_iso_month=date_iso_30(),
                                       rand_date_1=past_date_slash(_past_date),

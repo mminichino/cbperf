@@ -258,3 +258,47 @@ def test_cli_20(hostname):
     p = re.compile(f"Removing bucket adjuster_demo")
     assert p.search(output) is not None
     assert result == 0
+
+
+def test_cli_21(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['load', '--host', hostname, '--schema', 'timecard_sample', '--replica', '0']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Processing rules")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_22(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['clean', '--host', hostname, '--schema', 'timecard_sample']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Removing bucket timecard_sample")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_23(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['load', '--host', hostname, '--schema', 'insurance_sample', '--replica', '0']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Processing rules")
+    assert p.search(output) is not None
+    assert result == 0
+
+
+def test_cli_24(hostname):
+    global parent
+    cmd = parent + '/bin/cb_perf'
+    args = ['clean', '--host', hostname, '--schema', 'insurance_sample']
+
+    result, output = cli_run(cmd, *args)
+    p = re.compile(f"Removing bucket insurance_sample")
+    assert p.search(output) is not None
+    assert result == 0

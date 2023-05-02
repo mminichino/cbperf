@@ -3,7 +3,8 @@
 import warnings
 from lib.randomize import (rand_init, rand_gender, past_date, dob_date, rand_first_name, rand_last_name, month_value, credit_card, social_security_number, four_digits, zip_code,
                            account_number, dollar_amount, numeric_sequence, hash_code, address_line, rand_city, rand_state, nick_name, email_address, user_name, phone_number,
-                           boolean_value, date_code, year_value, past_date_slash, past_date_hyphen, past_date_text, dob_slash, dob_hyphen, dob_text, day_value)
+                           boolean_value, date_code, year_value, past_date_slash, past_date_hyphen, past_date_text, dob_slash, dob_hyphen, dob_text, day_value, rand_franchise,
+                           rand_corporation)
 
 warnings.filterwarnings("ignore")
 
@@ -38,6 +39,8 @@ def test_random_1():
     print("Year       : " + year_value())
     print("Month      : " + month)
     print("Day        : " + day_value(month))
+    print("Franchise  : " + rand_franchise())
+    print("Corporation: " + rand_corporation())
     print("Past Date 1: " + past_date_slash(_past_date))
     print("Past Date 2: " + past_date_hyphen(_past_date))
     print("Past Date 3: " + past_date_text(_past_date))
