@@ -573,8 +573,10 @@
                           "record_id": "record_id",
                           "location_id": "{{ incr_block }}",
                           "employee_id": "{{ incr_value }}",
+                          "status": false,
                           "time_in": "",
                           "time_out": "",
+                          "duration": 0,
                           "paid": false
                         }
                       }
