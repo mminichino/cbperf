@@ -529,7 +529,8 @@
                     "indexes": [
                       "record_id",
                       "location_id",
-                      "employee_id"
+                      "employee_id",
+                      "user_id"
                     ]
                   },
                   {
