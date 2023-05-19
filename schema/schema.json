@@ -542,7 +542,7 @@
                         "record_count": 4,
                         "doc": {
                           "record_id": "record_id",
-                          "location_id": "{{ incr_block }}",
+                          "location_id": "{{ incr_value }}",
                           "name": "{{ rand_franchise }}",
                           "address": "{{ rand_address }}",
                           "city": "{{ rand_city }}",
