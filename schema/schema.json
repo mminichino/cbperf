@@ -354,7 +354,7 @@
                         }
                       }
                     ],
-                    "idkey": "claim_id",
+                    "idkey": "record_id",
                     "primary_index": false,
                     "override_count": true,
                     "record_count": 30,
@@ -394,7 +394,7 @@
                         }
                       }
                     ],
-                    "idkey": "customer_id",
+                    "idkey": "record_id",
                     "primary_index": false,
                     "override_count": true,
                     "record_count": 30,
@@ -431,7 +431,7 @@
                         }
                       }
                     ],
-                    "idkey": "adjuster_id",
+                    "idkey": "record_id",
                     "primary_index": false,
                     "override_count": true,
                     "record_count": 30,
@@ -465,7 +465,7 @@
                         }
                       }
                     ],
-                    "idkey": "claim_id",
+                    "idkey": "record_id",
                     "primary_index": false,
                     "override_count": true,
                     "record_count": 0,
@@ -521,7 +521,7 @@
                         }
                       }
                     ],
-                    "idkey": "employee_id",
+                    "idkey": "record_id",
                     "primary_index": false,
                     "override_count": true,
                     "record_count": 40,
@@ -552,7 +552,7 @@
                         }
                       }
                     ],
-                    "idkey": "location_id",
+                    "idkey": "record_id",
                     "primary_index": false,
                     "override_count": true,
                     "record_count": 4,
